@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { patchNodeContent } from "@/features/dna/lib/bookNodes";
 import { type DnaNode, type NodeContent } from "@/features/dna/lib/novelDna";
 import { type EditSpec } from "@/features/dna/lib/dnaSchema";
-import { detailRowStyle, fieldRowStart, inputStyle, labelStyle } from "./treeChrome";
+import { detailRowStyle, fieldRowStart, inputStyle, labelStyle, MONO, SERIF, T } from "./treeChrome";
 import { contentAt, displayValue, nodeTitle, refName } from "./nodeDisplay";
 import { Highlighted } from "./search";
 
@@ -39,7 +39,7 @@ export function EditableField({ node, spec, depth, index, parentKey, onJump, sea
   if (spec.type === "object") {
     return (
       <>
-        <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={{ ...labelStyle, color: "#6e6e6e" }}>{spec.label}</span></div>
+        <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={{ ...labelStyle, color: T.inkSoft }}>{spec.label}</span></div>
         {spec.fields!.map((sub) => <EditableField key={sub.key} node={node} spec={sub} depth={depth + 1} index={index} parentKey={spec.key} onJump={onJump} searchPattern={searchPattern} />)}
       </>
     );
@@ -47,7 +47,7 @@ export function EditableField({ node, spec, depth, index, parentKey, onJump, sea
 
   const emptyRow = (
     <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
-      <span onClick={() => !locked && setEditing(true)} style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: locked ? "#333" : "#4a4a4a", flex: 1, cursor: locked ? "default" : "pointer", fontStyle: "italic" }}>
+      <span onClick={() => !locked && setEditing(true)} style={{ fontFamily: SERIF, fontSize: 13, color: T.faint, flex: 1, cursor: locked ? "default" : "pointer", fontStyle: "italic" }}>
         {locked ? "—" : `＋ ${spec.label}`}
       </span>
     </div>
@@ -61,19 +61,19 @@ export function EditableField({ node, spec, depth, index, parentKey, onJump, sea
       <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
         <span style={{ display: "flex", flexWrap: "wrap", gap: 4, flex: 1, alignItems: "center" }}>
           {ids.map((id) => (
-            <span key={id} style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "#cfcfcf", background: "#1c1c26", border: "1px solid #2a2a3a", borderRadius: 3, padding: "1px 5px", display: "inline-flex", gap: 4, alignItems: "center" }}>
-              <span onClick={() => onJump?.(id)} title={onJump ? "jump to node" : undefined} style={{ cursor: onJump ? "pointer" : "default", borderBottom: onJump ? "1px dotted #4a5a6a" : undefined }}><Highlighted text={refName(id, index)} pattern={searchPattern ?? null} /></span>
-              {!locked && <span onClick={() => !busy && void write(ids.filter((x) => x !== id))} style={{ cursor: "pointer", color: "#666" }}>✕</span>}
+            <span key={id} style={{ fontFamily: MONO, fontSize: 11, color: T.inkSoft, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 4, padding: "1px 6px", display: "inline-flex", gap: 4, alignItems: "center" }}>
+              <span onClick={() => onJump?.(id)} title={onJump ? "jump to node" : undefined} style={{ cursor: onJump ? "pointer" : "default", borderBottom: onJump ? `1px dotted ${T.faint}` : undefined }}><Highlighted text={refName(id, index)} pattern={searchPattern ?? null} /></span>
+              {!locked && <span onClick={() => !busy && void write(ids.filter((x) => x !== id))} style={{ cursor: "pointer", color: T.faint }}>✕</span>}
             </span>
           ))}
           {!locked && candidates.length > 0 && (
             <select value="" disabled={busy} onChange={(e) => e.target.value && void write([...ids, e.target.value])}
-              style={{ ...inputStyle, fontSize: 11, padding: "1px 4px" }}>
+              style={{ ...inputStyle, fontSize: 12, padding: "1px 4px" }}>
               <option value="">＋ add…</option>
               {candidates.map((c) => <option key={c.id} value={c.id}>{nodeTitle(c) || c.id}</option>)}
             </select>
           )}
-          {!ids.length && locked && <span style={{ color: "#333", fontFamily: "ui-monospace, monospace", fontSize: 11 }}>—</span>}
+          {!ids.length && locked && <span style={{ color: T.faint, fontFamily: MONO, fontSize: 11 }}>—</span>}
         </span>
       </div>
     );
@@ -88,11 +88,11 @@ export function EditableField({ node, spec, depth, index, parentKey, onJump, sea
         <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
           <span style={{ flex: 1, display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
             {jumpId
-              ? <span onClick={() => onJump!(jumpId)} title="jump to node" style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#666" : "#9bd3e6", cursor: "pointer", borderBottom: "1px dotted #4a5a6a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Highlighted text={value} pattern={searchPattern ?? null} /></span>
-              : <span onClick={() => !locked && setEditing(true)} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#666" : "#cfcfcf", cursor: locked ? "default" : "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Highlighted text={value} pattern={searchPattern ?? null} /></span>}
-            {!locked && jumpId && <span onClick={() => setEditing(true)} title="change" style={{ fontSize: 10, color: "#4a4a4a", cursor: "pointer", flexShrink: 0 }}>▾</span>}
+              ? <span onClick={() => onJump!(jumpId)} title="jump to node" style={{ fontFamily: SERIF, fontSize: 14, color: busy ? T.faint : T.accent, cursor: "pointer", borderBottom: `1px dotted ${T.faint}`, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Highlighted text={value} pattern={searchPattern ?? null} /></span>
+              : <span onClick={() => !locked && setEditing(true)} style={{ fontFamily: SERIF, fontSize: 14, color: busy ? T.faint : T.ink, cursor: locked ? "default" : "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Highlighted text={value} pattern={searchPattern ?? null} /></span>}
+            {!locked && jumpId && <span onClick={() => setEditing(true)} title="change" style={{ fontSize: 10, color: T.faint, cursor: "pointer", flexShrink: 0 }}>▾</span>}
           </span>
-          {!locked && <span onClick={() => !busy && void write("")} title="clear field" style={{ fontSize: 11, color: "#4a4a4a", cursor: "pointer", flexShrink: 0, alignSelf: "center", padding: "0 2px" }}>✕</span>}
+          {!locked && <span onClick={() => !busy && void write("")} title="clear field" style={{ fontSize: 11, color: T.faint, cursor: "pointer", flexShrink: 0, alignSelf: "center", padding: "0 2px" }}>✕</span>}
         </div>
       );
     }
@@ -115,8 +115,8 @@ export function EditableField({ node, spec, depth, index, parentKey, onJump, sea
   if (!editing) {
     return (
       <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
-        <span onClick={() => !locked && (setDraft(rawAsDraft(raw, spec)), setEditing(true))} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#666" : "#cfcfcf", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.5, cursor: locked ? "default" : "text" }}><Highlighted text={value} pattern={searchPattern ?? null} /></span>
-        {!locked && <span onClick={() => !busy && void write(spec.type === "list" ? [] : "")} title="clear field" style={{ fontSize: 11, color: "#4a4a4a", cursor: "pointer", flexShrink: 0, alignSelf: "center", padding: "0 2px" }}>✕</span>}
+        <span onClick={() => !locked && (setDraft(rawAsDraft(raw, spec)), setEditing(true))} style={{ fontFamily: SERIF, fontSize: 14, color: busy ? T.faint : T.ink, whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.55, cursor: locked ? "default" : "text" }}><Highlighted text={value} pattern={searchPattern ?? null} /></span>
+        {!locked && <span onClick={() => !busy && void write(spec.type === "list" ? [] : "")} title="clear field" style={{ fontSize: 11, color: T.faint, cursor: "pointer", flexShrink: 0, alignSelf: "center", padding: "0 2px" }}>✕</span>}
       </div>
     );
   }
@@ -141,7 +141,7 @@ export function EditableField({ node, spec, depth, index, parentKey, onJump, sea
   return (
     <div style={detailRowStyle(depth)} onClick={(e) => e.stopPropagation()}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
       {spec.multiline ? <textarea rows={Math.min(8, Math.max(2, draft.split("\n").length))} {...common} /> : <input {...common} />}
-      <span style={{ fontSize: 9, color: "#555", flexShrink: 0, alignSelf: "center" }}>{spec.multiline ? "⌘↵ · esc" : "↵ · esc"}</span>
+      <span style={{ fontFamily: MONO, fontSize: 9.5, color: T.faint, flexShrink: 0, alignSelf: "center" }}>{spec.multiline ? "⌘↵ · esc" : "↵ · esc"}</span>
     </div>
   );
 }

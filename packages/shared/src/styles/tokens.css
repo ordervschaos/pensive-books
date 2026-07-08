@@ -303,6 +303,59 @@
     --color-link: 254 127 45;
   }
 
+  /* ============================================
+     TERMINAL — the dark mono console. Born as the
+     DNA studio's ad-hoc dark skin (the deleted
+     TREE_DARK_VARS override), formalized as a real
+     theme. Deliberately dark-only: the same values
+     apply in light and dark mode, so the mode
+     toggle is a no-op under it.
+     ============================================ */
+  .theme-terminal,
+  .theme-terminal.dark {
+    --pv-bg: 240 11% 4%;          /* #0a0a0b near-black, violet-tinged */
+    --pv-surface: 240 11% 6%;
+    --pv-surface-2: 240 14% 11%;
+    --pv-border: 240 16% 18%;
+    --pv-border-soft: 240 16% 13%;
+    --pv-text: 240 9% 88%;        /* #dedee2 */
+    --pv-text-muted: 0 0% 60%;
+    --pv-text-faint: 0 0% 40%;
+    --pv-accent: 240 100% 77%;    /* #8a8aff periwinkle */
+    --pv-accent-soft: 240 100% 77%;
+
+    --background: var(--pv-bg);
+    --foreground: var(--pv-text);
+    --card: var(--pv-surface);
+    --card-foreground: var(--pv-text);
+    --popover: var(--pv-surface);
+    --popover-foreground: var(--pv-text);
+    --primary: var(--pv-accent);
+    --primary-foreground: 240 30% 10%;
+    --secondary: var(--pv-surface-2);
+    --secondary-foreground: var(--pv-text);
+    --muted: var(--pv-surface-2);
+    --muted-foreground: var(--pv-text-muted);
+    --accent: var(--pv-accent);
+    --accent-foreground: 240 30% 10%;
+    --destructive: 0 70% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: var(--pv-border);
+    --input: 240 16% 20%;
+    --ring: var(--pv-accent);
+
+    --color-gray-900: #e6e6e6;
+    --color-gray-700: #cfcfcf;
+    --color-gray-600: #9a9aaa;
+    --color-gray-500: #888888;
+    --color-gray-300: #3a3a52;
+    --color-gray-200: #2a2a3a;
+    --color-gray-100: #16161c;
+    --color-brand-primary-dark: #8a8aff;
+    --color-brand-primary-darker: #6a6ad0;
+    --color-link: 138 138 255;
+  }
+
 /* Paper-minimal typography helpers. Mono is structural (eyebrows,
    meta, status); serif/display carry reading + titles. */
   .pv-serif {

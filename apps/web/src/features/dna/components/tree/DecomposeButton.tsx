@@ -5,6 +5,7 @@
 import { useMemo, useRef, useState } from "react";
 import { decomposeBook, type DecomposeProgress } from "@/features/dna/lib/dnaDecompose";
 import type { DnaNode } from "@/features/dna/lib/novelDna";
+import { MONO, T } from "./treeChrome";
 
 const label = (p: DecomposeProgress): string =>
   p.phase === "chapters" ? `reading ch ${p.done + 1}/${p.total}…`
@@ -46,11 +47,11 @@ export function DecomposeButton({ bookId, nodes }: { bookId: number; nodes: DnaN
 
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-      {status && <span style={{ color: "#9bd3e6", fontSize: 10, fontFamily: "ui-monospace, monospace" }}>{status}</span>}
+      {status && <span style={{ color: T.muted, fontSize: 10, fontFamily: MONO }}>{status}</span>}
       <button
         onClick={() => { if (running) stopRef.current = true; else void run(); }}
         title="Read the manuscript and infer the plan above it — beats, premise, pillar, cast, world, threads. Your prose is never touched."
-        style={{ background: "none", border: "none", color: running ? "#d0a060" : "#9bd3e6", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}
+        style={{ background: "none", border: "none", color: running ? T.warn : T.accent, fontSize: 10.5, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: MONO }}
       >
         {running ? "stop" : "infer plan →"}
       </button>

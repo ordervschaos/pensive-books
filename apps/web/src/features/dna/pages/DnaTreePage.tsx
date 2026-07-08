@@ -18,7 +18,9 @@ import { buildJourney, dnaHealth, DNA_STAGES, STAGE_KINDS, type StageKey } from 
 import { useToast } from "@/hooks/use-toast";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { reconcileDna } from "@/features/dna/lib/novelDnaRender";
-import { QuickToggle } from "@/features/dna/components/tree/treeChrome";
+import { MONO, QuickToggle, SERIF, setConsoleTheme, T } from "@/features/dna/components/tree/treeChrome";
+import { useTheme } from "@/components/theme/ThemeProvider";
+import { AppearanceMenu } from "@/components/navigation/AppearanceMenu";
 import { DecomposeButton } from "@/features/dna/components/tree/DecomposeButton";
 import { nodeTitle } from "@/features/dna/components/tree/nodeDisplay";
 import { buildSearchPattern, SearchPanel, searchDna } from "@/features/dna/components/tree/search";
@@ -43,6 +45,14 @@ export default function DnaTreePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
+  // The studio follows the app theme, collapsed to its two console skins: the "terminal" theme is
+  // the original dark mono console; every other theme renders Console-on-Paper. setConsoleTheme
+  // swaps the shared token objects in place (idempotent), and key={consoleMode} on the root
+  // remounts the studio so every inline style recomputes on switch.
+  const { themeName } = useTheme();
+  const consoleMode = themeName === "terminal" ? "terminal" as const : "paper" as const;
+  setConsoleTheme(consoleMode);
+  const themeClass = consoleMode === "terminal" ? "theme-terminal dark" : "theme-paper";
   const tab: "tree" | "taste" | "overview" | "analytics" | "meters" | "characters" | "story" =
     location.pathname.endsWith("/overview") ? "overview"
     : location.pathname.endsWith("/taste") ? "taste"
@@ -485,14 +495,14 @@ export default function DnaTreePage() {
 
   const base: React.CSSProperties = {
     margin: 0, minHeight: "100vh",
-    fontFamily: "ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace",
-    background: "#0a0a0a", color: "#888",
+    fontFamily: MONO,
+    background: T.bg, color: T.inkSoft,
     userSelect: "text",
   };
 
   if (permLoading || !hasAccess || !canEdit) return null;
-  if (error) return <div style={{ ...base, padding: 24, color: "#f87171" }}>error: {error}</div>;
-  if (!nodes) return <div style={{ ...base, padding: 24 }}>loading…</div>;
+  if (error) return <div className={themeClass} style={{ ...base, padding: 24, color: T.bad }}>error: {error}</div>;
+  if (!nodes) return <div className={themeClass} style={{ ...base, padding: 24, color: T.muted }}>loading…</div>;
 
   const index = byId(nodes);
   const roots = nodes.filter((n) => n.parent_id === null).sort((a, b) => a.position - b.position);
@@ -519,14 +529,14 @@ export default function DnaTreePage() {
   const ctxConsumes = new Set<string>(ctxNode ? refsOf(ctxNode) : []);
   const ctxConsumedBy = new Set<string>(contextId ? (backlinks.get(contextId)?.map((n) => n.id) ?? []) : []);
   const pct = (n: number) => `${Math.round(n * 100)}%`;
-  const barColor = (n: number) => (n >= 0.8 ? "#4ade80" : n >= 0.5 ? "#fbbf24" : "#f87171");
+  const barColor = (n: number) => (n >= 0.8 ? T.good : n >= 0.5 ? T.warn : T.bad);
   const issueTitle = (i: typeof health.issues[number]) => {
     const n = i.nodeId ? index.get(i.nodeId) : undefined;
     return n ? `${n.kind}${nodeTitle(n) ? ` · ${nodeTitle(n)}` : ""}` : i.nodeId ?? "";
   };
 
   return (
-    <div style={{ ...base, marginRight: railOpen ? 420 : 0, marginLeft: searchOpen ? 320 : 0 }}>
+    <div key={consoleMode} className={themeClass} style={{ ...base, marginRight: railOpen ? 420 : 0, marginLeft: searchOpen ? 320 : 0 }}>
       {searchOpen && (
         <SearchPanel nodes={nodes} query={searchQuery} onQueryChange={setSearchQuery}
           caseSensitive={searchCaseSensitive} onCaseSensitiveChange={setSearchCaseSensitive}
@@ -541,24 +551,15 @@ export default function DnaTreePage() {
         <NodeDetailsModal node={index.get(detailsNodeId)!} onClose={() => setDetailsNodeId(null)} />
       )}
       {/* The tool-using editor's agent (durable book-agent thread), promoted into the tree rail. The
-          studio components read theme CSS vars; we override them here with the tree's dark monospace
-          palette (#8a8aff accent) so the rail matches the page instead of the app's light studio skin. */}
+          studio components read the Paper-DS CSS vars, which the theme-paper wrapper above resolves —
+          the rail wears the same light paper skin as the rest of the studio. */}
       {railOpen && (
         <div style={{
           position: "fixed", top: 0, right: 0, bottom: 0, width: 420, zIndex: 20,
-          background: "hsl(var(--background))", borderLeft: "1px solid #1c1c22", display: "flex", flexDirection: "column",
-          // Dark-mono palette override (HSL triplets) scoped to the rail.
-          "--background": "240 11% 5%", "--foreground": "0 0% 80%",
-          "--card": "240 11% 6%", "--popover": "240 11% 6%",
-          "--primary": "240 100% 77%", "--primary-foreground": "240 30% 10%",
-          "--muted-foreground": "0 0% 50%", "--destructive": "0 70% 60%",
-          "--border": "240 16% 18%", "--input": "240 16% 20%", "--ring": "240 100% 77%",
-          "--pv-accent": "240 100% 77%", "--pv-border-soft": "240 16% 22%",
-          "--pv-surface-2": "240 14% 11%", "--pv-text-faint": "0 0% 40%",
-          "--pv-text-muted": "0 0% 60%", "--pv-ink-soft": "0 0% 70%",
-        } as React.CSSProperties}>
+          background: T.raised, borderLeft: `1px solid ${T.border}`, display: "flex", flexDirection: "column",
+        }}>
           <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 10px 0" }}>
-            <span onClick={() => setRailOpen(false)} title="close" style={{ color: "#666", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>✕</span>
+            <span onClick={() => setRailOpen(false)} title="close" style={{ color: T.muted, cursor: "pointer", fontSize: 14, lineHeight: 1 }}>✕</span>
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
             <AgentRail bookId={bookId} nodes={nodes} settings={settings} bookSlug={bookSlug} attachedIds={attachedIds} onDetach={detachNode} />
@@ -569,23 +570,28 @@ export default function DnaTreePage() {
       {tab === "tree" && ctxNode && (
         <FocusPanel node={ctxNode} index={index} consumes={ctxConsumes} consumedBy={ctxConsumedBy}
           onJump={jumpTo} onClear={() => setContextId(null)} bottomInset={timelineOpen ? 212 : 16}
+          leftInset={searchOpen ? 336 : 16}
           staleActions={staleActionsFor(ctxNode, index)} />
       )}
       {/* The serial spine — reading-order filmstrip across the bottom (acts → beats → scenes) */}
       {tab === "tree" && timelineOpen && (
-        <SpineTimeline nodes={nodes} rightInset={railOpen ? 420 : 0} seq={seq}
+        <SpineTimeline nodes={nodes} rightInset={railOpen ? 420 : 0} leftInset={searchOpen ? 320 : 0} seq={seq}
           onJump={jumpTo} onClose={() => setTimelineOpen(false)} />
       )}
       {/* Top menu — identity + the two surfaces that are global, not tab-scoped (search, editor). In
           normal flow (not position:fixed) so it can never overlap the tab strip below it, and so it
           shifts with the rail/search panels automatically via the outer container's margin. */}
-      <div style={{ padding: "10px 16px", borderBottom: "1px solid #16161a", display: "flex", alignItems: "center", gap: 16 }}>
-        <span style={{ color: "#666", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase" }}>
-          {bookName || bookSlug} · dna
+      <div style={{ padding: "10px 16px", borderBottom: `1px solid ${T.borderSoft}`, display: "flex", alignItems: "center", gap: 16 }}>
+        <span style={{ display: "inline-flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+          <span style={{ fontFamily: SERIF, fontSize: 16, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{bookName || bookSlug}</span>
+          <span style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: T.faint }}>dna</span>
         </span>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 3 }}>
-          <QuickToggle active={searchOpen} accent="#9bd3e6" icon="⌕" label="Search" onClick={() => setSearchOpen((v) => !v)} />
-          <QuickToggle active={railOpen} accent="#8a8aff" icon="✦" label="Editor" onClick={() => setRailOpen((v) => !v)} />
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 3 }}>
+          <QuickToggle active={searchOpen} accent={T.accent} icon="⌕" label="Search" onClick={() => setSearchOpen((v) => !v)} />
+          <QuickToggle active={railOpen} accent={T.accent} icon="✦" label="Editor" onClick={() => setRailOpen((v) => !v)} />
+          {/* The app-wide theme picker — the studio renders its own chrome (no main nav), so it
+              mounts here too; picking "Terminal" flips the studio to the dark console skin. */}
+          <AppearanceMenu />
         </div>
       </div>
 
@@ -593,28 +599,28 @@ export default function DnaTreePage() {
           the content below, so it visually fuses with whatever pane is open; inactive tabs sit recessed
           on a shared baseline. overview (dashboard) / tree (structure) / voice & feel (taste) / analytics /
           characters / story — same route, splat path, no remount. */}
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 2, padding: "8px 16px 0", borderBottom: "1px solid #1a1a1a" }}>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 2, padding: "8px 16px 0", borderBottom: `1px solid ${T.border}` }}>
         {([["overview", "overview", overviewPath], ["tree", "tree", treePath], ["taste", "voice", `${treePath}/taste`], ["analytics", "analytics", analyticsPath], ["meters", "meters", metersPath], ["characters", "characters", charactersPath], ["story", "story", storyPath]] as const).map(([key, label, to]) => (
           <button key={key} onClick={() => navigate(to)} style={{
-            background: tab === key ? "#0a0a0a" : "transparent",
-            border: `1px solid ${tab === key ? "#26262e" : "transparent"}`,
-            borderBottom: `1px solid ${tab === key ? "#0a0a0a" : "transparent"}`,
+            background: tab === key ? T.bg : "transparent",
+            border: `1px solid ${tab === key ? T.border : "transparent"}`,
+            borderBottom: `1px solid ${tab === key ? T.bg : "transparent"}`,
             marginBottom: -1, borderRadius: "7px 7px 0 0",
-            color: tab === key ? "#9bd3e6" : "#555", fontSize: 10, cursor: "pointer",
-            letterSpacing: "0.1em", textTransform: "uppercase", padding: "6px 14px", fontFamily: "ui-monospace, monospace",
+            color: tab === key ? T.accent : T.muted, fontSize: 10.5, cursor: "pointer",
+            letterSpacing: "0.1em", textTransform: "uppercase", padding: "6px 14px", fontFamily: MONO,
           }}>{label}</button>
         ))}
       </div>
 
       {/* Below-tabs action bar — health (apply everywhere) plus whatever's specific to the
           open tab (timeline/history/lens + expand/collapse only mean anything on the tree tab). */}
-      <div style={{ padding: "8px 16px", borderBottom: "1px solid #1a1a1a", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+      <div style={{ padding: "8px 16px", borderBottom: `1px solid ${T.borderSoft}`, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         {/* #4 — DNA health: a glanceable status pip that deep-links into the Analytics tab (the detail
             lives there now — summary-in-chrome, detail-in-pane). */}
         <button onClick={() => navigate(analyticsPath)} title="open Analytics — the lints, pacing, promises & topography behind these bars"
           style={{ display: "flex", alignItems: "center", gap: 12, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
           {(health.errors + health.warns) > 0 && (
-            <span style={{ fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: health.errors ? "#f87171" : "#d0a060", fontFamily: "ui-monospace, monospace" }}>
+            <span style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: health.errors ? T.bad : T.warn, fontFamily: MONO }}>
               {health.errors ? `${health.errors}✕ ` : ""}{health.warns ? `${health.warns}⚠` : ""} →
             </span>
           )}
@@ -622,10 +628,10 @@ export default function DnaTreePage() {
         {/* Tab-specific toggles — tree only */}
         {tab === "tree" && (
           <div style={{ display: "flex", gap: 3 }}>
-            <QuickToggle active={timelineOpen} accent="#fb923c" icon="▦" label="Timeline" onClick={() => setTimelineOpen((v) => !v)} />
-            <QuickToggle active={historyOpen} accent="#a0a0a0" icon="⟲" label="History" onClick={() => setHistoryOpen((v) => !v)} />
+            <QuickToggle active={timelineOpen} accent={T.accent} icon="▦" label="Timeline" onClick={() => setTimelineOpen((v) => !v)} />
+            <QuickToggle active={historyOpen} accent={T.accent} icon="⟲" label="History" onClick={() => setHistoryOpen((v) => !v)} />
             {(health.errors + health.warns) > 0 && (
-              <QuickToggle active={healthLens} accent="#d0a060" icon="◐" label="Lens"
+              <QuickToggle active={healthLens} accent={T.warn} icon="◐" label="Lens"
                 onClick={() => { const on = !healthLens; setHealthLens(on); if (on) revealNodes(health.issues.map((i) => i.nodeId).filter((x): x is string => !!x)); }} />
             )}
           </div>
@@ -633,11 +639,11 @@ export default function DnaTreePage() {
         {/* Controls */}
         <div style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
           <DecomposeButton bookId={bookId} nodes={nodes} />
-          {tab === "tree" && <button onClick={expandAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>expand all</button>}
-          {tab === "tree" && <button onClick={collapseAll} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>collapse all</button>}
-          <a href={`/books/${bookSlug}/dna.json`} style={{ color: "#555", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", textDecoration: "none" }}>json →</a>
+          {tab === "tree" && <button onClick={expandAll} style={{ background: "none", border: "none", color: T.muted, fontSize: 10.5, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: MONO }}>expand all</button>}
+          {tab === "tree" && <button onClick={collapseAll} style={{ background: "none", border: "none", color: T.muted, fontSize: 10.5, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: MONO }}>collapse all</button>}
+          <a href={`/books/${bookSlug}/dna.json`} style={{ color: T.muted, fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", textDecoration: "none", fontFamily: MONO }}>json →</a>
           <button onClick={() => void forkDna()} disabled={forking} title="Copy this DNA tree into a new book to experiment freely"
-            style={{ background: "none", border: "none", color: forking ? "#444" : "#555", fontSize: 10, cursor: forking ? "default" : "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+            style={{ background: "none", border: "none", color: forking ? T.faint : T.muted, fontSize: 10.5, cursor: forking ? "default" : "pointer", letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: MONO }}>
             {forking ? "forking…" : "fork →"}
           </button>
         </div>
@@ -662,35 +668,35 @@ export default function DnaTreePage() {
           <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap", marginBottom: 16 }}>
             {([["complete", health.completeness], ["strong", health.strength]] as const).map(([label, val]) => (
               <span key={label} style={{ display: "flex", alignItems: "center", gap: 6 }} title={label === "complete" ? `${health.stagesDone}/${DNA_STAGES.length} stages · ${pct(health.contentFill)} fields filled` : `${health.errors} errors · ${health.warns} warnings`}>
-                <span style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#666" }}>{label}</span>
-                <span style={{ width: 90, height: 5, background: "#1c1c1c", borderRadius: 2, overflow: "hidden" }}>
+                <span style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: T.muted }}>{label}</span>
+                <span style={{ width: 90, height: 5, background: T.inset, borderRadius: 2, overflow: "hidden" }}>
                   <span style={{ display: "block", height: "100%", width: pct(val), background: barColor(val) }} />
                 </span>
                 <span style={{ fontSize: 10, color: barColor(val), fontVariantNumeric: "tabular-nums" }}>{pct(val)}</span>
               </span>
             ))}
-            <span style={{ fontSize: 10, color: "#555", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+            <span style={{ fontSize: 10, color: T.muted, letterSpacing: "0.06em", textTransform: "uppercase" }}>
               {health.errors}✕ · {health.warns}⚠
             </span>
           </div>
 
           {/* #4 — the lints behind the score: structural faults (misparented / orphan / duplicate) + craft warns */}
           {(health.errors + health.warns) > 0 ? (
-            <div style={{ border: "1px solid #1a1a1a", borderRadius: 6, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 3, marginBottom: 16 }}>
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: 6, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 3, marginBottom: 16, background: T.raised }}>
               {health.issues.map((i, idx) => (
                 <div key={idx} onClick={i.nodeId ? () => goToNode(i.nodeId!) : undefined}
-                  style={{ display: "flex", alignItems: "baseline", gap: 8, fontFamily: "ui-monospace, monospace", fontSize: 11, cursor: i.nodeId ? "pointer" : "default", borderRadius: 3, padding: "1px 4px", marginLeft: -4 }}
-                  onMouseEnter={i.nodeId ? (e) => { e.currentTarget.style.background = "#ffffff08"; } : undefined}
+                  style={{ display: "flex", alignItems: "baseline", gap: 8, fontFamily: MONO, fontSize: 11, cursor: i.nodeId ? "pointer" : "default", borderRadius: 3, padding: "1px 4px", marginLeft: -4 }}
+                  onMouseEnter={i.nodeId ? (e) => { e.currentTarget.style.background = T.hover; } : undefined}
                   onMouseLeave={i.nodeId ? (e) => { e.currentTarget.style.background = "transparent"; } : undefined}>
-                  <span style={{ color: i.severity === "error" ? "#f87171" : "#d0a060", flexShrink: 0 }}>{i.severity === "error" ? "✕" : "⚠"}</span>
-                  <span style={{ color: "#666", letterSpacing: "0.04em", flexShrink: 0, width: 140 }}>{i.rule}</span>
-                  <span style={{ color: "#999", flex: 1 }}>{i.message}</span>
-                  {i.nodeId && <span style={{ color: "#555", flexShrink: 0 }}>{issueTitle(i)} →</span>}
+                  <span style={{ color: i.severity === "error" ? T.bad : T.warn, flexShrink: 0 }}>{i.severity === "error" ? "✕" : "⚠"}</span>
+                  <span style={{ color: T.muted, letterSpacing: "0.04em", flexShrink: 0, width: 140 }}>{i.rule}</span>
+                  <span style={{ color: T.inkSoft, flex: 1 }}>{i.message}</span>
+                  {i.nodeId && <span style={{ color: T.muted, flexShrink: 0, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{issueTitle(i)} →</span>}
                 </div>
               ))}
             </div>
           ) : (
-            <div style={{ fontSize: 11, color: "#4ade80", fontFamily: "ui-monospace, monospace", marginBottom: 16 }}>✓ no lints — the tree is conformant</div>
+            <div style={{ fontSize: 11, color: T.good, fontFamily: MONO, marginBottom: 16 }}>✓ no lints — the tree is conformant</div>
           )}
 
           {/* pacing · promises · topography (lints hidden here — shown in the list above) */}
@@ -722,24 +728,24 @@ export default function DnaTreePage() {
       {/* Journey strip — where am I / what's left (studio's strength, brought onto the tree) */}
       {roots.length > 0 && <JourneyStrip nodes={nodes} onGoStage={goStage} />}
       {/* Legend */}
-      <div style={{ padding: "8px 16px", borderBottom: "1px solid #111", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 9, color: "#333", letterSpacing: "0.1em", textTransform: "uppercase" }}>status</span>
-        {[["accepted", "#4ade80"], ["draft", "#fbbf24"], ["empty", "#444"]].map(([s, c]) => (
+      <div style={{ padding: "8px 16px", borderBottom: `1px solid ${T.borderSoft}`, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 9.5, color: T.faint, letterSpacing: "0.1em", textTransform: "uppercase" }}>status</span>
+        {[["accepted", T.good], ["draft", T.warn], ["empty", T.empty]].map(([s, c]) => (
           <span key={s} style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: c }} />
-            <span style={{ fontSize: 9, color: "#444", letterSpacing: "0.08em", textTransform: "uppercase" }}>{s}</span>
+            <span style={{ fontSize: 9.5, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase" }}>{s}</span>
           </span>
         ))}
-        <span style={{ fontSize: 9, color: "#f59e0b", letterSpacing: "0.08em", textTransform: "uppercase" }}>amber dot = stale</span>
-        <span style={{ fontSize: 9, color: "#fbbf24", marginLeft: 8 }}>∴ therefore  ↯ but</span>
-        <span style={{ fontSize: 9, color: "#4a5a52", marginLeft: 8, letterSpacing: "0.04em" }} title="state keys, thread roles, grounds_in, polarity oscillation — the AI maintains these; you author taste (Voice & Feel)">plumbing (state · roles · grounds_in) is AI-maintained</span>
+        <span style={{ fontSize: 9.5, color: T.stale, letterSpacing: "0.08em", textTransform: "uppercase" }}>amber dot = stale</span>
+        <span style={{ fontSize: 9.5, color: T.warn, marginLeft: 8 }}>∴ therefore  ↯ but</span>
+        <span style={{ fontSize: 9.5, color: T.faint, marginLeft: 8, letterSpacing: "0.04em" }} title="state keys, thread roles, grounds_in, polarity oscillation — the AI maintains these; you author taste (Voice & Feel)">plumbing (state · roles · grounds_in) is AI-maintained</span>
         {/* #7 — context legend: what the lit hues mean + how to clear */}
         {ctxNode && (
-          <span style={{ fontSize: 9, letterSpacing: "0.06em", display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ color: "#cfcfcf" }}>▎context: {ctxNode.kind}{nodeTitle(ctxNode) ? ` ${nodeTitle(ctxNode)}` : ""}</span>
-            <span style={{ color: "#60a070" }}>green = built from</span>
-            <span style={{ color: "#6a8aff" }}>blue = draws on it</span>
-            <span onClick={() => setContextId(null)} style={{ color: "#555", cursor: "pointer", textTransform: "uppercase" }}>esc ✕</span>
+          <span style={{ fontSize: 9.5, letterSpacing: "0.06em", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: T.ink }}>▎context: {ctxNode.kind}{nodeTitle(ctxNode) ? ` ${nodeTitle(ctxNode)}` : ""}</span>
+            <span style={{ color: T.ctxA }}>green = built from</span>
+            <span style={{ color: T.ctxB }}>blue = draws on it</span>
+            <span onClick={() => setContextId(null)} style={{ color: T.muted, cursor: "pointer", textTransform: "uppercase" }}>esc ✕</span>
           </span>
         )}
       </div>

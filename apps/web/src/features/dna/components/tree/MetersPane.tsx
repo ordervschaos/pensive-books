@@ -13,12 +13,10 @@ import { buildMeterReadInput, invokeMeterRead, observedFindingsMessage, sendFind
 import { invokeShapeRead, sendShapeFindingsToEditor, shapeFindingsMessage, writeShapeFit } from "@/features/dna/lib/shapeRead";
 import { craftFindingsMessage, invokeSynopsisRead, sendCraftFindingsToEditor, writeCraft } from "@/features/dna/lib/synopsisRead";
 import { buildConfusionReadInput, confusionFindingsMessage, invokeConfusionRead, judgedSceneIds, sendConfusionFindingsToEditor, writeConfusionFlags } from "@/features/dna/lib/confusionRead";
+import { T } from "./treeChrome";
 
-// A distinct line color per meter (cycled). Kept legible on the dark canvas.
-const LINE_COLORS = ["#fbbf24", "#38bdf8", "#4ade80", "#f472b6", "#a78bfa", "#fb923c", "#2dd4bf", "#f87171"];
-
-// Severity → dot color for a lint badge.
-const LINT_COLOR: Record<string, string> = { error: "#f87171", warn: "#fbbf24" };
+// Severity → dot color for a lint badge (reads the live console tokens).
+const lintColor = (severity: string) => (severity === "error" ? T.bad : T.warn);
 
 // ── The serial graph: one normalized line per serial meter over the beat spine ──────────────────────────
 // x = beat index (the PLAN layer meterSeries walks). Each meter maps its own [min,max] → [0,1] so unlike-scaled
@@ -70,11 +68,11 @@ function SerialGraph({ nodes, meters, colorOf }: { nodes: DnaNode[]; meters: Dna
     <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: "100%", height: H, display: "block" }}>
       {/* frame baseline + midline */}
       {[0, 0.5, 1].map((g) => (
-        <line key={g} x1={PAD_X} y1={y(g)} x2={W - PAD_X} y2={y(g)} stroke="#333" strokeWidth={1} strokeDasharray={g === 0.5 ? "3 5" : undefined} vectorEffect="non-scaling-stroke" opacity={0.5} />
+        <line key={g} x1={PAD_X} y1={y(g)} x2={W - PAD_X} y2={y(g)} stroke={T.border} strokeWidth={1} strokeDasharray={g === 0.5 ? "3 5" : undefined} vectorEffect="non-scaling-stroke" opacity={0.5} />
       ))}
       {/* act dividers */}
       {bounds.map((b, i) => (
-        <line key={`b${i}`} x1={x(b - 0.5)} y1={0} x2={x(b - 0.5)} y2={H} stroke="#555" strokeWidth={1} vectorEffect="non-scaling-stroke" opacity={0.4} />
+        <line key={`b${i}`} x1={x(b - 0.5)} y1={0} x2={x(b - 0.5)} y2={H} stroke={T.empty} strokeWidth={1} vectorEffect="non-scaling-stroke" opacity={0.4} />
       ))}
       {/* per meter: PLAN (solid) + target INTENT (dashed) + OBSERVED read (dotted). null gaps split each. */}
       {meters.map((m) => {
@@ -110,23 +108,23 @@ function MeterRow({ nodes, meter, color, serial, issues }: { nodes: DnaNode[]; m
   const reads = series.filter((p) => p.value != null).length;
   const mine = issues.filter((i) => i.nodeId === meter.id);
   return (
-    <div style={{ borderBottom: "1px solid #1c1c1c", padding: "10px 0", display: "flex", flexDirection: "column", gap: 4 }}>
+    <div style={{ borderBottom: `1px solid ${T.borderSoft}`, padding: "10px 0", display: "flex", flexDirection: "column", gap: 4 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ width: 10, height: 10, borderRadius: 2, background: serial ? color : "#444", flexShrink: 0 }} />
-        <span style={{ fontWeight: 600, color: "#e5e5e5" }}>{c.name ?? meter.id}</span>
-        {c.kind && <span style={{ fontSize: 11, color: "#888", border: "1px solid #333", borderRadius: 4, padding: "0 5px" }}>{c.kind}</span>}
-        {!serial && <span style={{ fontSize: 11, color: "#666" }}>· {reads === 0 ? "no readings yet" : "1 reading (need ≥2 to plot)"}</span>}
-        {serial && <span style={{ fontSize: 11, color: "#888" }}>· last {shape.last} · range {shape.range} · {shape.oscillations} turns</span>}
+        <span style={{ width: 10, height: 10, borderRadius: 2, background: serial ? color : T.empty, flexShrink: 0 }} />
+        <span style={{ fontWeight: 600, color: T.ink }}>{c.name ?? meter.id}</span>
+        {c.kind && <span style={{ fontSize: 11, color: T.muted, border: `1px solid ${T.border}`, borderRadius: 4, padding: "0 5px" }}>{c.kind}</span>}
+        {!serial && <span style={{ fontSize: 11, color: T.muted }}>· {reads === 0 ? "no readings yet" : "1 reading (need ≥2 to plot)"}</span>}
+        {serial && <span style={{ fontSize: 11, color: T.muted }}>· last {shape.last} · range {shape.range} · {shape.oscillations} turns</span>}
       </div>
       {(c.poles?.low || c.poles?.high) && (
-        <div style={{ fontSize: 11, color: "#777", paddingLeft: 18 }}>
+        <div style={{ fontSize: 11, color: T.muted, paddingLeft: 18 }}>
           {c.scale ? `[${c.scale.min ?? "?"}…${c.scale.max ?? "?"}] ` : ""}{c.poles?.low ? `low: ${c.poles.low}` : ""}{c.poles?.low && c.poles?.high ? "  ·  " : ""}{c.poles?.high ? `high: ${c.poles.high}` : ""}
         </div>
       )}
       {mine.map((i, k) => (
-        <div key={k} style={{ fontSize: 11, color: "#aaa", paddingLeft: 18, display: "flex", gap: 6, alignItems: "baseline" }}>
-          <span style={{ color: LINT_COLOR[i.severity] ?? "#fbbf24" }}>●</span>
-          <span style={{ color: LINT_COLOR[i.severity] ?? "#fbbf24", fontWeight: 600 }}>{i.rule}</span>
+        <div key={k} style={{ fontSize: 11, color: T.inkSoft, paddingLeft: 18, display: "flex", gap: 6, alignItems: "baseline" }}>
+          <span style={{ color: lintColor(i.severity) }}>●</span>
+          <span style={{ color: lintColor(i.severity), fontWeight: 600 }}>{i.rule}</span>
           <span>{i.message}</span>
         </div>
       ))}
@@ -263,8 +261,8 @@ export function MetersPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; book
     const ns = nodes ?? [];
     const meters = ns.filter((n) => n.kind === "meter").sort((a, b) => a.position - b.position);
     const serialMeters = meters.filter((m) => isSerialMeter(ns, m.id));
-    const colorMap = new Map(serialMeters.map((m, i) => [m.id, LINE_COLORS[i % LINE_COLORS.length]]));
-    const colorOf = (id: string) => colorMap.get(id) ?? "#888";
+    const colorMap = new Map(serialMeters.map((m, i) => [m.id, T.lines[i % T.lines.length]]));
+    const colorOf = (id: string) => colorMap.get(id) ?? T.muted;
     const issues = validate(ns).filter((i) => ["flat_meter", "no_oscillation", "no_jeopardy", "target_drift", "read_gap"].includes(i.rule));
     return { meters, serialMeters, colorOf, issues };
   }, [nodes]);
@@ -308,37 +306,37 @@ export function MetersPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; book
 
   return (
     <>
-      <p style={{ fontSize: 12, color: "#777", marginTop: 0, marginBottom: 12 }}>
+      <p style={{ fontSize: 12, color: T.muted, marginTop: 0, marginBottom: 12 }}>
         The story's tracked axes (docs/novel-dna-meters.md). Serial meters — those with readings across ≥2 beats — plot below, each normalized to its own scale.
       </p>
 
       {/* THE SHAPE READ (doc_1783113903000): the paid semantic ceiling of vertical fit — do the acts deliver each
           movement the premise promised? Plan-plane only; the verdict + stale seal live on the premise node. */}
       {shape.movements.length > 0 && (
-        <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, padding: "12px 14px", marginBottom: 18, background: "#0e0e0e" }}>
+        <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px 14px", marginBottom: 18, background: T.raised }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: shape.verdict ? 10 : 0 }}>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>Shape</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Shape</span>
             <button type="button" onClick={() => void runShapeRead()} disabled={reading || !shape.readable}
-              style={{ fontSize: 12, color: "#0a0a0a", background: "#c4b5fd", border: "none", borderRadius: 6, padding: "5px 11px", fontWeight: 600, cursor: reading || !shape.readable ? "default" : "pointer", opacity: reading || !shape.readable ? 0.5 : 1 }}>
+              style={{ fontSize: 12, color: T.paper, background: T.accent, border: "none", borderRadius: 6, padding: "5px 11px", fontWeight: 600, cursor: reading || !shape.readable ? "default" : "pointer", opacity: reading || !shape.readable ? 0.5 : 1 }}>
               {reading ? "Reading…" : "Read the shape"}
             </button>
             <button type="button" onClick={() => void sendShapeToEditor()} disabled={reading || !shape.findings}
-              style={{ fontSize: 12, color: "#ddd", background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "5px 11px", cursor: reading || !shape.findings ? "default" : "pointer", opacity: reading || !shape.findings ? 0.4 : 1 }}>
+              style={{ fontSize: 12, color: T.inkSoft, background: "transparent", border: `1px solid ${T.border}`, borderRadius: 6, padding: "5px 11px", cursor: reading || !shape.findings ? "default" : "pointer", opacity: reading || !shape.findings ? 0.4 : 1 }}>
               Send shape gaps to editor →
             </button>
             {shape.verdict && !shape.fresh && (
-              <span style={{ fontSize: 11, color: "#fbbf24", border: "1px solid #3a3320", borderRadius: 5, padding: "2px 7px" }}>read is stale — plan changed since</span>
+              <span style={{ fontSize: 11, color: T.stale, border: `1px solid ${T.stale}44`, borderRadius: 5, padding: "2px 7px" }}>read is stale — plan changed since</span>
             )}
           </div>
           {shape.verdict && shape.movements.map((text, i) => {
             const row = shape.verdict!.find((v) => v.movement === i);
             const score = row ? (row.actIds.length ? row.fit : 0) : null; // empty mapping = uncarried = 0
-            const color = score == null ? "#555" : score <= 2 ? "#f87171" : score >= 4 ? "#4ade80" : "#fbbf24";
+            const color = score == null ? T.faint : score <= 2 ? T.bad : score >= 4 ? T.good : T.warn;
             return (
               <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 12, padding: "2px 0", opacity: shape.fresh ? 1 : 0.5 }}>
                 <span style={{ color, fontWeight: 700, minWidth: 26 }}>{score == null ? "—" : `${score}/5`}</span>
-                <span style={{ color: "#ccc" }}>{i + 1}. {text}</span>
-                {row?.note && <span style={{ color: "#777" }}>— {row.note}</span>}
+                <span style={{ color: T.inkSoft }}>{i + 1}. {text}</span>
+                {row?.note && <span style={{ color: T.muted }}>— {row.note}</span>}
               </div>
             );
           })}
@@ -348,28 +346,28 @@ export function MetersPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; book
       {/* THE SYNOPSIS READ (W2): the shift-left editor's read of the PLAN — fixed craft axes scored 1–5 over
           premise+pillar+acts+beats, zero prose; the verdict + stale seal live on the pillar node. */}
       {(craft.readable || craft.verdict) && (
-        <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, padding: "12px 14px", marginBottom: 18, background: "#0e0e0e" }}>
+        <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px 14px", marginBottom: 18, background: T.raised }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: craft.verdict ? 10 : 0 }}>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>Craft</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Craft</span>
             <button type="button" onClick={() => void runSynopsisRead()} disabled={reading || !craft.readable}
-              style={{ fontSize: 12, color: "#0a0a0a", background: "#c4b5fd", border: "none", borderRadius: 6, padding: "5px 11px", fontWeight: 600, cursor: reading || !craft.readable ? "default" : "pointer", opacity: reading || !craft.readable ? 0.5 : 1 }}>
+              style={{ fontSize: 12, color: T.paper, background: T.accent, border: "none", borderRadius: 6, padding: "5px 11px", fontWeight: 600, cursor: reading || !craft.readable ? "default" : "pointer", opacity: reading || !craft.readable ? 0.5 : 1 }}>
               {reading ? "Reading…" : "Editor's read (plan)"}
             </button>
             <button type="button" onClick={() => void sendCraftToEditor()} disabled={reading || !craft.findings}
-              style={{ fontSize: 12, color: "#ddd", background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "5px 11px", cursor: reading || !craft.findings ? "default" : "pointer", opacity: reading || !craft.findings ? 0.4 : 1 }}>
+              style={{ fontSize: 12, color: T.inkSoft, background: "transparent", border: `1px solid ${T.border}`, borderRadius: 6, padding: "5px 11px", cursor: reading || !craft.findings ? "default" : "pointer", opacity: reading || !craft.findings ? 0.4 : 1 }}>
               Send craft flags to editor →
             </button>
             {craft.verdict && !craft.fresh && (
-              <span style={{ fontSize: 11, color: "#fbbf24", border: "1px solid #3a3320", borderRadius: 5, padding: "2px 7px" }}>read is stale — plan changed since</span>
+              <span style={{ fontSize: 11, color: T.stale, border: `1px solid ${T.stale}44`, borderRadius: 5, padding: "2px 7px" }}>read is stale — plan changed since</span>
             )}
           </div>
           {craft.verdict?.map((row, i) => {
-            const color = row.score <= 2 ? "#f87171" : row.score >= 4 ? "#4ade80" : "#fbbf24";
+            const color = row.score <= 2 ? T.bad : row.score >= 4 ? T.good : T.warn;
             return (
               <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 12, padding: "2px 0", opacity: craft.fresh ? 1 : 0.5 }}>
                 <span style={{ color, fontWeight: 700, minWidth: 26 }}>{row.score}/5</span>
-                <span style={{ color: "#ccc" }}>{row.axis}</span>
-                {row.note && <span style={{ color: "#777" }}>— {row.note}</span>}
+                <span style={{ color: T.inkSoft }}>{row.axis}</span>
+                {row.note && <span style={{ color: T.muted }}>— {row.note}</span>}
               </div>
             );
           })}
@@ -380,22 +378,22 @@ export function MetersPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; book
           the chapter's prose — never the plan. Flags land on scenes as confusion_flags; rows are the
           reader_confusion lints the engine derives from them. */}
       {(confusion.readable || confusion.issues.length > 0) && (
-        <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, padding: "12px 14px", marginBottom: 18, background: "#0e0e0e" }}>
+        <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px 14px", marginBottom: 18, background: T.raised }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: confusion.issues.length ? 10 : 0 }}>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>Cold read</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Cold read</span>
             <button type="button" onClick={() => void runConfusionRead()} disabled={reading || !confusion.readable}
-              style={{ fontSize: 12, color: "#0a0a0a", background: "#c4b5fd", border: "none", borderRadius: 6, padding: "5px 11px", fontWeight: 600, cursor: reading || !confusion.readable ? "default" : "pointer", opacity: reading || !confusion.readable ? 0.5 : 1 }}>
+              style={{ fontSize: 12, color: T.paper, background: T.accent, border: "none", borderRadius: 6, padding: "5px 11px", fontWeight: 600, cursor: reading || !confusion.readable ? "default" : "pointer", opacity: reading || !confusion.readable ? 0.5 : 1 }}>
               {reading ? "Reading…" : "Cold read (prose)"}
             </button>
             <button type="button" onClick={() => void sendConfusionToEditor()} disabled={reading || !confusion.findings}
-              style={{ fontSize: 12, color: "#ddd", background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "5px 11px", cursor: reading || !confusion.findings ? "default" : "pointer", opacity: reading || !confusion.findings ? 0.4 : 1 }}>
+              style={{ fontSize: 12, color: T.inkSoft, background: "transparent", border: `1px solid ${T.border}`, borderRadius: 6, padding: "5px 11px", cursor: reading || !confusion.findings ? "default" : "pointer", opacity: reading || !confusion.findings ? 0.4 : 1 }}>
               Send confusion flags to editor →
             </button>
           </div>
           {confusion.issues.map((i, k) => (
             <div key={k} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 12, padding: "2px 0" }}>
-              <span style={{ color: LINT_COLOR[i.severity] ?? "#fbbf24" }}>●</span>
-              <span style={{ color: "#ccc" }}>{i.message}</span>
+              <span style={{ color: lintColor(i.severity) }}>●</span>
+              <span style={{ color: T.inkSoft }}>{i.message}</span>
             </div>
           ))}
         </div>
@@ -404,37 +402,37 @@ export function MetersPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; book
       {meters.length > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
           <button type="button" onClick={() => void runRead()} disabled={reading}
-            style={{ fontSize: 12, color: "#0a0a0a", background: "#7dd3fc", border: "none", borderRadius: 6, padding: "6px 12px", fontWeight: 600, cursor: reading ? "default" : "pointer", opacity: reading ? 0.6 : 1 }}>
+            style={{ fontSize: 12, color: T.paper, background: T.accent, border: "none", borderRadius: 6, padding: "6px 12px", fontWeight: 600, cursor: reading ? "default" : "pointer", opacity: reading ? 0.6 : 1 }}>
             {reading ? "Reading…" : "Read the emotional trace"}
           </button>
           <button type="button" onClick={() => void sendToEditor()} disabled={reading || !observedFindingsMessage(nodes)}
-            style={{ fontSize: 12, color: "#ddd", background: "transparent", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", cursor: reading || !observedFindingsMessage(nodes) ? "default" : "pointer", opacity: reading || !observedFindingsMessage(nodes) ? 0.4 : 1 }}>
+            style={{ fontSize: 12, color: T.inkSoft, background: "transparent", border: `1px solid ${T.border}`, borderRadius: 6, padding: "6px 12px", cursor: reading || !observedFindingsMessage(nodes) ? "default" : "pointer", opacity: reading || !observedFindingsMessage(nodes) ? 0.4 : 1 }}>
             Send gaps to editor →
           </button>
-          {note && <span style={{ fontSize: 12, color: note.toLowerCase().includes("fail") || note.toLowerCase().includes("couldn't") ? "#f87171" : "#888" }}>{note}</span>}
+          {note && <span style={{ fontSize: 12, color: note.toLowerCase().includes("fail") || note.toLowerCase().includes("couldn't") ? T.bad : T.muted }}>{note}</span>}
         </div>
       )}
 
       {meters.length === 0 ? (
-        <div style={{ fontSize: 13, color: "#777", border: "1px dashed #2a2a2a", borderRadius: 8, padding: 20 }}>
-          No meters yet. Add a <code style={{ color: "#fbbf24" }}>meter</code> node off the pillar (e.g. comedy, heat, a game-score), then give beats <code style={{ color: "#fbbf24" }}>readings</code> on it.
+        <div style={{ fontSize: 13, color: T.muted, border: `1px dashed ${T.border}`, borderRadius: 8, padding: 20 }}>
+          No meters yet. Add a <code style={{ color: T.warn }}>meter</code> node off the pillar (e.g. comedy, heat, a game-score), then give beats <code style={{ color: T.warn }}>readings</code> on it.
         </div>
       ) : (
         <>
           {serialMeters.length > 0 && (
-            <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, padding: "14px 12px 6px", marginBottom: 18, background: "#0e0e0e" }}>
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: "14px 12px 6px", marginBottom: 18, background: T.raised }}>
               <SerialGraph nodes={nodes} meters={serialMeters} colorOf={colorOf} />
               <div style={{ display: "flex", flexWrap: "wrap", gap: 14, padding: "8px 4px 2px" }}>
                 {serialMeters.map((m) => {
                   const c = m.content as MeterContent;
                   return (
-                    <span key={m.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#bbb" }}>
+                    <span key={m.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.inkSoft }}>
                       <span style={{ width: 14, height: 3, borderRadius: 2, background: colorOf(m.id) }} />
                       {c.name ?? m.id}
                     </span>
                   );
                 })}
-                <span style={{ fontSize: 11, color: "#777", marginLeft: "auto" }}>
+                <span style={{ fontSize: 11, color: T.muted, marginLeft: "auto" }}>
                   solid = plan{serialMeters.some((m) => (m.content as MeterContent).target?.length) ? " · dashed = target" : ""}{serialMeters.some((m) => observedSeries(nodes, m.id).some((p) => p.value != null)) ? " · dotted = read" : ""}
                 </span>
               </div>

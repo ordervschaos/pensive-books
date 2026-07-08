@@ -239,15 +239,16 @@ pre code.hljs {
 .dark .hljs-deletion { color: hsl(0 65% 65%); }
 .dark .hljs-meta { color: hsl(var(--muted-foreground)); }
 
-/* ── DNA chat rail — markdown rendering ──────────────────────────────────── */
-.dna-md { font-family: ui-serif, Georgia, serif; }
+/* ── DNA chat rail — markdown rendering. Rides the Paper-DS tokens (the studio mounts inside a
+   `theme-paper` wrapper, so the --pv-* vars resolve to the light paper palette). ────────────── */
+.dna-md { font-family: "Newsreader", "Iowan Old Style", Georgia, serif; }
 .dna-md p { margin: 0 0 0.55em; }
 .dna-md p:last-child { margin-bottom: 0; }
-.dna-md strong { color: #d8d8e8; font-weight: 600; }
-.dna-md em { font-style: italic; color: #a8a8c0; }
+.dna-md strong { color: hsl(var(--pv-text)); font-weight: 600; }
+.dna-md em { font-style: italic; color: hsl(var(--pv-text-muted)); }
 .dna-md ul, .dna-md ol { margin: 0.3em 0 0.55em 1.2em; padding: 0; display: flex; flex-direction: column; gap: 0.25em; }
 .dna-md li { margin: 0; }
-.dna-md h1, .dna-md h2, .dna-md h3 { font-family: ui-monospace, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #8a8aff; margin: 0.8em 0 0.3em; font-weight: 600; }
-.dna-md code { font-family: ui-monospace, monospace; font-size: 11px; background: #16161c; border: 1px solid #24242e; border-radius: 3px; padding: 1px 4px; color: #c8c8e0; }
-.dna-md hr { border: none; border-top: 1px solid #1e1e28; margin: 0.6em 0; }
-.dna-md blockquote { border-left: 2px solid #3a3a5a; margin: 0.4em 0; padding: 0 0 0 10px; color: #7a7a9a; font-style: italic; }
+.dna-md h1, .dna-md h2, .dna-md h3 { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: hsl(var(--pv-accent)); margin: 0.8em 0 0.3em; font-weight: 600; }
+.dna-md code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px; background: hsl(var(--pv-surface-2)); border: 1px solid hsl(var(--pv-border-soft)); border-radius: 3px; padding: 1px 4px; color: hsl(var(--pv-text)); }
+.dna-md hr { border: none; border-top: 1px solid hsl(var(--pv-border-soft)); margin: 0.6em 0; }
+.dna-md blockquote { border-left: 2px solid hsl(var(--pv-border)); margin: 0.4em 0; padding: 0 0 0 10px; color: hsl(var(--pv-text-muted)); font-style: italic; }

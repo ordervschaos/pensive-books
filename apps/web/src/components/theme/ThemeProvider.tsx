@@ -3,10 +3,10 @@
 
 import { createContext, useContext, useEffect, useState } from "react"
 
-type ThemeName = "paper" | "coffee" | "pumpkin"
+type ThemeName = "paper" | "coffee" | "pumpkin" | "terminal"
 type ThemeMode = "light" | "dark"
 
-const VALID_THEME_NAMES: ReadonlyArray<ThemeName> = ["paper", "coffee", "pumpkin"]
+const VALID_THEME_NAMES: ReadonlyArray<ThemeName> = ["paper", "coffee", "pumpkin", "terminal"]
 
 function normalizeThemeName(value: string | null | undefined): ThemeName | null {
   if (!value) return null
@@ -119,7 +119,7 @@ export function ThemeProvider({
     const root = window.document.documentElement
 
     // Remove all theme classes (legacy theme-default / theme-mujiyish included for stale DOM during HMR)
-    root.classList.remove("light", "dark", "theme-default", "theme-paper", "theme-coffee", "theme-mujiyish", "theme-pumpkin")
+    root.classList.remove("light", "dark", "theme-default", "theme-paper", "theme-coffee", "theme-mujiyish", "theme-pumpkin", "theme-terminal")
 
     root.classList.add(`theme-${themeName}`)
 

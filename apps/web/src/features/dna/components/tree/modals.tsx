@@ -6,6 +6,7 @@ import { deleteNode, saveNode } from "@/features/dna/lib/bookNodes";
 import { byId, scenesInOrder, type DnaNode, type NodeContent, type SceneContent } from "@/features/dna/lib/novelDna";
 import { diffAgainstVersion, listVersions, loadVersion, restoreVersion, snapshotTree, type TreeDiff, type TreeVersion } from "@/features/dna/lib/treeVersions";
 import { nodeTitle } from "./nodeDisplay";
+import { MONO, SERIF, T } from "./treeChrome";
 
 // ── Discard story modal ───────────────────────────────────────────────────────
 type DiscardLevel = "prose" | "scenes" | "beats" | "story";
@@ -18,7 +19,7 @@ const DISCARD_OPTIONS: { level: DiscardLevel; label: string; detail: string }[] 
 export function DiscardStoryModal({ nodes, onClose }: { nodes: DnaNode[]; onClose: () => void }) {
   const [level, setLevel] = useState<DiscardLevel>("prose");
   const [busy, setBusy] = useState(false);
-  const mono = "ui-monospace, monospace";
+  const mono = MONO;
 
   const acts = nodes.filter((n) => n.kind === "act");
   const beats     = nodes.filter((n) => n.kind === "beat");
@@ -66,41 +67,41 @@ export function DiscardStoryModal({ nodes, onClose }: { nodes: DnaNode[]; onClos
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ position: "absolute", inset: 0, background: "#000000aa" }} />
-      <div style={{ position: "relative", background: "#0e0e12", border: "1px solid #2a2a38", borderRadius: 8, padding: "22px 24px", width: 420, display: "flex", flexDirection: "column", gap: 16 }}>
-        <div style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "#c06060" }}>discard story content</div>
+      <div style={{ position: "absolute", inset: 0, background: "rgba(31,29,24,0.35)" }} />
+      <div style={{ position: "relative", background: T.raised, border: `1px solid ${T.border}`, borderRadius: 10, padding: "22px 24px", width: 420, display: "flex", flexDirection: "column", gap: 16, boxShadow: T.shadow }}>
+        <div style={{ fontFamily: mono, fontSize: 10.5, letterSpacing: "0.2em", textTransform: "uppercase", color: T.bad }}>discard story content</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {DISCARD_OPTIONS.map((o) => (
-            <label key={o.level} style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", padding: "8px 10px", borderRadius: 5, background: level === o.level ? "#1e1e2a" : "transparent", border: `1px solid ${level === o.level ? "#3a3a5a" : "transparent"}` }}>
+            <label key={o.level} style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", padding: "8px 10px", borderRadius: 5, background: level === o.level ? T.surface : "transparent", border: `1px solid ${level === o.level ? T.border : "transparent"}` }}>
               <input type="radio" name="discard-level" value={o.level} checked={level === o.level} onChange={() => setLevel(o.level)}
-                style={{ marginTop: 2, accentColor: "#c06060", flexShrink: 0 }} />
+                style={{ marginTop: 2, accentColor: T.bad, flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
-                  <div style={{ fontFamily: mono, fontSize: 11, color: "#cfcfcf", letterSpacing: "0.04em" }}>{o.label}</div>
+                  <div style={{ fontFamily: mono, fontSize: 11.5, color: T.ink, letterSpacing: "0.04em" }}>{o.label}</div>
                   {o.level === "prose" && level === "prose" && proseScenes.length > 0 && (
                     <span onClick={(e) => { e.preventDefault(); toggleAll(); }}
-                      style={{ fontFamily: mono, fontSize: 9, color: "#6a8aa0", cursor: "pointer", letterSpacing: "0.04em" }}>
+                      style={{ fontFamily: mono, fontSize: 9.5, color: T.accent, cursor: "pointer", letterSpacing: "0.04em" }}>
                       {allPicked ? "select none" : "select all"}
                     </span>
                   )}
                 </div>
-                <div style={{ fontFamily: mono, fontSize: 10, color: "#555", marginTop: 2 }}>{o.detail}</div>
-                {level === o.level && <div style={{ fontFamily: mono, fontSize: 9, color: "#7a3030", marginTop: 4, letterSpacing: "0.04em" }}>{counts[o.level]}</div>}
+                <div style={{ fontFamily: mono, fontSize: 10, color: T.muted, marginTop: 2 }}>{o.detail}</div>
+                {level === o.level && <div style={{ fontFamily: mono, fontSize: 9.5, color: T.bad, marginTop: 4, letterSpacing: "0.04em" }}>{counts[o.level]}</div>}
                 {o.level === "prose" && level === "prose" && (
                   proseScenes.length === 0
-                    ? <div style={{ fontFamily: mono, fontSize: 10, color: "#555", marginTop: 6 }}>no scenes have prose yet</div>
-                    : <div style={{ marginTop: 6, maxHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 1, borderTop: "1px solid #22222e", paddingTop: 6 }}>
+                    ? <div style={{ fontFamily: mono, fontSize: 10, color: T.muted, marginTop: 6 }}>no scenes have prose yet</div>
+                    : <div style={{ marginTop: 6, maxHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 1, borderTop: `1px solid ${T.borderSoft}`, paddingTop: 6 }}>
                         {proseScenes.map((s, i) => {
                           const sel = picked.has(s.id);
                           const words = (s.content as SceneContent).prose?.words ?? 0;
                           return (
                             <label key={s.id} onClick={(e) => { e.preventDefault(); e.stopPropagation(); togglePick(s.id); }}
-                              style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 4px", borderRadius: 3, cursor: "pointer", background: sel ? "#1a1414" : "transparent" }}>
-                              <input type="checkbox" checked={sel} readOnly style={{ accentColor: "#c06060", flexShrink: 0, pointerEvents: "none" }} />
-                              <span style={{ fontFamily: mono, fontSize: 10, color: sel ? "#cf999c" : "#666", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 4px", borderRadius: 3, cursor: "pointer", background: sel ? `${T.bad}0d` : "transparent" }}>
+                              <input type="checkbox" checked={sel} readOnly style={{ accentColor: T.bad, flexShrink: 0, pointerEvents: "none" }} />
+                              <span style={{ fontFamily: mono, fontSize: 10, color: sel ? T.remove : T.muted, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                 {i + 1}. {nodeTitle(s) || "untitled scene"}
                               </span>
-                              <span style={{ fontFamily: mono, fontSize: 9, color: "#555", flexShrink: 0 }}>{words}w</span>
+                              <span style={{ fontFamily: mono, fontSize: 9.5, color: T.faint, flexShrink: 0 }}>{words}w</span>
                             </label>
                           );
                         })}
@@ -111,11 +112,11 @@ export function DiscardStoryModal({ nodes, onClose }: { nodes: DnaNode[]; onClos
           ))}
         </div>
         <div style={{ display: "flex", gap: 16, justifyContent: "flex-end", paddingTop: 4 }}>
-          <button onClick={onClose} disabled={busy} style={{ background: "none", border: "none", fontFamily: mono, fontSize: 11, color: "#555", cursor: "pointer", letterSpacing: "0.08em" }}>cancel</button>
+          <button onClick={onClose} disabled={busy} style={{ background: "none", border: "none", fontFamily: mono, fontSize: 11, color: T.muted, cursor: "pointer", letterSpacing: "0.08em" }}>cancel</button>
           {(() => {
             const disabled = busy || (level === "prose" && picked.size === 0);
             return (
-              <button onClick={() => void run()} disabled={disabled} style={{ background: "#3a1515", border: "1px solid #7a3030", borderRadius: 4, fontFamily: mono, fontSize: 11, color: disabled ? "#7a3030" : "#e07070", cursor: disabled ? "default" : "pointer", padding: "4px 14px", letterSpacing: "0.08em", opacity: disabled && !busy ? 0.5 : 1 }}>
+              <button onClick={() => void run()} disabled={disabled} style={{ background: `${T.bad}0d`, border: `1px solid ${T.bad}66`, borderRadius: 4, fontFamily: mono, fontSize: 11, color: disabled ? `${T.bad}88` : T.bad, cursor: disabled ? "default" : "pointer", padding: "4px 14px", letterSpacing: "0.08em", opacity: disabled && !busy ? 0.5 : 1 }}>
                 {busy ? "discarding…" : "discard"}
               </button>
             );
@@ -134,7 +135,7 @@ export function DiscardStoryModal({ nodes, onClose }: { nodes: DnaNode[]; onClos
 export function ProseReaderModal({ sceneId, nodes, onClose, onAttachNode }: {
   sceneId: string; nodes: DnaNode[]; onClose: () => void; onAttachNode: (id: string) => void;
 }) {
-  const mono = "ui-monospace, monospace";
+  const mono = MONO;
   const [currentId, setCurrentId] = useState(sceneId);
   const written = scenesInOrder(nodes).filter((s) => (s.content as SceneContent).prose?.text?.trim());
   const idx = written.findIndex((s) => s.id === currentId);
@@ -149,13 +150,13 @@ export function ProseReaderModal({ sceneId, nodes, onClose, onAttachNode }: {
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="flex max-h-[85vh] w-[min(720px,92vw)] max-w-[720px] flex-col gap-0 overflow-hidden border-[#2a2a38] bg-[#0e0e12] p-0 text-[#8a9ab0] sm:rounded-lg">
+      <DialogContent className="flex max-h-[85vh] w-[min(720px,92vw)] max-w-[720px] flex-col gap-0 overflow-hidden p-0 sm:rounded-lg" style={{ background: T.raised, borderColor: T.border, color: T.muted }}>
         {/* Header */}
-        <div style={{ minWidth: 0, padding: "16px 40px 16px 28px", borderBottom: "1px solid #1c1c26", flexShrink: 0 }}>
-          <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "#5a6a80" }}>
+        <div style={{ minWidth: 0, padding: "16px 40px 16px 28px", borderBottom: `1px solid ${T.borderSoft}`, flexShrink: 0 }}>
+          <div style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: T.muted }}>
             prose reader{idx >= 0 ? ` · ${idx + 1} / ${written.length}` : ""}
           </div>
-          <DialogTitle className="truncate font-normal tracking-normal" style={{ fontFamily: mono, fontSize: 13, color: "#cfcfcf", marginTop: 3 }}>
+          <DialogTitle className="truncate font-normal tracking-normal" style={{ fontFamily: SERIF, fontSize: 16, color: T.ink, marginTop: 3 }}>
             {scene ? (nodeTitle(scene) || "untitled scene") : "scene not found"}
           </DialogTitle>
         </div>
@@ -164,28 +165,28 @@ export function ProseReaderModal({ sceneId, nodes, onClose, onAttachNode }: {
           {paragraphs.length > 0 ? (
             <div style={{ maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: "1.1em" }}>
               {paragraphs.map((p, i) => (
-                <p key={i} style={{ margin: 0, fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 17, lineHeight: 1.7, color: "#d8d8dc" }}>{p}</p>
+                <p key={i} style={{ margin: 0, fontFamily: SERIF, fontSize: 17, lineHeight: 1.7, color: T.ink }}>{p}</p>
               ))}
             </div>
           ) : (
-            <div style={{ fontFamily: mono, fontSize: 12, color: "#666", textAlign: "center", marginTop: 40 }}>no prose written for this scene yet</div>
+            <div style={{ fontFamily: mono, fontSize: 12, color: T.muted, textAlign: "center", marginTop: 40 }}>no prose written for this scene yet</div>
           )}
         </div>
         {/* Footer nav */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 28px", borderTop: "1px solid #1c1c26", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 28px", borderTop: `1px solid ${T.borderSoft}`, flexShrink: 0 }}>
           <button onClick={() => prev && setCurrentId(prev.id)} disabled={!prev}
-            style={{ background: "none", border: "none", fontFamily: mono, fontSize: 11, color: prev ? "#8a9ab0" : "#333", cursor: prev ? "pointer" : "default", letterSpacing: "0.06em" }}>← prev</button>
+            style={{ background: "none", border: "none", fontFamily: mono, fontSize: 11, color: prev ? T.accent : T.faint, cursor: prev ? "pointer" : "default", letterSpacing: "0.06em" }}>← prev</button>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             {scene && (
               <button onClick={() => onAttachNode(scene.id)}
-                style={{ background: "none", border: "none", fontFamily: mono, fontSize: 10, color: "#a8a8ff", cursor: "pointer", letterSpacing: "0.04em" }}>
+                style={{ background: "none", border: "none", fontFamily: mono, fontSize: 10, color: T.accent, cursor: "pointer", letterSpacing: "0.04em" }}>
                 ＋ add to agent context
               </button>
             )}
-            <span style={{ fontFamily: mono, fontSize: 10, color: "#555" }}>{prose?.words ? `${prose.words}w` : ""}</span>
+            <span style={{ fontFamily: mono, fontSize: 10, color: T.faint }}>{prose?.words ? `${prose.words}w` : ""}</span>
           </div>
           <button onClick={() => next && setCurrentId(next.id)} disabled={!next}
-            style={{ background: "none", border: "none", fontFamily: mono, fontSize: 11, color: next ? "#8a9ab0" : "#333", cursor: next ? "pointer" : "default", letterSpacing: "0.06em" }}>next →</button>
+            style={{ background: "none", border: "none", fontFamily: mono, fontSize: 11, color: next ? T.accent : T.faint, cursor: next ? "pointer" : "default", letterSpacing: "0.06em" }}>next →</button>
         </div>
       </DialogContent>
     </Dialog>
@@ -200,7 +201,7 @@ export function ProseReaderModal({ sceneId, nodes, onClose, onAttachNode }: {
 // (AgentRail.toggleAuto), and this modal shows what's changed since the last checkpoint and can restore
 // an old one. Restore is forward-moving — it appends a new version, never rewrites history.
 export function HistoryModal({ bookId, nodes, onClose }: { bookId: number; nodes: DnaNode[]; onClose: () => void }) {
-  const mono = "ui-monospace, monospace";
+  const mono = MONO;
   const { toast } = useToast();
   const [versions, setVersions] = useState<Omit<TreeVersion, "nodes">[]>([]);
   const [loading, setLoading] = useState(true);
@@ -267,50 +268,50 @@ export function HistoryModal({ bookId, nodes, onClose }: { bookId: number; nodes
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="flex max-h-[85vh] w-[min(560px,92vw)] max-w-[560px] flex-col gap-0 overflow-hidden border-[#2a2a38] bg-[#0e0e12] p-0 text-[#8a9ab0] sm:rounded-lg">
-        <div style={{ padding: "16px 24px 14px", borderBottom: "1px solid #1c1c26", flexShrink: 0 }}>
-          <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "#5a6a80" }}>history</div>
-          <DialogTitle className="font-normal tracking-normal" style={{ fontFamily: mono, fontSize: 13, color: "#cfcfcf", marginTop: 3 }}>
+      <DialogContent className="flex max-h-[85vh] w-[min(560px,92vw)] max-w-[560px] flex-col gap-0 overflow-hidden p-0 sm:rounded-lg" style={{ background: T.raised, borderColor: T.border, color: T.muted }}>
+        <div style={{ padding: "16px 24px 14px", borderBottom: `1px solid ${T.borderSoft}`, flexShrink: 0 }}>
+          <div style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: T.muted }}>history</div>
+          <DialogTitle className="font-normal tracking-normal" style={{ fontFamily: SERIF, fontSize: 16, color: T.ink, marginTop: 3 }}>
             Tree versions
           </DialogTitle>
           {sinceLastDiff && (
-            <div style={{ marginTop: 8, fontFamily: mono, fontSize: 11, color: sinceLastDiff.added + sinceLastDiff.removed + sinceLastDiff.changed > 0 ? "#d0a060" : "#555" }}>
+            <div style={{ marginTop: 8, fontFamily: mono, fontSize: 11, color: sinceLastDiff.added + sinceLastDiff.removed + sinceLastDiff.changed > 0 ? T.warn : T.muted }}>
               since last version: {diffLabel(sinceLastDiff)}
             </div>
           )}
           <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
             <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="name this version (optional)…"
               onKeyDown={(e) => { if (e.key === "Enter") void save(); }}
-              style={{ flex: 1, minWidth: 0, background: "#16161c", border: "1px solid #2a2a3a", borderRadius: 4, color: "#e6e6e6", fontSize: 12, padding: "6px 8px", outline: "none", fontFamily: "inherit" }} />
+              style={{ flex: 1, minWidth: 0, background: T.inputBg, border: `1px solid ${T.border}`, borderRadius: 6, color: T.ink, fontSize: 12, padding: "6px 8px", outline: "none", fontFamily: "inherit" }} />
             <button onClick={() => void save()} disabled={saving}
-              style={{ fontFamily: mono, fontSize: 11, letterSpacing: "0.04em", color: "#a8a8ff", background: "#8a8aff14", border: "1px solid #8a8aff44", borderRadius: 4, padding: "0 12px", cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}>
+              style={{ fontFamily: mono, fontSize: 11, letterSpacing: "0.04em", color: T.accent, background: `${T.accent}0d`, border: `1px solid ${T.accent}44`, borderRadius: 4, padding: "0 12px", cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}>
               {saving ? "saving…" : "save version"}
             </button>
           </div>
         </div>
         <div style={{ overflowY: "auto", padding: "6px 0 14px", flex: 1 }}>
-          {loading && <div style={{ padding: "16px 24px", fontFamily: mono, fontSize: 11, color: "#555" }}>loading…</div>}
+          {loading && <div style={{ padding: "16px 24px", fontFamily: mono, fontSize: 11, color: T.muted }}>loading…</div>}
           {!loading && versions.length === 0 && (
-            <div style={{ padding: "16px 24px", fontFamily: mono, fontSize: 11, color: "#555" }}>
+            <div style={{ padding: "16px 24px", fontFamily: mono, fontSize: 11, color: T.muted }}>
               No saved versions yet. Versions checkpoint automatically when auto-accept arms, or save one above.
             </div>
           )}
           {versions.map((v) => {
             const d = openDiffs[v.id];
             return (
-              <div key={v.id} style={{ padding: "8px 24px", borderBottom: "1px solid #1a1a22" }}>
+              <div key={v.id} style={{ padding: "8px 24px", borderBottom: `1px solid ${T.borderSoft}` }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontFamily: mono, fontSize: 12, color: v.label ? "#cfcfcf" : "#8a8a8a", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <span style={{ fontFamily: mono, fontSize: 12, color: v.label ? T.ink : T.muted, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {v.label ?? "auto checkpoint"}
                   </span>
-                  <span style={{ fontFamily: mono, fontSize: 10, color: "#555" }}>{when(v.created_at)}</span>
+                  <span style={{ fontFamily: mono, fontSize: 10, color: T.faint }}>{when(v.created_at)}</span>
                 </div>
                 <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 12 }}>
-                  <button onClick={() => void toggleDiff(v.id)} style={{ background: "none", border: "none", fontFamily: mono, fontSize: 10, color: "#666", cursor: "pointer", padding: 0 }}>
+                  <button onClick={() => void toggleDiff(v.id)} style={{ background: "none", border: "none", fontFamily: mono, fontSize: 10, color: T.muted, cursor: "pointer", padding: 0 }}>
                     {d ? (d === "loading" ? "loading…" : diffLabel(d)) : "diff vs. live"}
                   </button>
                   <button onClick={() => void restore(v.id)} disabled={restoringId === v.id}
-                    style={{ background: "none", border: "none", fontFamily: mono, fontSize: 10, color: confirmRestoreId === v.id ? "#f87171" : "#8a9ab0", cursor: "pointer", padding: 0 }}>
+                    style={{ background: "none", border: "none", fontFamily: mono, fontSize: 10, color: confirmRestoreId === v.id ? T.bad : T.accent, cursor: "pointer", padding: 0 }}>
                     {restoringId === v.id ? "restoring…" : confirmRestoreId === v.id ? "confirm restore?" : "restore"}
                   </button>
                 </div>
@@ -353,21 +354,21 @@ function flattenInput(input: unknown): string {
 function CopyBlock({ label, text }: { label: string; text: string }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const mono = "ui-monospace, monospace";
+  const mono = MONO;
   if (!text.trim()) return null;
   return (
-    <div style={{ borderTop: "1px solid #1c1c26", paddingTop: 10, marginTop: 10 }}>
+    <div style={{ borderTop: `1px solid ${T.borderSoft}`, paddingTop: 10, marginTop: 10 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span onClick={() => setOpen((v) => !v)} style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.16em", textTransform: "uppercase", color: "#5a6a80", cursor: "pointer", userSelect: "none" }}>
+        <span onClick={() => setOpen((v) => !v)} style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: T.muted, cursor: "pointer", userSelect: "none" }}>
           {open ? "▾" : "▸"} {label} ({text.length.toLocaleString()} chars)
         </span>
         <span onClick={() => { void navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1200); }}
-          style={{ fontFamily: mono, fontSize: 9, color: copied ? "#7ac07a" : "#666", cursor: "pointer", letterSpacing: "0.04em" }}>
+          style={{ fontFamily: mono, fontSize: 9.5, color: copied ? T.good : T.muted, cursor: "pointer", letterSpacing: "0.04em" }}>
           {copied ? "copied" : "copy"}
         </span>
       </div>
       {open && (
-        <pre style={{ marginTop: 8, maxHeight: 260, overflow: "auto", fontFamily: mono, fontSize: 11, lineHeight: 1.5, color: "#b8b8c0", whiteSpace: "pre-wrap", wordBreak: "break-word", background: "#0a0a0e", border: "1px solid #1c1c26", borderRadius: 4, padding: 10 }}>
+        <pre style={{ marginTop: 8, maxHeight: 260, overflow: "auto", fontFamily: mono, fontSize: 11, lineHeight: 1.5, color: T.inkSoft, whiteSpace: "pre-wrap", wordBreak: "break-word", background: T.surface, border: `1px solid ${T.borderSoft}`, borderRadius: 4, padding: 10 }}>
           {text}
         </pre>
       )}
@@ -376,7 +377,7 @@ function CopyBlock({ label, text }: { label: string; text: string }) {
 }
 
 export function NodeDetailsModal({ node, onClose }: { node: DnaNode; onClose: () => void }) {
-  const mono = "ui-monospace, monospace";
+  const mono = MONO;
   const [call, setCall] = useState<AiCallDetail | null | "loading" | "error">(node.last_ai_call_id ? "loading" : null);
 
   useEffect(() => {
@@ -395,36 +396,36 @@ export function NodeDetailsModal({ node, onClose }: { node: DnaNode; onClose: ()
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="flex max-h-[85vh] w-[min(640px,92vw)] max-w-[640px] flex-col gap-0 overflow-hidden border-[#2a2a38] bg-[#0e0e12] p-0 text-[#8a9ab0] sm:rounded-lg">
-        <div style={{ padding: "16px 24px 14px", borderBottom: "1px solid #1c1c26", flexShrink: 0 }}>
-          <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "#5a6a80" }}>view details · {node.kind}</div>
-          <DialogTitle className="truncate font-normal tracking-normal" style={{ fontFamily: mono, fontSize: 13, color: "#cfcfcf", marginTop: 3 }}>
+      <DialogContent className="flex max-h-[85vh] w-[min(640px,92vw)] max-w-[640px] flex-col gap-0 overflow-hidden p-0 sm:rounded-lg" style={{ background: T.raised, borderColor: T.border, color: T.muted }}>
+        <div style={{ padding: "16px 24px 14px", borderBottom: `1px solid ${T.borderSoft}`, flexShrink: 0 }}>
+          <div style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: T.muted }}>view details · {node.kind}</div>
+          <DialogTitle className="truncate font-normal tracking-normal" style={{ fontFamily: SERIF, fontSize: 16, color: T.ink, marginTop: 3 }}>
             {nodeTitle(node) || "untitled"}
           </DialogTitle>
         </div>
         <div style={{ overflowY: "auto", padding: "16px 24px 22px", flex: 1 }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 18px", fontFamily: mono, fontSize: 11 }}>
-            <span style={{ color: "#555" }}>source: <span style={{ color: "#9a9aaa" }}>{a.source}</span></span>
-            <span style={{ color: "#555" }}>status: <span style={{ color: "#9a9aaa" }}>{a.status}</span></span>
-            {a.locked && <span style={{ color: "#c0a060" }}>🔒 locked</span>}
+            <span style={{ color: T.muted }}>source: <span style={{ color: T.inkSoft }}>{a.source}</span></span>
+            <span style={{ color: T.muted }}>status: <span style={{ color: T.inkSoft }}>{a.status}</span></span>
+            {a.locked && <span style={{ color: T.warn }}>🔒 locked</span>}
           </div>
 
           {call === null && (
-            <div style={{ marginTop: 14, fontFamily: mono, fontSize: 11, color: "#666" }}>
+            <div style={{ marginTop: 14, fontFamily: mono, fontSize: 11, color: T.muted }}>
               {a.source === "user" ? "Written by hand — no AI call." : "No AI call linked — either hand-edited, or authored directly by the agent chat (not yet wired to this panel)."}
             </div>
           )}
-          {call === "loading" && <div style={{ marginTop: 14, fontFamily: mono, fontSize: 11, color: "#666" }}>loading the generating call…</div>}
-          {call === "error" && <div style={{ marginTop: 14, fontFamily: mono, fontSize: 11, color: "#c07070" }}>couldn't load ai_calls #{node.last_ai_call_id} (deleted, or you lack access).</div>}
+          {call === "loading" && <div style={{ marginTop: 14, fontFamily: mono, fontSize: 11, color: T.muted }}>loading the generating call…</div>}
+          {call === "error" && <div style={{ marginTop: 14, fontFamily: mono, fontSize: 11, color: T.bad }}>couldn't load ai_calls #{node.last_ai_call_id} (deleted, or you lack access).</div>}
           {call && typeof call === "object" && (
             <>
               <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", gap: "6px 18px", fontFamily: mono, fontSize: 11 }}>
-                <span style={{ color: "#555" }}>model: <span style={{ color: "#a8a8ff" }}>{call.model ?? "?"}</span></span>
-                <span style={{ color: "#555" }}>pass: <span style={{ color: "#9a9aaa" }}>{call.fn}</span></span>
-                <span style={{ color: "#555" }}>when: <span style={{ color: "#9a9aaa" }}>{when(call.created_at)}</span></span>
-                {call.latency_ms != null && <span style={{ color: "#555" }}>latency: <span style={{ color: "#9a9aaa" }}>{(call.latency_ms / 1000).toFixed(1)}s</span></span>}
+                <span style={{ color: T.muted }}>model: <span style={{ color: T.accent }}>{call.model ?? "?"}</span></span>
+                <span style={{ color: T.muted }}>pass: <span style={{ color: T.inkSoft }}>{call.fn}</span></span>
+                <span style={{ color: T.muted }}>when: <span style={{ color: T.inkSoft }}>{when(call.created_at)}</span></span>
+                {call.latency_ms != null && <span style={{ color: T.muted }}>latency: <span style={{ color: T.inkSoft }}>{(call.latency_ms / 1000).toFixed(1)}s</span></span>}
                 {(call.input_tokens != null || call.output_tokens != null) && (
-                  <span style={{ color: "#555" }}>tokens: <span style={{ color: "#9a9aaa" }}>{call.input_tokens ?? "?"} in / {call.output_tokens ?? "?"} out</span></span>
+                  <span style={{ color: T.muted }}>tokens: <span style={{ color: T.inkSoft }}>{call.input_tokens ?? "?"} in / {call.output_tokens ?? "?"} out</span></span>
                 )}
               </div>
               <CopyBlock label="prompt" text={[call.system, flattenInput(call.input)].filter(Boolean).join("\n\n---\n\n")} />

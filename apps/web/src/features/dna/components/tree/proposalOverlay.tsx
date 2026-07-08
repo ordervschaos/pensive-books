@@ -2,7 +2,7 @@ import { useState } from "react";
 import { isEntityKind, pillarOf, type DnaNode, type NodeContent, type NodeKind } from "@/features/dna/lib/novelDna";
 import { describeOps, renderValue, type NodeOp } from "@/features/dna/lib/dnaChat";
 import { chooseNodeProposal, discardNodeProposals } from "@/features/dna/lib/dnaProposals";
-import { ConnectorTick, detailRowStyle } from "./treeChrome";
+import { ConnectorTick, detailRowStyle, MONO, SERIF, T } from "./treeChrome";
 
 // ── Proposal overlay (#1) ─────────────────────────────────────────────────────
 // Resolve a pending proposal's ops into a per-node view the tree can render in place: which nodes are
@@ -43,9 +43,9 @@ export function OpDiffBlock({ node, content, nodes, depth }: { node: DnaNode; co
       <ConnectorTick depth={depth} />
       {row.fields.map((f) => (
         <div key={f.key} style={{ paddingLeft: 20 }}>
-          <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase", color: "#555" }}>{f.key}</span>
-          {f.old !== undefined && f.old !== f.next && <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#6a5050", textDecoration: "line-through", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{f.old}</div>}
-          <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#7fae8f", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{f.next}</div>
+          <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.06em", textTransform: "uppercase", color: T.muted }}>{f.key}</span>
+          {f.old !== undefined && f.old !== f.next && <div style={{ fontFamily: SERIF, fontSize: 13.5, color: T.remove, textDecoration: "line-through", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{f.old}</div>}
+          <div style={{ fontFamily: SERIF, fontSize: 13.5, color: T.add, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{f.next}</div>
         </div>
       ))}
     </div>
@@ -60,19 +60,19 @@ export function PhantomRow({ add, depth }: { add: PhantomAdd; depth: number }) {
   const fields = Object.entries(add.content).filter(([, val]) => val != null && val !== "");
   const title = String((add.content as Record<string, unknown>).name ?? (add.content as Record<string, unknown>).title ?? (add.content as Record<string, unknown>).summary ?? (add.content as Record<string, unknown>).goal ?? "");
   return (
-    <div style={{ position: "relative", paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 4, paddingBottom: 6, boxShadow: "inset 3px 0 0 #60a070", background: "#60a07012" }}>
+    <div style={{ position: "relative", paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 4, paddingBottom: 6, boxShadow: `inset 3px 0 0 ${T.add}`, background: `${T.add}0d` }}>
       <ConnectorTick depth={depth} />
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <span style={{ width: 12, flexShrink: 0 }} />
-        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#60a070", border: "1px solid #60a07040", borderRadius: 3, padding: "1px 5px", flexShrink: 0 }}>＋ {add.kind}</span>
-        {title && <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#a8c8b0", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>}
+        <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: T.add, border: `1px solid ${T.add}40`, borderRadius: 3, padding: "1px 5px", flexShrink: 0 }}>＋ {add.kind}</span>
+        {title && <span style={{ fontFamily: SERIF, fontSize: 14, color: T.ink, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>}
       </div>
       <div style={{ paddingLeft: 20, paddingTop: 3, display: "flex", flexDirection: "column", gap: 4 }}>
-        {fields.length === 0 && <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "#4a5a4e", fontStyle: "italic" }}>(no content yet)</div>}
+        {fields.length === 0 && <div style={{ fontFamily: MONO, fontSize: 11, color: T.faint, fontStyle: "italic" }}>(no content yet)</div>}
         {fields.map(([key, val]) => (
           <div key={key}>
-            <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5c8a6a" }}>{key}</span>
-            <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: "#c8ddce", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{renderValue(val)}</div>
+            <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.08em", textTransform: "uppercase", color: T.addSoft }}>{key}</span>
+            <div style={{ fontFamily: SERIF, fontSize: 13.5, color: T.inkSoft, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{renderValue(val)}</div>
           </div>
         ))}
       </div>
@@ -91,7 +91,7 @@ export function PhantomRow({ add, depth }: { add: PhantomAdd; depth: number }) {
 export function ProposalPicker({ node, nodes, depth }: { node: DnaNode; nodes: DnaNode[]; depth: number }) {
   const [busy, setBusy] = useState<string | null>(null);
   const props = node.proposals ?? [];
-  const mono = "ui-monospace, monospace";
+  const mono = MONO;
   if (!props.length) return null;
   const choose = async (id: string) => {
     setBusy(id);
@@ -108,32 +108,32 @@ export function ProposalPicker({ node, nodes, depth }: { node: DnaNode; nodes: D
       <ConnectorTick depth={depth} />
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, paddingBottom: 4 }}>
         <span style={{ width: 12, flexShrink: 0 }} />
-        <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.16em", textTransform: "uppercase", color: "#60a070" }}>✦ {props.length} option{props.length === 1 ? "" : "s"} — pick one</span>
-        <span onClick={() => !busy && void discard()} style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: busy ? "#444" : "#7a3030", cursor: busy ? "default" : "pointer", marginLeft: "auto" }}>discard all ✕</span>
+        <span style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: T.add }}>✦ {props.length} option{props.length === 1 ? "" : "s"} — pick one</span>
+        <span onClick={() => !busy && void discard()} style={{ fontFamily: mono, fontSize: 9.5, letterSpacing: "0.08em", textTransform: "uppercase", color: busy ? T.faint : T.bad, cursor: busy ? "default" : "pointer", marginLeft: "auto" }}>discard all ✕</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingLeft: 20 }}>
         {props.map((p, i) => {
           const fields = describeOps([{ op: "edit", id: node.id, content: p.content }], nodes)[0]?.fields ?? [];
           return (
-            <div key={p.id} style={{ border: "1px solid #2a3a2e", borderRadius: 5, background: "#0e140f", padding: "7px 10px" }}>
+            <div key={p.id} style={{ border: `1px solid ${T.add}33`, borderRadius: 7, background: `${T.add}08`, padding: "7px 10px" }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#7fae8f" }}>
+                <span style={{ fontFamily: mono, fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: T.add }}>
                   option {i + 1}
                 </span>
                 <span onClick={() => !busy && void choose(p.id)} style={{
                   fontFamily: mono, fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", marginLeft: "auto",
-                  color: busy === p.id ? "#555" : "#9fe0b0", cursor: busy ? "default" : "pointer",
-                  border: "1px solid #4a7a5a", borderRadius: 4, padding: "2px 9px", background: "#1a2a1e",
+                  color: busy === p.id ? T.faint : T.add, cursor: busy ? "default" : "pointer",
+                  border: `1px solid ${T.add}66`, borderRadius: 4, padding: "2px 9px", background: `${T.add}0f`,
                 }}>{busy === p.id ? "applying…" : "use this →"}</span>
               </div>
-              {p.note && <div style={{ fontFamily: mono, fontSize: 10, color: "#6a8a72", paddingTop: 4, fontStyle: "italic" }}>{p.note}</div>}
+              {p.note && <div style={{ fontFamily: SERIF, fontSize: 12.5, color: T.addSoft, paddingTop: 4, fontStyle: "italic" }}>{p.note}</div>}
               <div style={{ paddingTop: 5, display: "flex", flexDirection: "column", gap: 3 }}>
-                {fields.length === 0 && <div style={{ fontFamily: mono, fontSize: 11, color: "#555" }}>(no fields)</div>}
+                {fields.length === 0 && <div style={{ fontFamily: mono, fontSize: 11, color: T.faint }}>(no fields)</div>}
                 {fields.map((f) => (
                   <div key={f.key}>
-                    <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase", color: "#4a5a4e" }}>{f.key}</span>
-                    {f.old !== undefined && f.old !== f.next && <div style={{ fontFamily: mono, fontSize: 11.5, color: "#6a5050", textDecoration: "line-through", whiteSpace: "pre-wrap", lineHeight: 1.45 }}>{f.old}</div>}
-                    <div style={{ fontFamily: mono, fontSize: 11.5, color: "#bfcfc3", whiteSpace: "pre-wrap", lineHeight: 1.45 }}>{f.next}</div>
+                    <span style={{ fontFamily: mono, fontSize: 9.5, letterSpacing: "0.06em", textTransform: "uppercase", color: T.faint }}>{f.key}</span>
+                    {f.old !== undefined && f.old !== f.next && <div style={{ fontFamily: SERIF, fontSize: 13, color: T.remove, textDecoration: "line-through", whiteSpace: "pre-wrap", lineHeight: 1.45 }}>{f.old}</div>}
+                    <div style={{ fontFamily: SERIF, fontSize: 13, color: T.ink, whiteSpace: "pre-wrap", lineHeight: 1.45 }}>{f.next}</div>
                   </div>
                 ))}
               </div>

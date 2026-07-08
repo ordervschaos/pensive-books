@@ -14,6 +14,7 @@ const SWATCHES = [
   { name: "paper"   as const, label: "Paper",   bg: "#f0e8d5", ring: "#1f1d18" },
   { name: "coffee"  as const, label: "Coffee",  bg: "#5c3d2e", ring: "#efe2cf" },
   { name: "pumpkin" as const, label: "Charcoal", bg: "#131e28", ring: "#f5efe5" },
+  { name: "terminal" as const, label: "Terminal", bg: "#0a0a0a", ring: "#8a8aff" },
 ] as const;
 
 export function AppearanceMenu() {
@@ -27,7 +28,7 @@ export function AppearanceMenu() {
         </IconButton>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-[220px] p-3" onCloseAutoFocus={(e) => e.preventDefault()}>
+      <DropdownMenuContent align="end" className="w-[252px] p-3" onCloseAutoFocus={(e) => e.preventDefault()}>
         {/* Theme */}
         <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">
           Theme

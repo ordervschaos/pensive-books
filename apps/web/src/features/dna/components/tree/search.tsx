@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type DnaNode } from "@/features/dna/lib/novelDna";
-import { KIND_COLOR } from "./treeChrome";
+import { KIND_COLOR, MONO, T } from "./treeChrome";
 import { nodeTitle } from "./nodeDisplay";
 
 // ── Search (⌕) — a persistent left-docked panel, VS Code's Search sidebar rather than its Quick Open: stays
@@ -61,15 +61,15 @@ function highlightRuns(text: string, pattern: RegExp): { text: string; hit: bool
 export function Highlighted({ text, pattern }: { text: string; pattern: RegExp | null }) {
   if (!pattern || !text) return <>{text}</>;
   return <>{highlightRuns(text, pattern).map((r, i) => r.hit
-    ? <mark key={i} style={{ background: "#f5c84233", color: "#f5c842", borderRadius: 2, padding: "0 1px" }}>{r.text}</mark>
+    ? <mark key={i} style={{ background: T.mark, color: T.markInk, borderRadius: 2, padding: "0 1px" }}>{r.text}</mark>
     : <span key={i}>{r.text}</span>)}</>;
 }
 function SearchToggleBtn({ active, label, title, onClick }: { active: boolean; label: string; title: string; onClick: () => void }) {
   return (
     <button onClick={onClick} title={title} style={{
-      fontFamily: "ui-monospace, monospace", fontSize: 10, padding: "2px 5px", borderRadius: 3, cursor: "pointer",
-      background: active ? "#9bd3e633" : "transparent", border: `1px solid ${active ? "#9bd3e688" : "#2a2a3a"}`,
-      color: active ? "#9bd3e6" : "#666",
+      fontFamily: MONO, fontSize: 10, padding: "2px 5px", borderRadius: 3, cursor: "pointer",
+      background: active ? `${T.accent}14` : "transparent", border: `1px solid ${active ? `${T.accent}66` : T.border}`,
+      color: active ? T.accent : T.muted,
     }}>{label}</button>
   );
 }
@@ -121,14 +121,14 @@ export function SearchPanel({
   return (
     <div style={{
       position: "fixed", top: 0, left: 0, bottom: 0, width: 320, zIndex: 22,
-      background: "#0b0b0fee", borderRight: "1px solid #1c1c26", display: "flex", flexDirection: "column",
-      fontFamily: "ui-monospace, monospace", backdropFilter: "blur(6px)",
+      background: `${T.raised}f2`, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column",
+      fontFamily: MONO, backdropFilter: "blur(6px)",
     }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px 6px" }}>
-        <span style={{ fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "#666" }}>search</span>
-        <span onClick={onClose} title="close (esc)" style={{ color: "#666", cursor: "pointer", fontSize: 13, lineHeight: 1 }}>✕</span>
+        <span style={{ fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: T.muted }}>search</span>
+        <span onClick={onClose} title="close (esc)" style={{ color: T.muted, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>✕</span>
       </div>
-      <div style={{ padding: "0 12px 8px", display: "flex", flexDirection: "column", gap: 6, borderBottom: "1px solid #1a1a22" }}>
+      <div style={{ padding: "0 12px 8px", display: "flex", flexDirection: "column", gap: 6, borderBottom: `1px solid ${T.borderSoft}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <input ref={inputRef} value={query} placeholder="search nodes…"
             onChange={(e) => onQueryChange(e.target.value)}
@@ -138,46 +138,46 @@ export function SearchPanel({
               else if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx((i) => Math.max(i - 1, 0)); }
               else if (e.key === "Enter" && activeHit) { e.preventDefault(); onJump(activeHit.node.id); }
             }}
-            style={{ flex: 1, minWidth: 0, background: "#16161c", border: "1px solid #2a2a3a", borderRadius: 4, color: "#e6e6e6", fontSize: 12, padding: "6px 8px", outline: "none", fontFamily: "inherit" }} />
+            style={{ flex: 1, minWidth: 0, background: T.inputBg, border: `1px solid ${T.border}`, borderRadius: 6, color: T.ink, fontSize: 12, padding: "6px 8px", outline: "none", fontFamily: "inherit" }} />
           <SearchToggleBtn active={caseSensitive} label="Aa" title="match case" onClick={() => onCaseSensitiveChange(!caseSensitive)} />
           <SearchToggleBtn active={wholeWord} label="ab" title="match whole word" onClick={() => onWholeWordChange(!wholeWord)} />
           <SearchToggleBtn active={useRegex} label=".*" title="use regular expression" onClick={() => onUseRegexChange(!useRegex)} />
         </div>
-        {invalidRegex && <span style={{ fontSize: 10, color: "#f87171" }}>invalid regular expression</span>}
+        {invalidRegex && <span style={{ fontSize: 10, color: T.bad }}>invalid regular expression</span>}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
           {kindsPresent.map((k) => (
             <span key={k} onClick={() => toggleKind(k)} title={`limit to ${k}`}
               style={{
-                fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", padding: "1px 6px", borderRadius: 3,
-                color: includeKinds.has(k) ? "#0a0a0a" : (KIND_COLOR[k] ?? "#888"),
-                background: includeKinds.has(k) ? (KIND_COLOR[k] ?? "#888") : "transparent",
-                border: `1px solid ${(KIND_COLOR[k] ?? "#888")}55`,
+                fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", padding: "1px 6px", borderRadius: 3,
+                color: includeKinds.has(k) ? T.paper : (KIND_COLOR[k] ?? T.muted),
+                background: includeKinds.has(k) ? (KIND_COLOR[k] ?? T.muted) : "transparent",
+                border: `1px solid ${(KIND_COLOR[k] ?? T.muted)}55`,
               }}>{k}</span>
           ))}
-          {includeKinds.size > 0 && <span onClick={() => onIncludeKindsChange(new Set())} style={{ fontSize: 9, color: "#666", cursor: "pointer", textDecoration: "underline" }}>clear</span>}
+          {includeKinds.size > 0 && <span onClick={() => onIncludeKindsChange(new Set())} style={{ fontSize: 10, color: T.muted, cursor: "pointer", textDecoration: "underline" }}>clear</span>}
         </div>
-        <span style={{ fontSize: 10, color: "#555" }}>
+        <span style={{ fontSize: 10.5, color: T.muted }}>
           {query.trim() ? `${hits.length} result${hits.length === 1 ? "" : "s"} in ${groups.length} kind${groups.length === 1 ? "" : "s"}` : "type to search titles + content"}
         </span>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "4px 0 12px" }}>
         {query.trim() && hits.length === 0 && !invalidRegex && (
-          <div style={{ padding: "10px 12px", fontSize: 11, color: "#555" }}>no matches</div>
+          <div style={{ padding: "10px 12px", fontSize: 11, color: T.muted }}>no matches</div>
         )}
         {groups.map(([kind, kindHits]) => {
           const collapsed = collapsedGroups.has(kind);
           return (
             <div key={kind}>
               <div onClick={() => toggleGroup(kind)}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", cursor: "pointer", position: "sticky", top: 0, background: "#0b0b0fee", zIndex: 1 }}>
-                <span style={{ fontSize: 9, color: "#555", width: 10 }}>{collapsed ? "▶" : "▼"}</span>
-                <span style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: KIND_COLOR[kind] ?? "#888" }}>{kind}</span>
-                <span style={{ fontSize: 9, color: "#444" }}>{kindHits.length}</span>
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", cursor: "pointer", position: "sticky", top: 0, background: `${T.raised}f2`, zIndex: 1 }}>
+                <span style={{ fontSize: 9, color: T.faint, width: 10 }}>{collapsed ? "▶" : "▼"}</span>
+                <span style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: KIND_COLOR[kind] ?? T.muted }}>{kind}</span>
+                <span style={{ fontSize: 9.5, color: T.faint }}>{kindHits.length}</span>
               </div>
               {!collapsed && kindHits.map((hit) => (
                 <div key={hit.node.id} onClick={() => onJump(hit.node.id)} onMouseEnter={() => setActiveIdx(flatVisible.indexOf(hit))}
-                  style={{ padding: "5px 12px 5px 26px", cursor: "pointer", background: hit === activeHit ? "#8a8aff14" : "transparent" }}>
-                  <div style={{ fontSize: 11, color: hit.titleHit ? "#cfcfcf" : "#8a8a8a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.5 }}>
+                  style={{ padding: "5px 12px 5px 26px", cursor: "pointer", background: hit === activeHit ? `${T.accent}0f` : "transparent" }}>
+                  <div style={{ fontSize: 11, color: hit.titleHit ? T.ink : T.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.5 }}>
                     <Highlighted text={hit.snippet || "(untitled)"} pattern={pattern} />
                   </div>
                 </div>

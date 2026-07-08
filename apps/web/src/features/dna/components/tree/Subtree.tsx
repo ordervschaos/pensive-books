@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { childrenOf, isEntityKind, isProseStale, SINGLETON_KINDS, type DnaIssue, type DnaNode, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
 import { editSpecs, KIND_EXPLAINER } from "@/features/dna/lib/dnaSchema";
-import { ConnectorTick, detailRowStyle, labelStyle } from "./treeChrome";
+import { ConnectorTick, detailRowStyle, labelStyle, MONO, SERIF, T } from "./treeChrome";
 import { staleActionsFor } from "./staleActions";
 import { proseRollup } from "./nodeDisplay";
 import { EditableField } from "./EditableField";
@@ -31,7 +31,7 @@ function AddRow({ label, depth, onAdd }: { label: string; depth: number; onAdd: 
       <ConnectorTick depth={depth} />
       <span style={{ width: 12, flexShrink: 0 }} />
       <span onClick={async () => { if (busy) return; setBusy(true); try { await onAdd(); } finally { setBusy(false); } }}
-        style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: busy ? "#555" : "#4a7a5a", cursor: busy ? "default" : "pointer", letterSpacing: "0.04em" }}>
+        style={{ fontFamily: MONO, fontSize: 11, color: busy ? T.faint : T.good, cursor: busy ? "default" : "pointer", letterSpacing: "0.04em" }}>
         ＋ {label}
       </span>
     </div>
@@ -48,7 +48,7 @@ function GroupAddButton({ onAdd, title }: { onAdd: () => void | Promise<void>; t
       if (busy) return;
       setBusy(true);
       try { await onAdd(); } finally { setBusy(false); }
-    }} title={title ?? "add"} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: busy ? "#555" : "#4a7a5a", cursor: busy ? "default" : "pointer", flexShrink: 0, lineHeight: 1 }}>
+    }} title={title ?? "add"} style={{ fontFamily: MONO, fontSize: 12, color: busy ? T.faint : T.good, cursor: busy ? "default" : "pointer", flexShrink: 0, lineHeight: 1 }}>
       {busy ? "…" : "＋"}
     </span>
   );
@@ -69,9 +69,9 @@ function NodeGroup({ groupId, label, hint, count, depth, collapsedSet, onToggle,
         display: "flex", alignItems: "baseline", gap: 8,
         paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 7, paddingBottom: 3, cursor: "pointer",
       }}>
-        <span style={{ width: 12, flexShrink: 0, color: "#555", fontSize: 9, lineHeight: 1 }}>{collapsed ? "▶" : "▼"}</span>
-        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: count ? "#8a8a8a" : "#555" }}>{label}</span>
-        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.06em", color: "#3a3a3a" }}>{hint ? `${hint} · ` : ""}{count}</span>
+        <span style={{ width: 12, flexShrink: 0, color: T.faint, fontSize: 9, lineHeight: 1 }}>{collapsed ? "▶" : "▼"}</span>
+        <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.2em", textTransform: "uppercase", color: count ? T.inkSoft : T.faint }}>{label}</span>
+        <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.06em", color: T.faint }}>{hint ? `${hint} · ` : ""}{count}</span>
         {action && <span onClick={(e) => e.stopPropagation()} style={{ marginLeft: "auto" }}>{action}</span>}
       </div>
       {!collapsed && children}
@@ -88,28 +88,28 @@ function ProseBlock({ node, depth, open, onToggle }: {
   const text = c.prose?.text?.trim() ?? "";
   const words = c.prose?.words ?? (text ? text.split(/\s+/).length : 0);
   const stale = isProseStale(node);
-  const mono = "ui-monospace, monospace";
+  const mono = MONO;
   return (
     <div style={{ position: "relative" }}>
       <ConnectorTick depth={depth} />
       {/* Toggle row */}
       <div onClick={onToggle} style={{ display: "flex", alignItems: "baseline", gap: 8, paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 4, paddingBottom: 4, cursor: "pointer" }}>
-        <span style={{ width: 12, flexShrink: 0, color: "#3a4a3a", fontSize: 9 }}>{open ? "▼" : "▶"}</span>
-        <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: text ? "#4ade8066" : "#2a3a2a" }}>prose</span>
-        {words > 0 && <span style={{ fontFamily: mono, fontSize: 9, color: "#3a4a3a" }}>{words}w</span>}
-        {stale && <span style={{ fontFamily: mono, fontSize: 8, letterSpacing: "0.1em", textTransform: "uppercase", color: "#f59e0b" }}>stale</span>}
-        {!text && <span style={{ fontFamily: mono, fontSize: 9, color: "#2a3a2a", fontStyle: "italic" }}>not yet written</span>}
+        <span style={{ width: 12, flexShrink: 0, color: T.faint, fontSize: 9 }}>{open ? "▼" : "▶"}</span>
+        <span style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: text ? `${T.good}aa` : T.faint }}>prose</span>
+        {words > 0 && <span style={{ fontFamily: mono, fontSize: 9.5, color: T.faint }}>{words}w</span>}
+        {stale && <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: T.stale }}>stale</span>}
+        {!text && <span style={{ fontFamily: mono, fontSize: 9.5, color: T.faint, fontStyle: "italic" }}>not yet written</span>}
       </div>
       {/* Prose text */}
       {open && text && (
         <div style={{ paddingLeft: depth * 20 + 32, paddingRight: 16, paddingBottom: 10 }}>
-          <div style={{ fontFamily: "ui-serif, Georgia, serif", fontSize: 13, lineHeight: 1.7, color: stale ? "#8a8060" : "#a8a8b0", whiteSpace: "pre-wrap", borderLeft: `2px solid ${stale ? "#f59e0b22" : "#4ade8022"}`, paddingLeft: 12 }}>
+          <div style={{ fontFamily: SERIF, fontSize: 15, lineHeight: 1.7, color: stale ? T.staleProse : T.inkSoft, whiteSpace: "pre-wrap", borderLeft: `2px solid ${stale ? `${T.stale}55` : `${T.good}44`}`, paddingLeft: 12 }}>
             {text}
           </div>
         </div>
       )}
       {open && !text && (
-        <div style={{ paddingLeft: depth * 20 + 32, paddingRight: 16, paddingBottom: 8, fontFamily: mono, fontSize: 11, color: "#2a3a2a", fontStyle: "italic" }}>
+        <div style={{ paddingLeft: depth * 20 + 32, paddingRight: 16, paddingBottom: 8, fontFamily: mono, fontSize: 11, color: T.faint, fontStyle: "italic" }}>
           — no prose yet
         </div>
       )}
@@ -129,9 +129,9 @@ function ReadProseButton({ node, onOpenReader }: { node: DnaNode; onOpenReader?:
   return (
     <span onClick={(e) => { e.stopPropagation(); onOpenReader(); }} title="read prose"
       style={{
-        fontFamily: "ui-monospace, monospace", fontSize: 10, letterSpacing: "0.04em",
-        color: "#a8a8ff", cursor: "pointer",
-        border: "1px solid #8a8aff44", borderRadius: 4, padding: "0px 7px", background: "#8a8aff08", flexShrink: 0,
+        fontFamily: MONO, fontSize: 10, letterSpacing: "0.04em",
+        color: T.accent, cursor: "pointer",
+        border: `1px solid ${T.accent}44`, borderRadius: 4, padding: "0px 7px", background: `${T.accent}08`, flexShrink: 0,
       }}>
       read
     </span>
@@ -215,7 +215,7 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
   ];
   // Act: add a beat manually
   if (node.kind === "act") {
-    kebabItems.push({ label: "+ add beat", color: "#4a7a5a", onClick: () => h.onAdd(node.id, "beat") });
+    kebabItems.push({ label: "+ add beat", color: T.good, onClick: () => h.onAdd(node.id, "beat") });
   }
 
   // The pillar splits into STORY (the spine) + CAST & WORLD (the registry, sub-grouped by kind); a act
@@ -255,7 +255,7 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
             action={ladder.length > 0 ? (
               <span onClick={() => h.onDiscardStory()}
                 title="Delete all acts, beats, scenes and prose"
-                style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, letterSpacing: "0.1em", textTransform: "uppercase", color: "#7a3030", cursor: "pointer" }}>
+                style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: T.bad, cursor: "pointer" }}>
                 discard ✕
               </span>
             ) : undefined}>
@@ -275,7 +275,7 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
             <ConnectorTick depth={depth + 1} />
             <span style={{ width: 12, flexShrink: 0 }} />
             <span style={{ ...labelStyle, color: "transparent" }}>·</span>
-            <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 10, color: "#555", fontStyle: "italic" }}>
+            <span style={{ fontFamily: SERIF, fontSize: 12.5, color: T.muted, fontStyle: "italic" }}>
               the logline — derived from the brief (the origin) above; ≠ the raw idea. Refine it with the lab.
             </span>
           </div>

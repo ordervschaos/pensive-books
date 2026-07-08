@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { isProseStale, isStale, refsOf, type DnaIssue, type DnaNode } from "@/features/dna/lib/novelDna";
 import { KIND_EXPLAINER } from "@/features/dna/lib/dnaSchema";
-import { detailRowStyle, fieldRowStart, KIND_BG, KIND_COLOR, labelStyle, spineX } from "./treeChrome";
+import { detailRowStyle, fieldRowStart, KIND_BG, KIND_COLOR, labelStyle, MONO, SERIF, spineX, T } from "./treeChrome";
 import { beatGlyph, hiddenFields, nodeTitle, type ProseRollup } from "./nodeDisplay";
 import { type StaleActions } from "./staleActions";
 import { Highlighted } from "./search";
@@ -18,12 +18,12 @@ export function BacklinksRow({ node, backlinks, depth, onJump }: {
   return (
     <div style={detailRowStyle(depth)}>
       {fieldRowStart(depth)}
-      <span style={{ ...labelStyle, color: "#5a6a7a" }}>referenced by</span>
+      <span style={labelStyle}>referenced by</span>
       <span style={{ display: "flex", flexWrap: "wrap", gap: 4, flex: 1, alignItems: "center" }}>
         {inbound.map((n) => (
           <span key={n.id} onClick={() => onJump?.(n.id)} title={onJump ? "jump to node" : undefined}
-            style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "#cfcfcf", background: "#16161c", border: "1px solid #24242e", borderRadius: 3, padding: "1px 5px", display: "inline-flex", gap: 4, alignItems: "center", cursor: onJump ? "pointer" : "default" }}>
-            <span style={{ color: KIND_COLOR[n.kind] ?? "#888", fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase" }}>{n.kind}</span>
+            style={{ fontFamily: MONO, fontSize: 11, color: T.inkSoft, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 4, padding: "1px 6px", display: "inline-flex", gap: 4, alignItems: "center", cursor: onJump ? "pointer" : "default" }}>
+            <span style={{ color: KIND_COLOR[n.kind] ?? T.muted, fontSize: 9.5, letterSpacing: "0.06em", textTransform: "uppercase" }}>{n.kind}</span>
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{nodeTitle(n) || n.id}</span>
           </span>
         ))}
@@ -45,15 +45,15 @@ export function HiddenFieldsRow({ node, index, depth }: { node: DnaNode; index: 
       <div style={detailRowStyle(depth)}>
         {fieldRowStart(depth)}
         <span onClick={() => setOpen((v) => !v)}
-          style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#4a5a6a", cursor: "pointer", userSelect: "none" }}>
+          style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: T.faint, cursor: "pointer", userSelect: "none" }}>
           {open ? "▾" : "▸"} structural · {fields.length}
         </span>
       </div>
       {open && fields.map((f) => (
         <div key={f.key} style={detailRowStyle(depth)} title={f.note}>
           {fieldRowStart(depth)}
-          <span style={{ ...labelStyle, color: "#465264" }}>{f.label}</span>
-          <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "#8a94a6", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.5 }}>
+          <span style={{ ...labelStyle, color: T.faint }}>{f.label}</span>
+          <span style={{ fontFamily: MONO, fontSize: 11, color: T.muted, whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.5 }}>
             {f.value}
           </span>
         </div>
@@ -64,19 +64,18 @@ export function HiddenFieldsRow({ node, index, depth }: { node: DnaNode; index: 
 
 // The compact bar + count chip the rollup renders on its parent row. Three-state hue: all-done green,
 // nothing-started grey, anything-between amber (in progress). The segmented bar shows the mix at a glance.
-const PROSE_DONE = "#4ade80", PROSE_STALE = "#f59e0b", PROSE_NONE = "#3a3a3a";
 function ProseRollupBadge({ r }: { r: ProseRollup }) {
   const state = r.done === r.total ? "complete" : r.done === 0 && r.stale === 0 ? "none" : "in progress";
-  const color = state === "complete" ? PROSE_DONE : state === "none" ? "#5a5a5a" : PROSE_STALE;
+  const color = state === "complete" ? T.good : state === "none" ? T.faint : T.stale;
   const title = `prose ${state} — ${r.done} done · ${r.stale} stale · ${r.none} no prose (of ${r.total} scenes)`;
   return (
     <span title={title} style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-      <span style={{ display: "inline-flex", width: 22, height: 4, borderRadius: 2, overflow: "hidden", background: "#1a1a1a", border: "1px solid #00000040" }}>
-        <span style={{ flex: r.done, background: PROSE_DONE }} />
-        <span style={{ flex: r.stale, background: PROSE_STALE }} />
-        <span style={{ flex: r.none, background: PROSE_NONE }} />
+      <span style={{ display: "inline-flex", width: 22, height: 4, borderRadius: 2, overflow: "hidden", background: T.inset, border: `1px solid ${T.border}` }}>
+        <span style={{ flex: r.done, background: T.good }} />
+        <span style={{ flex: r.stale, background: T.stale }} />
+        <span style={{ flex: r.none, background: T.border }} />
       </span>
-      <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, letterSpacing: "0.06em", color }}>{r.done}/{r.total}</span>
+      <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.06em", color }}>{r.done}/{r.total}</span>
     </span>
   );
 }
@@ -93,33 +92,32 @@ function NodeKebab({ onDelete, items = [] }: { onDelete?: () => void; items?: Ke
   const [open, setOpen] = useState(false);
   const [busyIdx, setBusyIdx] = useState<number | null>(null);
   if (!onDelete && !items.length) return null;
-  const mono = "ui-monospace, monospace";
   return (
     <span style={{ position: "relative", flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
       <span onClick={() => setOpen((v) => !v)} title="more actions"
-        style={{ fontFamily: mono, fontSize: 14, color: open ? "#8a8aaa" : "#3a3a52", cursor: "pointer", padding: "0 3px", lineHeight: 1, userSelect: "none", display: "inline-block" }}>⋮</span>
+        style={{ fontFamily: MONO, fontSize: 14, color: open ? T.ink : T.faint, cursor: "pointer", padding: "0 3px", lineHeight: 1, userSelect: "none", display: "inline-block" }}>⋮</span>
       {open && (
         <>
           <div style={{ position: "fixed", inset: 0, zIndex: 98 }} onClick={() => setOpen(false)} />
-          <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 99, background: "#111118", border: "1px solid #2a2a3a", borderRadius: 5, padding: "4px 0", minWidth: 192, boxShadow: "0 4px 16px #00000080" }}>
+          <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 99, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 7, padding: "4px 0", minWidth: 192, boxShadow: T.shadow }}>
             {items.map((it, i) => (
               <div key={i}>
-                {it.dividerBefore && <div style={{ height: 1, background: "#1e1e2a", margin: "3px 0" }} />}
+                {it.dividerBefore && <div style={{ height: 1, background: T.borderSoft, margin: "3px 0" }} />}
                 <div onClick={async (e) => {
                   e.stopPropagation();
                   if (busyIdx !== null) return;
                   setBusyIdx(i);
                   setOpen(false);
                   try { await it.onClick(); } finally { setBusyIdx(null); }
-                }} style={{ fontFamily: mono, fontSize: 11, color: busyIdx === i ? "#555" : (it.color ?? "#9a9aaa"), cursor: busyIdx === i ? "default" : "pointer", padding: "6px 14px", letterSpacing: "0.04em" }}>
+                }} style={{ fontFamily: MONO, fontSize: 11, color: busyIdx === i ? T.faint : (it.color ?? T.inkSoft), cursor: busyIdx === i ? "default" : "pointer", padding: "6px 14px", letterSpacing: "0.04em" }}>
                   {busyIdx === i ? "…" : it.label}
                 </div>
               </div>
             ))}
-            {onDelete && items.length > 0 && <div style={{ height: 1, background: "#1e1e2a", margin: "3px 0" }} />}
+            {onDelete && items.length > 0 && <div style={{ height: 1, background: T.borderSoft, margin: "3px 0" }} />}
             {onDelete && (
               <div onClick={(e) => { e.stopPropagation(); setOpen(false); onDelete(); }}
-                style={{ fontFamily: mono, fontSize: 11, color: "#c07070", cursor: "pointer", padding: "6px 14px", letterSpacing: "0.04em" }}>
+                style={{ fontFamily: MONO, fontSize: 11, color: T.bad, cursor: "pointer", padding: "6px 14px", letterSpacing: "0.04em" }}>
                 🗑 delete node
               </div>
             )}
@@ -175,25 +173,25 @@ export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onTo
     ? ([node.parent_id ? index.get(node.parent_id) : null, ...refsOf(node).map((id) => index.get(id))].filter((n): n is DnaNode => !!n))
     : [];
   const stale = isStale(node, index) || (node.kind === "scene" && isProseStale(node));
-  const color = KIND_COLOR[node.kind] ?? "#888";
+  const color = KIND_COLOR[node.kind] ?? T.muted;
   const bg = KIND_BG[node.kind] ?? "transparent";
   const title = nodeTitle(node);
   const glyph = beatGlyph(node);
-  const markColor = mark === "delete" ? "#c06060" : mark === "edit" ? "#8a8aff" : null;
+  const markColor = mark === "delete" ? T.bad : mark === "edit" ? T.accent : null;
   // Health glyph — a right-side ▲/△ on a different visual axis than the round stale dot, so they don't fight.
   const hasErr = issues?.some((i) => i.severity === "error") ?? false;
   const hasIssue = (issues?.length ?? 0) > 0;
   // #7 context-highlight hue: the focus node, what it's BUILT FROM (green), what's built ON it (blue).
-  const ctxColor = ctx === "focus" ? "#cfcfcf" : ctx === "consumes" ? "#60a070" : ctx === "consumedBy" ? "#6a8aff" : null;
+  const ctxColor = ctx === "focus" ? T.ink : ctx === "consumes" ? T.ctxA : ctx === "consumedBy" ? T.ctxB : null;
 
   return (
     <div id={`dna-node-${node.id}`}
       onDragOver={canDrop ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; const r = e.currentTarget.getBoundingClientRect(); setDropEdge(e.clientY < r.top + r.height / 2 ? "top" : "bottom"); } : undefined}
       onDragLeave={canDrop ? () => setDropEdge(null) : undefined}
       onDrop={canDrop ? (e) => { e.preventDefault(); onDropRow?.(dropEdge !== "bottom"); setDropEdge(null); } : undefined}
-      style={{ position: "relative", transition: "background 0.4s, opacity 0.3s", opacity: dragging ? 0.4 : dimmed ? 0.3 : undefined, background: flash ? "#8a8aff22" : undefined, boxShadow: flash ? "inset 0 0 0 1px #8a8aff88" : undefined, borderRadius: flash ? 4 : undefined }}>
+      style={{ position: "relative", transition: "background 0.4s, opacity 0.3s", opacity: dragging ? 0.4 : dimmed ? 0.35 : undefined, background: flash ? `${T.accent}1a` : undefined, boxShadow: flash ? `inset 0 0 0 1px ${T.accent}66` : undefined, borderRadius: flash ? 4 : undefined }}>
       {/* #5 — drop indicator: a line at the edge the dragged sibling would land on */}
-      {dropEdge && <div style={{ position: "absolute", left: spineX(depth), right: 12, [dropEdge]: 0, height: 2, background: "#8a8aff", zIndex: 2, pointerEvents: "none" }} />}
+      {dropEdge && <div style={{ position: "absolute", left: spineX(depth), right: 12, [dropEdge]: 0, height: 2, background: T.accent, zIndex: 2, pointerEvents: "none" }} />}
 
       {/* The node row */}
       <div
@@ -207,11 +205,11 @@ export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onTo
           position: "relative",
           // Precedence (spec collision budget): proposal mark > context hue (#7).
           boxShadow: markColor ? `inset 3px 0 0 ${markColor}` : ctxColor ? `inset 3px 0 0 ${ctxColor}` : undefined,
-          background: markColor ? `${markColor}12` : ctxColor ? `${ctxColor}1a` : undefined,
+          background: markColor ? `${markColor}0f` : ctxColor ? `${ctxColor}14` : undefined,
         }}
       >
         {/* Expand/collapse chevron — locked open (dimmed further) while options are staged */}
-        <span style={{ width: 12, flexShrink: 0, color: expandable ? `${color}${lockedOpen ? "40" : "80"}` : "transparent", fontSize: 9, lineHeight: 1 }}>
+        <span style={{ width: 12, flexShrink: 0, color: expandable ? `${color}${lockedOpen ? "50" : "90"}` : "transparent", fontSize: 9, lineHeight: 1 }}>
           {expandable ? (open ? "▼" : "▶") : "·"}
         </span>
 
@@ -220,22 +218,22 @@ export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onTo
           onClick={onContextFocus ? (e) => { e.stopPropagation(); onContextFocus(); } : undefined}
           title={KIND_EXPLAINER[node.kind] + (onContextFocus ? " — click to focus: light what this is built from / what draws on it" : "")}
           style={{
-            fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.1em",
-            textTransform: "uppercase", color: ctx === "focus" ? "#0a0a0a" : color, background: ctx === "focus" ? color : bg,
+            fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.1em",
+            textTransform: "uppercase", color: ctx === "focus" ? T.paper : color, background: ctx === "focus" ? color : bg,
             padding: "1px 5px", borderRadius: 3, border: `1px solid ${ctx === "focus" ? color : `${color}30`}`,
             whiteSpace: "nowrap", flexShrink: 0, cursor: onContextFocus ? "pointer" : "default",
           }}>
-          {node.kind}{seq != null && <span style={{ opacity: 0.65, marginLeft: 4 }}>{seq}</span>}
+          {node.kind}{seq != null && <span style={{ opacity: 0.7, marginLeft: 4 }}>{seq}</span>}
         </span>
 
         {/* Title / content preview */}
         {(glyph || title) && (
           <span style={{
-            fontFamily: "ui-monospace, monospace", fontSize: 12, color: mark === "delete" ? "#9a7070" : "#c9c9c9",
+            fontFamily: SERIF, fontSize: 14, color: mark === "delete" ? T.remove : T.ink,
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1,
             textDecoration: mark === "delete" ? "line-through" : undefined,
           }}>
-            {glyph && <span style={{ color: "#fbbf24", marginRight: 2 }}>{glyph}</span>}
+            {glyph && <span style={{ color: KIND_COLOR.beat, marginRight: 2, fontFamily: MONO, fontSize: 12 }}>{glyph}</span>}
             <Highlighted text={title} pattern={searchPattern ?? null} />
           </span>
         )}
@@ -252,11 +250,11 @@ export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onTo
         <span style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: "auto" }}>
           {prose && <ProseRollupBadge r={prose} />}
           {hasIssue && <span title={issues!.map((i) => `${i.severity === "error" ? "✕" : "⚠"} ${i.rule}: ${i.message}`).join("\n")}
-            style={{ fontSize: 10, lineHeight: 1, color: hasErr ? "#f87171" : "#d0a060", flexShrink: 0 }}>{hasErr ? "▲" : "△"}</span>}
-          {markColor && <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, textTransform: "uppercase", letterSpacing: "0.12em", color: markColor }}>{mark === "delete" ? "− remove" : "✎ edit"}</span>}
+            style={{ fontSize: 10, lineHeight: 1, color: hasErr ? T.bad : T.warn, flexShrink: 0 }}>{hasErr ? "▲" : "△"}</span>}
+          {markColor && <span style={{ fontFamily: MONO, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.12em", color: markColor }}>{mark === "delete" ? "− remove" : "✎ edit"}</span>}
           {stale && (
             <span ref={staleChipRef} onClick={openStaleCard}
-              style={{ fontFamily: "ui-monospace, monospace", fontSize: 8, textTransform: "uppercase", letterSpacing: "0.12em", color: "#f59e0b", cursor: staleActions ? "pointer" : "default", userSelect: "none" }}>
+              style={{ fontFamily: MONO, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.12em", color: T.stale, cursor: staleActions ? "pointer" : "default", userSelect: "none" }}>
               stale
             </span>
           )}
@@ -264,24 +262,24 @@ export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onTo
           {staleCardPos && staleActions && (
             <>
               <div style={{ position: "fixed", inset: 0, zIndex: 49 }} onClick={() => setStaleCardPos(null)} />
-              <div style={{ position: "fixed", top: staleCardPos.top, right: staleCardPos.right, zIndex: 50, width: 280, background: "#0d0d11", border: "1px solid #2a2a38", borderRadius: 8, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10, boxShadow: "0 8px 30px #000000aa", fontFamily: "ui-monospace, monospace" }}
+              <div style={{ position: "fixed", top: staleCardPos.top, right: staleCardPos.right, zIndex: 50, width: 280, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10, boxShadow: T.shadow, fontFamily: MONO }}
                 onClick={(e) => e.stopPropagation()}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 9, letterSpacing: "0.16em", textTransform: "uppercase", color: "#f59e0b" }}>stale</span>
-                  <span onClick={() => setStaleCardPos(null)} style={{ fontSize: 11, color: "#555", cursor: "pointer" }}>✕</span>
+                  <span style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: T.stale }}>stale</span>
+                  <span onClick={() => setStaleCardPos(null)} style={{ fontSize: 11, color: T.muted, cursor: "pointer" }}>✕</span>
                 </div>
-                <span style={{ fontSize: 11, color: "#c8a060", lineHeight: 1.5 }}>
+                <span style={{ fontSize: 11, color: T.warmText, lineHeight: 1.5 }}>
                   {isProseStale(node) && !isStale(node, index)
                     ? "prose stale — the scene plan changed since it was written"
                     : "an input changed since this was generated"}
                 </span>
                 {suspects.length > 0 && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    <span style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5c5c5c" }}>suspects</span>
+                    <span style={{ fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: T.muted }}>suspects</span>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                       {suspects.map((n) => (
-                        <span key={n.id} style={{ fontSize: 11, color: "#cfcfcf", background: "#16161c", border: `1px solid ${(KIND_COLOR[n.kind] ?? "#888")}44`, borderRadius: 3, padding: "1px 6px", display: "inline-flex", gap: 4, alignItems: "center" }}>
-                          <span style={{ color: KIND_COLOR[n.kind] ?? "#888", fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase", flexShrink: 0 }}>{n.kind}</span>
+                        <span key={n.id} style={{ fontSize: 11, color: T.inkSoft, background: T.surface, border: `1px solid ${(KIND_COLOR[n.kind] ?? T.muted)}44`, borderRadius: 3, padding: "1px 6px", display: "inline-flex", gap: 4, alignItems: "center" }}>
+                          <span style={{ color: KIND_COLOR[n.kind] ?? T.muted, fontSize: 9.5, letterSpacing: "0.06em", textTransform: "uppercase", flexShrink: 0 }}>{n.kind}</span>
                           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{nodeTitle(n) || n.id}</span>
                         </span>
                       ))}
@@ -291,12 +289,12 @@ export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onTo
                 <div style={{ display: "flex", gap: 6 }}>
                   {staleActions.onRegen && (
                     <span onClick={() => !staleBusy && void runStale("regen", staleActions.onRegen!)}
-                      style={{ fontSize: 9, letterSpacing: "0.06em", color: staleBusy === "regen" ? "#555" : "#8a8aff", cursor: staleBusy ? "default" : "pointer", border: "1px solid #8a8aff44", borderRadius: 4, padding: "3px 10px", background: "#8a8aff0d" }}>
+                      style={{ fontSize: 10, letterSpacing: "0.06em", color: staleBusy === "regen" ? T.faint : T.accent, cursor: staleBusy ? "default" : "pointer", border: `1px solid ${T.accent}44`, borderRadius: 4, padding: "3px 10px", background: `${T.accent}0d` }}>
                       {staleBusy === "regen" ? "…" : "↻ regen"}
                     </span>
                   )}
                   <span onClick={() => !staleBusy && void runStale("approve", staleActions.onApprove)}
-                    style={{ fontSize: 9, letterSpacing: "0.06em", color: staleBusy === "approve" ? "#555" : "#6abf6a", cursor: staleBusy ? "default" : "pointer", border: "1px solid #6abf6a44", borderRadius: 4, padding: "3px 10px", background: "#6abf6a0d" }}>
+                    style={{ fontSize: 10, letterSpacing: "0.06em", color: staleBusy === "approve" ? T.faint : T.good, cursor: staleBusy ? "default" : "pointer", border: `1px solid ${T.good}44`, borderRadius: 4, padding: "3px 10px", background: `${T.good}0d` }}>
                     {staleBusy === "approve" ? "…" : "✓ accept"}
                   </span>
                 </div>
@@ -306,11 +304,11 @@ export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onTo
           {node.authoring.locked && <span style={{ fontSize: 10, color: color }}>🔒</span>}
           <span style={{
             width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-            background: node.authoring.status === "accepted" ? (stale ? "#f59e0b" : "#4ade80")
-              : node.authoring.status === "draft" ? "#fbbf24"
-                : "#444",
+            background: node.authoring.status === "accepted" ? (stale ? T.stale : T.good)
+              : node.authoring.status === "draft" ? T.warn
+                : T.empty,
           }} title={node.authoring.status ?? "empty"} />
-          <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, color: "#444", letterSpacing: "0.05em" }}>
+          <span style={{ fontFamily: MONO, fontSize: 9, color: T.faint, letterSpacing: "0.05em" }}>
             {node.id}
           </span>
           {draggable && (
@@ -318,11 +316,11 @@ export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onTo
               onClick={(e) => e.stopPropagation()}
               onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", node.id); onDragStartRow?.(); }}
               onDragEnd={(e) => { e.stopPropagation(); onDragEndRow?.(); }}
-              title="drag to reorder" style={{ fontSize: 11, color: "#4a4a5a", cursor: "grab", padding: "0 2px", flexShrink: 0, lineHeight: 1 }}>⠿</span>
+              title="drag to reorder" style={{ fontSize: 11, color: T.faint, cursor: "grab", padding: "0 2px", flexShrink: 0, lineHeight: 1 }}>⠿</span>
           )}
           {onAttach && (
             <span onClick={(e) => { e.stopPropagation(); onAttach(); }} title="add to agent context"
-              style={{ fontFamily: "ui-monospace, monospace", fontSize: 13, color: "#a8a8ff", cursor: "pointer", padding: "0 2px", lineHeight: 1, userSelect: "none", flexShrink: 0 }}>
+              style={{ fontFamily: MONO, fontSize: 13, color: T.accent, cursor: "pointer", padding: "0 2px", lineHeight: 1, userSelect: "none", flexShrink: 0 }}>
               ＋
             </span>
           )}

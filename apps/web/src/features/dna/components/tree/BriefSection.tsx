@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CONTENT_TYPES, SCOPE_BANDS, briefIdea, type Brief } from "@/lib/brief";
-import { ConnectorTick, detailRowStyle, inputStyle, labelStyle } from "./treeChrome";
+import { ConnectorTick, detailRowStyle, inputStyle, KIND_COLOR, labelStyle, MONO, SERIF, T } from "./treeChrome";
 
 // ── Brief section — rendered inside the seed when expanded ───────────────────
 // The brief lives on books.brief (not in book_nodes), so it has its own save path.
@@ -16,7 +16,7 @@ function BriefFieldRow({ label, depth, display, onEdit, children }: {
       <span style={{ width: 12, flexShrink: 0 }} />
       <span style={labelStyle}>{label}</span>
       {children || (
-        <span onClick={onEdit} style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: display ? "#cfcfcf" : "#4a4a4a", whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.5, cursor: onEdit ? "text" : "default", fontStyle: display ? "normal" : "italic" }}>
+        <span onClick={onEdit} style={{ fontFamily: SERIF, fontSize: 14, color: display ? T.ink : T.faint, whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.55, cursor: onEdit ? "text" : "default", fontStyle: display ? "normal" : "italic" }}>
           {display || `＋ ${label}`}
         </span>
       )}
@@ -63,7 +63,7 @@ function BriefSection({ brief, onSave, depth }: { brief: Brief | null; onSave: (
       <div style={{ ...detailRowStyle(depth - 1), paddingTop: 6 }}>
         <ConnectorTick depth={depth - 1} />
         <span style={{ width: 12, flexShrink: 0 }} />
-        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "#5a5a7a" }}>brief — mandate · the constant origin</span>
+        <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: T.accent }}>brief — mandate · the constant origin</span>
       </div>
 
       {/* idea — the author's raw "what is the book about?" (brief.idea); the logline is DERIVED from this, not equal to it */}
@@ -125,13 +125,12 @@ function BriefSection({ brief, onSave, depth }: { brief: Brief | null; onSave: (
 export function BriefOrigin({ brief, onSave }: {
   brief: Brief | null; onSave: (patch: Partial<Brief>) => Promise<void>;
 }) {
-  const mono = "ui-monospace, monospace";
   return (
-    <div style={{ borderBottom: "1px solid #1a1a1a", background: "#0b0b0f", paddingBottom: 8 }}>
+    <div style={{ borderBottom: `1px solid ${T.borderSoft}`, paddingBottom: 8 }}>
       <BriefSection brief={brief} onSave={onSave} depth={1} />
       <div style={{ padding: "8px 16px 2px 20px", display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ color: "#a78bfa", fontSize: 13, lineHeight: 1 }}>↓</span>
-        <span style={{ fontFamily: mono, fontSize: 10, color: "#6a6a8a", fontStyle: "italic" }}>
+        <span style={{ color: KIND_COLOR.seed, fontSize: 13, lineHeight: 1 }}>↓</span>
+        <span style={{ fontFamily: SERIF, fontSize: 12.5, color: T.muted, fontStyle: "italic" }}>
           derives the SEED below — a polished logline (protagonist · inciting · goal · obstacle · stakes), generated from this brief
         </span>
       </div>
