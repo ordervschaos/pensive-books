@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
-import { backlinkIndex, beatsInOrder, byId, childrenOf, isEntityKind, isProseStale, isStale, newId, pillarOf, refsOf, scenesInOrder, type BookSettings, type DnaIssue, type DnaNode } from "@/features/dna/lib/novelDna";
+import { backlinkIndex, beatsInOrder, byId, childrenOf, isEntityKind, newId, pillarOf, refsOf, scenesInOrder, type BookSettings, type DnaIssue, type DnaNode } from "@/features/dna/lib/novelDna";
 import { bootstrapLoglineFromBrief, ensureSeed } from "@/features/dna/lib/dnaExpand";
 import { KIND_LEVEL } from "@/features/dna/lib/dnaSchema";
 import { briefIdea, type Brief } from "@/lib/brief";
@@ -18,7 +18,7 @@ import { buildJourney, dnaHealth, DNA_STAGES, STAGE_KINDS, type StageKey } from 
 import { useToast } from "@/hooks/use-toast";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { reconcileDna } from "@/features/dna/lib/novelDnaRender";
-import { KIND_COLOR, QuickToggle } from "@/features/dna/components/tree/treeChrome";
+import { QuickToggle } from "@/features/dna/components/tree/treeChrome";
 import { DecomposeButton } from "@/features/dna/components/tree/DecomposeButton";
 import { nodeTitle } from "@/features/dna/components/tree/nodeDisplay";
 import { buildSearchPattern, SearchPanel, searchDna } from "@/features/dna/components/tree/search";
@@ -28,6 +28,7 @@ import { staleActionsFor } from "@/features/dna/components/tree/staleActions";
 import { BriefOrigin } from "@/features/dna/components/tree/BriefSection";
 import { FocusPanel, JourneyStrip, SpineTimeline, VoiceFeelPanel } from "@/features/dna/components/tree/panels";
 import { CharactersPane, StoryPane } from "@/features/dna/components/tree/panes";
+import { MetersPane } from "@/features/dna/components/tree/MetersPane";
 import { DiscardStoryModal, HistoryModal, NodeDetailsModal, ProseReaderModal } from "@/features/dna/components/tree/modals";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
@@ -42,16 +43,18 @@ export default function DnaTreePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const tab: "tree" | "taste" | "overview" | "analytics" | "characters" | "story" =
+  const tab: "tree" | "taste" | "overview" | "analytics" | "meters" | "characters" | "story" =
     location.pathname.endsWith("/overview") ? "overview"
     : location.pathname.endsWith("/taste") ? "taste"
     : location.pathname.endsWith("/analytics") ? "analytics"
+    : location.pathname.endsWith("/meters") ? "meters"
     : location.pathname.endsWith("/characters") ? "characters"
     : location.pathname.endsWith("/story") ? "story"
     : "tree";
   const treePath = `/books/${bookSlug}/dna/tree`;
   const overviewPath = `${treePath}/overview`;
   const analyticsPath = `${treePath}/analytics`;
+  const metersPath = `${treePath}/meters`;
   const charactersPath = `${treePath}/characters`;
   const storyPath = `${treePath}/story`;
 
@@ -502,11 +505,6 @@ export default function DnaTreePage() {
   beatsInOrder(nodes).forEach((b, i) => seq.set(b.id, i + 1));
   scenesInOrder(nodes).forEach((s, i) => seq.set(s.id, i + 1));
 
-  // Kind distribution for the stats bar
-  const counts = nodes.reduce<Record<string, number>>((acc, n) => { acc[n.kind] = (acc[n.kind] ?? 0) + 1; return acc; }, {});
-  const accepted = nodes.filter((n) => n.authoring.status === "accepted").length;
-  const staleCount = nodes.filter((n) => isStale(n, index) || (n.kind === "scene" && isProseStale(n))).length;
-
   // The journey, for the Overview tab (same computation DnaStudio used to drive its own Overview mount).
   const { stages: journeyStages, nowIndex: journeyNowIndex } = buildJourney(nodes);
   const nowKey = journeyStages[journeyNowIndex]?.key ?? "premise";
@@ -596,7 +594,7 @@ export default function DnaTreePage() {
           on a shared baseline. overview (dashboard) / tree (structure) / voice & feel (taste) / analytics /
           characters / story — same route, splat path, no remount. */}
       <div style={{ display: "flex", alignItems: "flex-end", gap: 2, padding: "8px 16px 0", borderBottom: "1px solid #1a1a1a" }}>
-        {([["overview", "overview", overviewPath], ["tree", "tree", treePath], ["taste", "voice", `${treePath}/taste`], ["analytics", "analytics", analyticsPath], ["characters", "characters", charactersPath], ["story", "story", storyPath]] as const).map(([key, label, to]) => (
+        {([["overview", "overview", overviewPath], ["tree", "tree", treePath], ["taste", "voice", `${treePath}/taste`], ["analytics", "analytics", analyticsPath], ["meters", "meters", metersPath], ["characters", "characters", charactersPath], ["story", "story", storyPath]] as const).map(([key, label, to]) => (
           <button key={key} onClick={() => navigate(to)} style={{
             background: tab === key ? "#0a0a0a" : "transparent",
             border: `1px solid ${tab === key ? "#26262e" : "transparent"}`,
@@ -608,39 +606,19 @@ export default function DnaTreePage() {
         ))}
       </div>
 
-      {/* Below-tabs action bar — health/counts/legend (apply everywhere) plus whatever's specific to the
+      {/* Below-tabs action bar — health (apply everywhere) plus whatever's specific to the
           open tab (timeline/history/lens + expand/collapse only mean anything on the tree tab). */}
       <div style={{ padding: "8px 16px", borderBottom: "1px solid #1a1a1a", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-        <span style={{ color: "#333", fontSize: 11 }}>
-          {nodes.length} nodes · {accepted} accepted{staleCount > 0 ? ` · ${staleCount} stale` : ""}
-        </span>
         {/* #4 — DNA health: a glanceable status pip that deep-links into the Analytics tab (the detail
             lives there now — summary-in-chrome, detail-in-pane). */}
         <button onClick={() => navigate(analyticsPath)} title="open Analytics — the lints, pacing, promises & topography behind these bars"
           style={{ display: "flex", alignItems: "center", gap: 12, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-          {([["complete", health.completeness], ["strong", health.strength]] as const).map(([label, val]) => (
-            <span key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#555" }}>{label}</span>
-              <span style={{ width: 44, height: 4, background: "#1c1c1c", borderRadius: 2, overflow: "hidden" }}>
-                <span style={{ display: "block", height: "100%", width: pct(val), background: barColor(val) }} />
-              </span>
-              <span style={{ fontSize: 9, color: barColor(val), fontVariantNumeric: "tabular-nums" }}>{pct(val)}</span>
-            </span>
-          ))}
           {(health.errors + health.warns) > 0 && (
             <span style={{ fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: health.errors ? "#f87171" : "#d0a060", fontFamily: "ui-monospace, monospace" }}>
               {health.errors ? `${health.errors}✕ ` : ""}{health.warns ? `${health.warns}⚠` : ""} →
             </span>
           )}
         </button>
-        {/* Kind legend */}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {Object.entries(counts).map(([kind, n]) => (
-            <span key={kind} style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: KIND_COLOR[kind] ?? "#888" }}>
-              {n} {kind}
-            </span>
-          ))}
-        </div>
         {/* Tab-specific toggles — tree only */}
         {tab === "tree" && (
           <div style={{ display: "flex", gap: 3 }}>
@@ -717,6 +695,14 @@ export default function DnaTreePage() {
 
           {/* pacing · promises · topography (lints hidden here — shown in the list above) */}
           <DnaAnalysis nodes={nodes} settings={settings} onOpen={openStage} hideLints />
+        </div>
+      )}
+
+      {/* ── meters tab: the story's shape — serial graph + shape/craft/cold reads. Same MetersPane the
+          standalone /dna/meters route renders; a projection of the live tree, reads write back onto it. ── */}
+      {tab === "meters" && (
+        <div style={{ padding: "16px" }}>
+          <MetersPane nodes={nodes} bookId={bookId} bookSlug={bookSlug ?? ""} />
         </div>
       )}
 
