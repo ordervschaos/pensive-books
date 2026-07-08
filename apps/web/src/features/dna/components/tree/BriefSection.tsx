@@ -24,7 +24,7 @@ function BriefFieldRow({ label, depth, display, onEdit, children }: {
   );
 }
 
-function BriefSection({ brief, onSave, depth }: { brief: Brief | null; onSave: (patch: Partial<Brief>) => Promise<void>; depth: number }) {
+function BriefSection({ brief, onSave, depth, onCollapse }: { brief: Brief | null; onSave: (patch: Partial<Brief>) => Promise<void>; depth: number; onCollapse?: () => void }) {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -60,9 +60,11 @@ function BriefSection({ brief, onSave, depth }: { brief: Brief | null; onSave: (
 
   return (
     <>
-      <div style={{ ...detailRowStyle(depth - 1), paddingTop: 6 }}>
+      <div style={{ ...detailRowStyle(depth - 1), paddingTop: 6, cursor: onCollapse ? "pointer" : "default" }}
+        onClick={onCollapse} title={onCollapse ? "collapse — the brief is reference, not active work, once foundations are underway" : undefined}>
         <ConnectorTick depth={depth - 1} />
         <span style={{ width: 12, flexShrink: 0 }} />
+        {onCollapse && <span style={{ fontSize: 9, color: T.muted, marginRight: 2 }}>▾</span>}
         <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: T.accent }}>brief — mandate · the constant origin</span>
       </div>
 
@@ -107,7 +109,7 @@ function BriefSection({ brief, onSave, depth }: { brief: Brief | null; onSave: (
         <span style={labelStyle}>heat</span>
         <select value={brief?.content_type?.level ?? ""} disabled={busy}
           onChange={(e) => { void commit("heat", e.target.value || undefined); }}
-          style={{ ...inputStyle, fontSize: 11, padding: "1px 4px", flex: 1 }}>
+          style={{ ...inputStyle, fontSize: 11, padding: "1px 4px", width: 200, flexShrink: 0 }}>
           <option value="">(not set)</option>
           {CONTENT_TYPES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
         </select>
@@ -122,12 +124,40 @@ function BriefSection({ brief, onSave, depth }: { brief: Brief | null; onSave: (
 // "↓ derives" cue — not nested inside the seed (which wrongly read as the brief being a detail OF the logline).
 // The brief is the ORIGIN; the seed (logline) is auto-derived from it on first open (see the bootstrap in the
 // load effect), so the tree is never empty and the agent always has a root to build from.
-export function BriefOrigin({ brief, onSave }: {
+// The one-line summary shown once the brief is collapsed — enough to recognize it without re-reading it.
+function briefSummary(brief: Brief | null): string {
+  const heat = CONTENT_TYPES.find((c) => c.value === brief?.content_type?.level)?.label;
+  const tone = Array.isArray(brief?.tone) ? brief.tone.join(", ") : "";
+  const idea = briefIdea(brief)?.trim();
+  const ideaShort = idea ? (idea.length > 70 ? `${idea.slice(0, 70)}…` : idea) : "";
+  return [brief?.genre, tone, heat, brief?.scope?.word_target ? `${brief.scope.word_target.toLocaleString()} words` : "", ideaShort ? `"${ideaShort}"` : ""]
+    .filter(Boolean).join(" · ");
+}
+
+// `open` defaults true (a fresh/premise-stage book) so the brief is never surprise-hidden; DnaTreePage
+// persists the toggle per book and defaults it collapsed once the tree is past the premise stage (#4 —
+// the brief is "the constant origin": reference on a drafting book, not work in progress).
+export function BriefOrigin({ brief, onSave, open = true, onToggleOpen }: {
   brief: Brief | null; onSave: (patch: Partial<Brief>) => Promise<void>;
+  open?: boolean; onToggleOpen?: (open: boolean) => void;
 }) {
+  if (!open) {
+    return (
+      <div style={{ borderBottom: `1px solid ${T.borderSoft}`, padding: "8px 16px" }}>
+        <div onClick={() => onToggleOpen?.(true)} title="expand the brief"
+          style={{ display: "flex", alignItems: "baseline", gap: 8, cursor: "pointer", minWidth: 0 }}>
+          <span style={{ fontSize: 9, color: T.muted, flexShrink: 0 }}>▸</span>
+          <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: T.accent, flexShrink: 0 }}>brief — mandate</span>
+          <span style={{ fontFamily: SERIF, fontSize: 12.5, color: T.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {briefSummary(brief) || "empty — click to fill in"}
+          </span>
+        </div>
+      </div>
+    );
+  }
   return (
     <div style={{ borderBottom: `1px solid ${T.borderSoft}`, paddingBottom: 8 }}>
-      <BriefSection brief={brief} onSave={onSave} depth={1} />
+      <BriefSection brief={brief} onSave={onSave} depth={1} onCollapse={onToggleOpen ? () => onToggleOpen(false) : undefined} />
       <div style={{ padding: "8px 16px 2px 20px", display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ color: KIND_COLOR.seed, fontSize: 13, lineHeight: 1 }}>↓</span>
         <span style={{ fontFamily: SERIF, fontSize: 12.5, color: T.muted, fontStyle: "italic" }}>

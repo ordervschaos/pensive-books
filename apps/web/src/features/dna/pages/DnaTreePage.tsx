@@ -3,7 +3,7 @@
 // live book_nodes tree. This file is the route shell — data loading, Realtime subscriptions, page-level
 // state, and tab layout. The tree UI itself lives in @/features/dna/components/tree/*.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
 import { backlinkIndex, beatsInOrder, byId, childrenOf, isEntityKind, newId, pillarOf, refsOf, scenesInOrder, type BookSettings, type DnaIssue, type DnaNode } from "@/features/dna/lib/novelDna";
@@ -134,6 +134,21 @@ export default function DnaTreePage() {
   const discardStory = useCallback(() => setDiscardOpen(true), []);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [detailsNodeId, setDetailsNodeId] = useState<string | null>(null); // "view details" modal
+  // #1 — the status-dot/glyph key, folded off the permanent chrome into a click-to-open popover.
+  const [legendOpen, setLegendOpen] = useState(false);
+  // #2 — json/fork/history folded into one overflow menu (developer-grade utilities, used rarely).
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  // #4 — the brief collapses once the tree is past the premise stage (it's reference by then, not active
+  // work); persists per book like railOpen/timelineOpen. Unset (new book) falls back to the live journey.
+  const briefKey = `dna-brief-open:${bookId}`;
+  const [briefOpenPref, setBriefOpenPref] = useState<boolean | null>(() => {
+    const v = localStorage.getItem(briefKey);
+    return v === null ? null : v === "1";
+  });
+  const setBriefOpen = useCallback((open: boolean) => {
+    setBriefOpenPref(open);
+    localStorage.setItem(briefKey, open ? "1" : "0");
+  }, [briefKey]);
 
   const saveBrief = useCallback(async (patch: Partial<Brief>) => {
     const next = { ...brief, ...patch, updated_at: new Date().toISOString() } as Brief;
@@ -498,6 +513,8 @@ export default function DnaTreePage() {
     background: T.bg, color: T.inkSoft,
     userSelect: "text",
   };
+  const smallBtnStyle: React.CSSProperties = { background: "none", border: "none", color: T.muted, fontSize: 10.5, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: MONO, padding: 0 };
+  const menuItemStyle: React.CSSProperties = { ...smallBtnStyle, textAlign: "left", textDecoration: "none", padding: "5px 10px", borderRadius: 5, whiteSpace: "nowrap" };
 
   if (permLoading || !hasAccess || !canEdit) return null;
   if (error) return <div className={themeClass} style={{ ...base, padding: 24, color: T.bad }}>error: {error}</div>;
@@ -534,6 +551,40 @@ export default function DnaTreePage() {
     return n ? `${n.kind}${nodeTitle(n) ? ` · ${nodeTitle(n)}` : ""}` : i.nodeId ?? "";
   };
 
+  // #4 — the brief defaults to collapsed once the tree has moved past the premise stage (it's the constant
+  // origin — reference by then, not active work); an explicit toggle overrides the live journey default.
+  const briefOpen = briefOpenPref ?? journeyNowIndex === 0;
+
+  // #7 — health pip: plain words, not glyph soup ("2 errors · 21 warnings" over "2× 21⚠"). Deep-links into
+  // Analytics, where the lints behind the score actually live.
+  const healthPip = (health.errors + health.warns) > 0 ? (
+    <button onClick={() => navigate(analyticsPath)} title="open Analytics — the lints, pacing, promises & topography behind these bars"
+      style={{ display: "flex", alignItems: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+      <span style={{ fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", color: health.errors ? T.bad : T.warn, fontFamily: MONO, whiteSpace: "nowrap" }}>
+        {[health.errors ? `${health.errors} error${health.errors === 1 ? "" : "s"}` : "", health.warns ? `${health.warns} warning${health.warns === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ")} →
+      </span>
+    </button>
+  ) : null;
+
+  // #2 — json / fork / history: developer-grade + rarely-used utilities, folded into one overflow menu
+  // instead of sitting with equal billing next to the core actions.
+  const overflowMenu = (
+    <div style={{ position: "relative" }}>
+      <QuickToggle active={overflowOpen} accent={T.accent} icon="⋯" label="More" onClick={() => setOverflowOpen((v) => !v)} />
+      {overflowOpen && (
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 25, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: T.shadow, padding: 5, display: "flex", flexDirection: "column", gap: 1, minWidth: 130 }}>
+          {tab === "tree" && (
+            <button onClick={() => { setHistoryOpen(true); setOverflowOpen(false); }} style={menuItemStyle}>⟲ history</button>
+          )}
+          <a href={`/books/${bookSlug}/dna.json`} onClick={() => setOverflowOpen(false)} style={menuItemStyle}>{"{ } json →"}</a>
+          <button onClick={() => { setOverflowOpen(false); void forkDna(); }} disabled={forking} title="Copy this DNA tree into a new book to experiment freely" style={{ ...menuItemStyle, color: forking ? T.faint : menuItemStyle.color, cursor: forking ? "default" : "pointer" }}>
+            {forking ? "forking…" : "⑂ fork →"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div key={consoleMode} className={themeClass} style={{ ...base, marginRight: railOpen ? 420 : 0, marginLeft: searchOpen ? 320 : 0 }}>
       {searchOpen && (
@@ -543,6 +594,32 @@ export default function DnaTreePage() {
           useRegex={searchUseRegex} onUseRegexChange={setSearchUseRegex}
           includeKinds={searchIncludeKinds} onIncludeKindsChange={setSearchIncludeKinds}
           onJump={goToNode} onClose={() => setSearchOpen(false)} />
+      )}
+      {/* #1 — the status-dot/glyph key, popover-only (was a permanent chrome row) */}
+      {legendOpen && (
+        <div style={{
+          position: "fixed", top: 96, right: railOpen ? 436 : 16, zIndex: 25, width: 300,
+          background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: T.shadow,
+          padding: "10px 14px", display: "flex", flexDirection: "column", gap: 8,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 9.5, color: T.faint, letterSpacing: "0.12em", textTransform: "uppercase" }}>key</span>
+            <span onClick={() => setLegendOpen(false)} style={{ cursor: "pointer", color: T.muted, fontSize: 12 }}>✕</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {[["accepted", T.good], ["draft", T.warn], ["empty", T.empty]].map(([s, c]) => (
+              <span key={s} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: c }} />
+                <span style={{ fontSize: 9.5, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase" }}>{s}</span>
+              </span>
+            ))}
+          </div>
+          <span style={{ fontSize: 9.5, color: T.stale, letterSpacing: "0.08em", textTransform: "uppercase" }}>amber dot = stale</span>
+          <span style={{ fontSize: 9.5, color: T.warn }}>∴ therefore · ↯ but</span>
+          <span style={{ fontSize: 9.5, color: T.faint, letterSpacing: "0.04em", lineHeight: 1.5 }}>
+            plumbing (state · roles · grounds_in) is AI-maintained — you author taste (Voice &amp; Feel)
+          </span>
+        </div>
       )}
       {discardOpen && <DiscardStoryModal nodes={nodes} onClose={() => setDiscardOpen(false)} />}
       {historyOpen && nodes && <HistoryModal bookId={bookId} nodes={nodes} onClose={() => setHistoryOpen(false)} />}
@@ -578,12 +655,22 @@ export default function DnaTreePage() {
           normal flow (not position:fixed) so it can never overlap the tab strip below it, and so it
           shifts with the rail/search panels automatically via the outer container's margin. */}
       <div style={{ padding: "10px 16px", borderBottom: `1px solid ${T.borderSoft}`, display: "flex", alignItems: "center", gap: 16 }}>
-        <span style={{ display: "inline-flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+        <Link to={`/books/${bookSlug}`} title="Back to the book" style={{ display: "inline-flex", alignItems: "baseline", gap: 8, minWidth: 0, textDecoration: "none" }}>
           <span style={{ fontFamily: SERIF, fontSize: 16, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{bookName || bookSlug}</span>
           <span style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: T.faint }}>dna</span>
-        </span>
+        </Link>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 3 }}>
-          <QuickToggle active={searchOpen} accent={T.accent} icon="⌕" label="Search" onClick={() => setSearchOpen((v) => !v)} />
+          {/* #13 — the payoff action, reachable from anywhere in the studio, not just the Story tab */}
+          <button onClick={() => void renderAndRead()} disabled={!!rendering} title="Render the tree onto pages and read the current draft"
+            style={{
+              display: "flex", alignItems: "center", gap: 5, cursor: rendering ? "default" : "pointer",
+              background: `${T.accent}14`, border: `1px solid ${T.accent}55`, borderRadius: 6, padding: "3px 10px",
+              fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.08em", textTransform: "uppercase",
+              color: rendering ? T.faint : T.accent, marginRight: 6,
+            }}>
+            {rendering === "read" ? "reading…" : "read →"}
+          </button>
+          <QuickToggle active={searchOpen} accent={T.accent} icon="⌕" label="Search" title="Search ( / )" onClick={() => setSearchOpen((v) => !v)} />
           <QuickToggle active={railOpen} accent={T.accent} icon="✦" label="Editor" onClick={() => setRailOpen((v) => !v)} />
           {/* The app-wide theme picker — the studio renders its own chrome (no main nav), so it
               mounts here too; picking "Terminal" flips the studio to the dark console skin. */}
@@ -593,53 +680,44 @@ export default function DnaTreePage() {
 
       {/* Tab strip — Chrome-style: the active tab's bottom border is erased and its background matches
           the content below, so it visually fuses with whatever pane is open; inactive tabs sit recessed
-          on a shared baseline. overview (dashboard) / tree (structure) / voice & feel (taste) / analytics /
-          characters / story — same route, splat path, no remount. */}
+          on a shared baseline. Working surfaces (overview / tree / voice) vs. read-only projections
+          (analytics / meters / characters / story) are visually grouped by a thin divider between them —
+          same route, splat path, no remount. */}
       <div style={{ display: "flex", alignItems: "flex-end", gap: 2, padding: "8px 16px 0", borderBottom: `1px solid ${T.border}` }}>
-        {([["overview", "overview", overviewPath], ["tree", "tree", treePath], ["taste", "voice", `${treePath}/taste`], ["analytics", "analytics", analyticsPath], ["meters", "meters", metersPath], ["characters", "characters", charactersPath], ["story", "story", storyPath]] as const).map(([key, label, to]) => (
+        {([["overview", "overview", overviewPath], ["tree", "tree", treePath], ["taste", "voice", `${treePath}/taste`]] as const).map(([key, label, to]) => (
           <button key={key} onClick={() => navigate(to)} style={{
             background: tab === key ? T.bg : "transparent",
             border: `1px solid ${tab === key ? T.border : "transparent"}`,
             borderBottom: `1px solid ${tab === key ? T.bg : "transparent"}`,
             marginBottom: -1, borderRadius: "7px 7px 0 0",
-            color: tab === key ? T.accent : T.muted, fontSize: 10.5, cursor: "pointer",
-            letterSpacing: "0.1em", textTransform: "uppercase", padding: "6px 14px", fontFamily: MONO,
+            color: tab === key ? T.accent : T.muted, fontSize: 11, cursor: "pointer",
+            letterSpacing: "0.1em", textTransform: "uppercase", padding: "7px 16px", fontFamily: MONO,
+          }}>{label}</button>
+        ))}
+        <span style={{ width: 1, alignSelf: "stretch", marginBottom: 6, background: T.border }} />
+        {([["analytics", "analytics", analyticsPath], ["meters", "meters", metersPath], ["characters", "characters", charactersPath], ["story", "story", storyPath]] as const).map(([key, label, to]) => (
+          <button key={key} onClick={() => navigate(to)} style={{
+            background: tab === key ? T.bg : "transparent",
+            border: `1px solid ${tab === key ? T.border : "transparent"}`,
+            borderBottom: `1px solid ${tab === key ? T.bg : "transparent"}`,
+            marginBottom: -1, borderRadius: "7px 7px 0 0",
+            color: tab === key ? T.accent : T.muted, fontSize: 11, cursor: "pointer",
+            letterSpacing: "0.1em", textTransform: "uppercase", padding: "7px 16px", fontFamily: MONO,
           }}>{label}</button>
         ))}
       </div>
 
-      {/* Below-tabs action bar — health (apply everywhere) plus whatever's specific to the
-          open tab (timeline/history + expand/collapse only mean anything on the tree tab). */}
-      <div style={{ padding: "8px 16px", borderBottom: `1px solid ${T.borderSoft}`, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-        {/* #4 — DNA health: a glanceable status pip that deep-links into the Analytics tab (the detail
-            lives there now — summary-in-chrome, detail-in-pane). */}
-        <button onClick={() => navigate(analyticsPath)} title="open Analytics — the lints, pacing, promises & topography behind these bars"
-          style={{ display: "flex", alignItems: "center", gap: 12, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-          {(health.errors + health.warns) > 0 && (
-            <span style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: health.errors ? T.bad : T.warn, fontFamily: MONO }}>
-              {health.errors ? `${health.errors}✕ ` : ""}{health.warns ? `${health.warns}⚠` : ""} →
-            </span>
-          )}
-        </button>
-        {/* Tab-specific toggles — tree only */}
-        {tab === "tree" && (
-          <div style={{ display: "flex", gap: 3 }}>
-            <QuickToggle active={timelineOpen} accent={T.accent} icon="▦" label="Timeline" onClick={() => setTimelineOpen((v) => !v)} />
-            <QuickToggle active={historyOpen} accent={T.accent} icon="⟲" label="History" onClick={() => setHistoryOpen((v) => !v)} />
+      {/* Below-tabs action bar — only rendered off the tree tab, where the journey strip absorbs it (#5):
+          health pip + whatever utilities apply page-wide. */}
+      {tab !== "tree" && (
+        <div style={{ padding: "8px 16px", borderBottom: `1px solid ${T.borderSoft}`, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          {healthPip}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+            <DecomposeButton bookId={bookId} nodes={nodes} />
+            {overflowMenu}
           </div>
-        )}
-        {/* Controls */}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
-          <DecomposeButton bookId={bookId} nodes={nodes} />
-          {tab === "tree" && <button onClick={expandAll} style={{ background: "none", border: "none", color: T.muted, fontSize: 10.5, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: MONO }}>expand all</button>}
-          {tab === "tree" && <button onClick={collapseAll} style={{ background: "none", border: "none", color: T.muted, fontSize: 10.5, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: MONO }}>collapse all</button>}
-          <a href={`/books/${bookSlug}/dna.json`} style={{ color: T.muted, fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", textDecoration: "none", fontFamily: MONO }}>json →</a>
-          <button onClick={() => void forkDna()} disabled={forking} title="Copy this DNA tree into a new book to experiment freely"
-            style={{ background: "none", border: "none", color: forking ? T.faint : T.muted, fontSize: 10.5, cursor: forking ? "default" : "pointer", letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: MONO }}>
-            {forking ? "forking…" : "fork →"}
-          </button>
         </div>
-      </div>
+      )}
 
       {/* ── overview tab: the studio's dashboard — shape, next move, issues ── */}
       {tab === "overview" && (
@@ -715,35 +793,29 @@ export default function DnaTreePage() {
           onRender={() => void renderPages()} onRead={() => void renderAndRead()} rendering={rendering} />
       )}
 
-      {/* ── tree tab: journey → legend → proposals → brief → the structural tree ── */}
+      {/* ── tree tab: journey (+ merged action bar) → brief → the structural tree ── */}
       {tab === "tree" && (<>
-      {/* Journey strip — where am I / what's left (studio's strength, brought onto the tree) */}
-      {roots.length > 0 && <JourneyStrip nodes={nodes} onGoStage={goStage} />}
-      {/* Legend */}
-      <div style={{ padding: "8px 16px", borderBottom: `1px solid ${T.borderSoft}`, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 9.5, color: T.faint, letterSpacing: "0.1em", textTransform: "uppercase" }}>status</span>
-        {[["accepted", T.good], ["draft", T.warn], ["empty", T.empty]].map(([s, c]) => (
-          <span key={s} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: c }} />
-            <span style={{ fontSize: 9.5, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase" }}>{s}</span>
-          </span>
-        ))}
-        <span style={{ fontSize: 9.5, color: T.stale, letterSpacing: "0.08em", textTransform: "uppercase" }}>amber dot = stale</span>
-        <span style={{ fontSize: 9.5, color: T.warn, marginLeft: 8 }}>∴ therefore  ↯ but</span>
-        <span style={{ fontSize: 9.5, color: T.faint, marginLeft: 8, letterSpacing: "0.04em" }} title="state keys, thread roles, grounds_in, polarity oscillation — the AI maintains these; you author taste (Voice & Feel)">plumbing (state · roles · grounds_in) is AI-maintained</span>
-        {/* #7 — context legend: what the lit hues mean + how to clear */}
-        {ctxNode && (
-          <span style={{ fontSize: 9.5, letterSpacing: "0.06em", display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ color: T.ink }}>▎context: {ctxNode.kind}{nodeTitle(ctxNode) ? ` ${nodeTitle(ctxNode)}` : ""}</span>
-            <span style={{ color: T.ctxA }}>green = built from</span>
-            <span style={{ color: T.ctxB }}>blue = draws on it</span>
-            <span onClick={() => setContextId(null)} style={{ color: T.muted, cursor: "pointer", textTransform: "uppercase" }}>esc ✕</span>
-          </span>
-        )}
-      </div>
+      {/* Journey strip — where am I / what's left, merged with the action bar (#5): health pip + the
+          tree-only toggles sit in the same row as the stages instead of a whole extra chrome row. */}
+      {roots.length > 0 && (
+        <JourneyStrip nodes={nodes} onGoStage={goStage}
+          onGapClick={(key) => { goStage(key); setRailOpen(true); }}
+          right={
+            <>
+              {healthPip}
+              <DecomposeButton bookId={bookId} nodes={nodes} />
+              <button onClick={expandAll} style={smallBtnStyle}>expand all</button>
+              <button onClick={collapseAll} style={smallBtnStyle}>collapse all</button>
+              <QuickToggle active={timelineOpen} accent={T.accent} icon="▦" label="Timeline" onClick={() => setTimelineOpen((v) => !v)} />
+              <QuickToggle active={legendOpen} accent={T.accent} icon="?" label="Key" onClick={() => setLegendOpen((v) => !v)} />
+              {overflowMenu}
+            </>
+          } />
+      )}
 
-      {/* The BRIEF — the ORIGIN (step 0), above the tree. The seed (logline) below is derived from it. */}
-      <BriefOrigin brief={brief} onSave={saveBrief} />
+      {/* The BRIEF — the ORIGIN (step 0), above the tree. The seed (logline) below is derived from it.
+          Collapses once past the premise stage (#4) — it's reference by then, not active work. */}
+      <BriefOrigin brief={brief} onSave={saveBrief} open={briefOpen} onToggleOpen={setBriefOpen} />
 
       {/* Tree */}
       <div style={{ paddingTop: 8, paddingBottom: timelineOpen ? 220 : 48 }}>

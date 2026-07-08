@@ -253,6 +253,8 @@ export function currentObjective(nodes: DnaNode[], opts: { bookSlug?: string } =
 // written"). `gapLabel` is the plain-English remainder for the what's-left line. Pure, derived live.
 export interface StageProgress { done: number; total: number; ratio: number; label: string; partial: boolean; gapLabel?: string }
 
+const plural = (n: number, noun: string, verb: string) => `${n} ${noun}${n === 1 ? "" : "s"} ${n === 1 ? `${verb}s` : verb}`;
+
 export function stageProgress(nodes: DnaNode[]): Record<StageKey, StageProgress> {
   const of = (k: NodeKind) => nodes.filter((n) => n.kind === k);
   const hasChild = (pid: string, kind: NodeKind) => nodes.some((n) => n.parent_id === pid && n.kind === kind);
@@ -272,11 +274,11 @@ export function stageProgress(nodes: DnaNode[]): Record<StageKey, StageProgress>
     premise: mk((seedDone ? 1 : 0) + (premiseDone ? 1 : 0), 2, premiseDone ? "premise set" : seedDone ? "seed set" : "empty"),
     foundations: mk((pillarDone ? 1 : 0) + (cast >= 1 ? 1 : 0), 2, cast ? `${cast} cast` : "no cast", pillarDone ? "add cast" : "set pillar"),
     structure: mk(actsWithBeats, acts.length, acts.length ? `${actsWithBeats}/${acts.length} acts → beats` : "no acts",
-      acts.length ? `${acts.length - actsWithBeats} acts need beats` : "generate acts"),
+      acts.length ? plural(acts.length - actsWithBeats, "act", "need") + " beats" : "generate acts"),
     scenes: mk(beatsWithScenes, beats.length, beats.length ? `${beatsWithScenes}/${beats.length} beats → scenes` : "no beats",
-      beats.length ? `${beats.length - beatsWithScenes} beats need scenes` : "generate beats"),
+      beats.length ? plural(beats.length - beatsWithScenes, "beat", "need") + " scenes" : "generate beats"),
     draft: mk(drafted, scenes.length, scenes.length ? `${drafted}/${scenes.length} written` : "no scenes",
-      scenes.length ? `${scenes.length - drafted} scenes need prose` : "generate scenes"),
+      scenes.length ? plural(scenes.length - drafted, "scene", "need") + " prose" : "generate scenes"),
   };
 }
 

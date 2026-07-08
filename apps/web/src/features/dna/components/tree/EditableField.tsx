@@ -46,7 +46,7 @@ export function EditableField({ node, spec, depth, index, parentKey, onJump, sea
   }
 
   const emptyRow = (
-    <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
+    <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle} title={spec.hint}>{spec.label}</span>
       <span onClick={() => !locked && setEditing(true)} style={{ fontFamily: SERIF, fontSize: 13, color: T.faint, flex: 1, cursor: locked ? "default" : "pointer", fontStyle: "italic" }}>
         {locked ? "—" : `＋ ${spec.label}`}
       </span>
@@ -58,7 +58,7 @@ export function EditableField({ node, spec, depth, index, parentKey, onJump, sea
     const ids = Array.isArray(raw) ? (raw as string[]) : [];
     const candidates = [...index.values()].filter((n) => n.kind === spec.refKind && !ids.includes(n.id));
     return (
-      <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
+      <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle} title={spec.hint}>{spec.label}</span>
         <span style={{ display: "flex", flexWrap: "wrap", gap: 4, flex: 1, alignItems: "center" }}>
           {ids.map((id) => (
             <span key={id} style={{ fontFamily: MONO, fontSize: 11, color: T.inkSoft, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 4, padding: "1px 6px", display: "inline-flex", gap: 4, alignItems: "center" }}>
@@ -85,7 +85,7 @@ export function EditableField({ node, spec, depth, index, parentKey, onJump, sea
       if (!value) return emptyRow;
       const jumpId = spec.type === "ref" && typeof raw === "string" && onJump ? raw : null;
       return (
-        <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
+        <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle} title={spec.hint}>{spec.label}</span>
           <span style={{ flex: 1, display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
             {jumpId
               ? <span onClick={() => onJump!(jumpId)} title="jump to node" style={{ fontFamily: SERIF, fontSize: 14, color: busy ? T.faint : T.accent, cursor: "pointer", borderBottom: `1px dotted ${T.faint}`, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Highlighted text={value} pattern={searchPattern ?? null} /></span>
@@ -99,7 +99,7 @@ export function EditableField({ node, spec, depth, index, parentKey, onJump, sea
     const opts = spec.type === "select" ? (spec.options ?? []).map((o) => ({ id: o, label: o }))
       : [...index.values()].filter((n) => n.kind === spec.refKind).map((n) => ({ id: n.id, label: nodeTitle(n) || n.id }));
     return (
-      <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
+      <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle} title={spec.hint}>{spec.label}</span>
         <select ref={ref as React.RefObject<HTMLSelectElement>} value={typeof raw === "string" ? raw : ""} disabled={busy}
           onChange={(e) => { void write(e.target.value); setEditing(false); }} onBlur={() => setEditing(false)}
           style={{ ...inputStyle, flex: 1 }}>
@@ -114,7 +114,7 @@ export function EditableField({ node, spec, depth, index, parentKey, onJump, sea
   if (!editing && !value) return emptyRow;
   if (!editing) {
     return (
-      <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
+      <div style={detailRowStyle(depth)}>{fieldRowStart(depth)}<span style={labelStyle} title={spec.hint}>{spec.label}</span>
         <span onClick={() => !locked && (setDraft(rawAsDraft(raw, spec)), setEditing(true))} style={{ fontFamily: SERIF, fontSize: 14, color: busy ? T.faint : T.ink, whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1, lineHeight: 1.55, cursor: locked ? "default" : "text" }}><Highlighted text={value} pattern={searchPattern ?? null} /></span>
         {!locked && <span onClick={() => !busy && void write(spec.type === "list" ? [] : "")} title="clear field" style={{ fontSize: 11, color: T.faint, cursor: "pointer", flexShrink: 0, alignSelf: "center", padding: "0 2px" }}>✕</span>}
       </div>
@@ -139,7 +139,7 @@ export function EditableField({ node, spec, depth, index, parentKey, onJump, sea
     style: { ...inputStyle, flex: 1, resize: "vertical" as const },
   };
   return (
-    <div style={detailRowStyle(depth)} onClick={(e) => e.stopPropagation()}>{fieldRowStart(depth)}<span style={labelStyle}>{spec.label}</span>
+    <div style={detailRowStyle(depth)} onClick={(e) => e.stopPropagation()}>{fieldRowStart(depth)}<span style={labelStyle} title={spec.hint}>{spec.label}</span>
       {spec.multiline ? <textarea rows={Math.min(8, Math.max(2, draft.split("\n").length))} {...common} /> : <input {...common} />}
       <span style={{ fontFamily: MONO, fontSize: 9.5, color: T.faint, flexShrink: 0, alignSelf: "center" }}>{spec.multiline ? "⌘↵ · esc" : "↵ · esc"}</span>
     </div>

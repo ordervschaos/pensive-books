@@ -270,14 +270,6 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
         <>
           {fields}
           {hidden}
-          <div style={{ ...detailRowStyle(depth + 1), paddingTop: 0, paddingBottom: 2 }}>
-            <ConnectorTick depth={depth + 1} />
-            <span style={{ width: 12, flexShrink: 0 }} />
-            <span style={{ ...labelStyle, color: "transparent" }}>·</span>
-            <span style={{ fontFamily: SERIF, fontSize: 12.5, color: T.muted, fontStyle: "italic" }}>
-              the logline — derived from the brief (the origin) above; ≠ the raw idea. Refine it with the lab.
-            </span>
-          </div>
           {backlinks}
           {lab}
           {sub(kids, depth + 1)}

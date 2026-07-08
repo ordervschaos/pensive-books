@@ -292,15 +292,26 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
         <Wand2 className="h-4 w-4 text-[hsl(var(--pv-accent))]" />
         <Eyebrow tone="accent">Agent</Eyebrow>
         <div className="ml-auto flex items-center gap-2">
-          <button type="button" onClick={toggleAuto} disabled={active}
-            title={auto ? "Auto-accept ON — the agent runs autonomously: it makes its own choices and applies them, no review. Click to turn off." : "Auto-accept OFF — you review and apply each change. Click to let the agent run autonomously."}
-            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 pv-mono text-[10px] transition-colors disabled:opacity-50 ${
-              auto
-                ? "border-[hsl(var(--pv-accent))]/50 bg-[hsl(var(--pv-accent))]/[0.08] text-[hsl(var(--pv-accent))]"
-                : "border-[hsl(var(--pv-border-soft))] text-[hsl(var(--pv-text-faint))] hover:text-foreground"
-            }`}>
-            <InfinityIcon className="h-2.5 w-2.5" /> auto
-          </button>
+          {/* #12 — a labeled two-position segment (manual/auto), not a single unlabeled icon pill: autonomy
+              is the most consequential behavior in the studio, so both states should read at a glance. */}
+          <div className="inline-flex items-center gap-0.5 rounded-full border border-[hsl(var(--pv-border-soft))] p-0.5">
+            <button type="button" onClick={() => auto && toggleAuto()} disabled={active}
+              title="Manual — you review and apply each change."
+              className={`rounded-full px-2 py-0.5 pv-mono text-[10px] transition-colors disabled:opacity-50 ${
+                !auto ? "bg-[hsl(var(--pv-accent))] text-background" : "text-[hsl(var(--pv-text-faint))] hover:text-foreground"
+              }`}>
+              manual
+            </button>
+            <button type="button" onClick={() => !auto && toggleAuto()} disabled={active}
+              title="Auto — the agent runs autonomously: it makes its own choices and applies them, no review."
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 pv-mono text-[10px] transition-colors disabled:opacity-50 ${
+                auto
+                  ? "bg-[hsl(var(--pv-accent))] text-background"
+                  : "text-[hsl(var(--pv-text-faint))] hover:text-foreground"
+              }`}>
+              <InfinityIcon className="h-2.5 w-2.5" /> auto
+            </button>
+          </div>
           <div className="inline-flex items-center gap-0.5 rounded-full border border-[hsl(var(--pv-border-soft))] p-0.5">
             <button type="button" onClick={() => setEffortMode("low")} disabled={active}
               title="Fast — proposes inline on first response."

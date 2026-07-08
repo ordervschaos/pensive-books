@@ -68,14 +68,16 @@ export function VoiceFeelPanel({ nodes, index, onJump, asPage }: { nodes: DnaNod
 // stages (Idea→Foundations→Structure→Scenes→Prose); buildJourney derives each stage's done|now|locked from
 // the tree, and stageSubsteps names the single next action inside the "now" stage. Clicking a stage reveals
 // + scrolls to its layer (STAGE_KINDS). Pure-derived — no stored progress.
-export function JourneyStrip({ nodes, onGoStage }: {
+export function JourneyStrip({ nodes, onGoStage, onGapClick, right }: {
   nodes: DnaNode[]; onGoStage: (key: StageKey) => void;
+  onGapClick?: (key: StageKey) => void; // #14 — turn "what's left" into the work loop: reveal + open the agent
+  right?: React.ReactNode; // merged action-bar controls (health pip, tree toggles) — same row as the stages
 }) {
   const mono = MONO;
   const { stages } = buildJourney(nodes);
   const prog = stageProgress(nodes);
   // The open gaps, in spine order — the literal "what's left" ("18 beats need scenes · 29 scenes need prose").
-  const gaps = DNA_STAGES.map((s) => prog[s.key].gapLabel).filter((g): g is string => !!g);
+  const gaps = DNA_STAGES.map((s) => ({ key: s.key, label: prog[s.key].gapLabel })).filter((g): g is { key: StageKey; label: string } => !!g.label);
   // A stage's hue: done = green, partial = amber (started-not-finished), now = accent, locked = faint.
   const hue = (status: string, partial: boolean) =>
     status === "done" ? T.good : partial ? T.stale : status === "now" ? T.accent : status === "locked" ? T.empty : T.muted;
@@ -116,12 +118,24 @@ export function JourneyStrip({ nodes, onGoStage }: {
             </span>
           );
         })}
+        {right && <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>{right}</span>}
       </div>
-      {/* What's left — the open gaps in plain words, in spine order */}
+      {/* What's left — the open gaps in plain words, in spine order. Each gap is clickable: reveals that
+          stage's layer in the tree AND opens the agent rail, whose "next step" nudge already names the
+          mapped action (dnaJourney.currentObjective / AgentRail's NEXT_STEP_MESSAGE) — #14. */}
       {gaps.length > 0 && (
         <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
           <span style={{ fontFamily: mono, fontSize: 9.5, letterSpacing: "0.14em", textTransform: "uppercase", color: T.muted }}>what's left</span>
-          <span style={{ fontFamily: mono, fontSize: 10.5, color: T.warmText }}>{gaps.join("  ·  ")}</span>
+          {gaps.map((g, i) => (
+            <span key={g.key} style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
+              <span onClick={onGapClick ? () => onGapClick(g.key) : undefined}
+                title={onGapClick ? "reveal in the tree + open the agent" : undefined}
+                style={{ fontFamily: mono, fontSize: 10.5, color: T.warmText, cursor: onGapClick ? "pointer" : "default", borderBottom: onGapClick ? `1px dotted ${T.warmText}88` : undefined }}>
+                {g.label}
+              </span>
+              {i < gaps.length - 1 && <span style={{ color: T.faint }}>·</span>}
+            </span>
+          ))}
         </div>
       )}
     </div>
@@ -191,6 +205,11 @@ export function FocusPanel({ node, index, consumes, consumedBy, onJump, onClear,
         <span style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: KIND_COLOR[node.kind] ?? T.muted, flexShrink: 0 }}>{node.kind}</span>
         <span style={{ fontFamily: SERIF, fontSize: 14, color: T.ink, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nodeTitle(node) || node.id}</span>
         <span onClick={onClear} title="clear focus (esc)" style={{ fontSize: 12, color: T.muted, cursor: "pointer", flexShrink: 0 }}>✕</span>
+      </div>
+      {/* What the lit hues mean in the tree below — this panel is what lit them (#1) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: mono, fontSize: 9.5, letterSpacing: "0.04em" }}>
+        <span style={{ color: T.ctxA }}>▎green = built from</span>
+        <span style={{ color: T.ctxB }}>▎blue = draws on it</span>
       </div>
 
       {/* Lineage ↑ — the rungs above; direct parent = the source it was hydrated from */}

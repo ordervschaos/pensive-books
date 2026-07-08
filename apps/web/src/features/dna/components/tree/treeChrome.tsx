@@ -159,9 +159,9 @@ setConsoleTheme("paper");
 
 // A view-toggle chip for the fixed quick bar — lit in its accent when active.
 
-export function QuickToggle({ active, accent, label, icon, onClick }: { active: boolean; accent: string; label: string; icon: string; onClick: () => void }) {
+export function QuickToggle({ active, accent, label, icon, onClick, title }: { active: boolean; accent: string; label: string; icon: string; onClick: () => void; title?: string }) {
   return (
-    <button onClick={onClick} title={label} style={{
+    <button onClick={onClick} title={title ?? label} style={{
       display: "flex", alignItems: "center", gap: 5, cursor: "pointer",
       background: active ? `${accent}14` : "transparent", border: `1px solid ${active ? `${accent}55` : "transparent"}`,
       borderRadius: 6, padding: "3px 9px", fontFamily: MONO, fontSize: 10.5,

@@ -16,6 +16,8 @@ export type FieldType = "text" | "list" | "ref" | "refs" | "select" | "percent" 
 export interface EditSpec {
   key: string; label: string; type?: FieldType; multiline?: boolean;
   refKind?: NodeKind; options?: string[]; fields?: EditSpec[];
+  hint?: string; // shown as a `title` tooltip on the label — for a field whose relationship to a sibling
+  // rung needs a sentence of explanation but shouldn't cost a permanent chrome row (docs/dna-studio-redesign-handoff.md #3)
   required?: boolean; // load-bearing — a node missing this reads as incomplete (and is rejected at generation)
   // taste = a USER-OWNED, subjective field ("to their taste"): tone, controlling idea, voice style, idiolect.
   // The Voice & Feel panel (DnaTreePage) gathers every taste field into one surface so the author isn't
@@ -32,7 +34,8 @@ const POLARITY = ["up", "down"];
 
 // ── The schema (formerly DnaTreePage.EDIT_FIELDS) — now the one place the field shape lives ───────────────
 export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
-  seed: [{ key: "logline", label: "logline", multiline: true, required: true }],
+  seed: [{ key: "logline", label: "logline", multiline: true, required: true,
+    hint: "the logline — derived from the brief (the origin) above; ≠ the raw idea. Refine it with the lab." }],
   premise: [
     // genre + tone live on the BRIEF (the book-level contract / MANDATE), not here — they were duplicated
     // onto premise but nothing downstream read them (drift risk only). The premise rung holds only what it
