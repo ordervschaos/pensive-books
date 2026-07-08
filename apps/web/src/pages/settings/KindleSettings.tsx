@@ -122,6 +122,25 @@ export default function KindleSettings() {
           <h1 className="text-2xl font-semibold">Kindle Settings</h1>
         </div>
 
+        <Card className="max-w-md mx-auto mb-4">
+          <CardContent className="p-6 space-y-2 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">Before you verify, whitelist our sender email</p>
+            <p>
+              Amazon only delivers documents from senders you've approved. Open{" "}
+              <a
+                href="https://www.amazon.com/gp/help/customer/display.html?nodeId=GX9XLEVV8G4DB28H"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                Amazon's Approved Personal Document E-mail List settings
+              </a>{" "}
+              and add <span className="font-mono text-foreground">hello@pensive.me</span> to the list. Otherwise
+              Amazon will silently reject books we send to your Kindle email.
+            </p>
+          </CardContent>
+        </Card>
+
         <Card className="max-w-md mx-auto">
           <CardContent className="p-6">
             <div className="space-y-4">
