@@ -61,7 +61,7 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 | Project | Status | Notes |
 |---|---|---|
 | EPUB import Layer A (epub → DNA tree draft) | shipped | Prose locked as user-truth |
-| EPUB import Layer B (semantic ascent) | shipped | 2026-07-08 (`4330bfc`, dna-decompose); remaining: scene enrichment + act re-segmentation |
+| EPUB import Layer B (semantic ascent) | shipped | 2026-07-08 (`4330bfc` + `84fb407` durable-task promotion: book_decompositions row, self-chain, stopRun); remaining: scene enrichment + act re-segmentation |
 | Publish → marketing revalidation (DB trigger → pg_net) | blocked | REVALIDATE_SECRET env not yet set |
 | Sequel canon (book-2 constrained by book-1 packet) | shipped | O5 groundwork |
 
