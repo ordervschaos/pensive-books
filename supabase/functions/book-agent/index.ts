@@ -42,6 +42,43 @@ const AUTO_MAX_TURNS = 50;     // autonomous threads iterate change-by-change, s
 // real defense is keeping turns short (effort: medium below), not this timer.
 const CALL_TIMEOUT_MS = 140_000;
 const ACK_TIMEOUT_MS = 15_000; // fast chat acknowledgement; the real tool turn follows
+
+// ── Context compaction ──
+// A long run's transcript accumulates every read_node/search_nodes result — 14 full scene reads is
+// ~170k chars (~42k tokens) re-sent on EVERY subsequent call. Observed on book 1229: once the prompt
+// crossed ~60k tokens, most MuleRouter calls blew the 140s timeout (uncached prefill + reasoning) and
+// the loop crawled at one successful turn per ~4 attempts. Once the transcript outgrows COMPACT_OVER,
+// stub the bulky tool_result bodies in all but the last KEEP_RECENT messages — the model's recent
+// working set stays intact, older reads become a one-line pointer it can re-read on demand (the live
+// tree digest is always in <book_state> anyway). Blocks are REPLACED, never removed, so tool_use ↔
+// tool_result pairing survives. Deterministic, so a retried link re-derives the identical transcript.
+const COMPACT_OVER = 120_000; // chars of transcript JSON (~30k tokens) before pruning kicks in
+const KEEP_RECENT = 6;        // trailing messages whose tool_results stay intact (~3 tool turns)
+const STUB_OVER = 700;        // only stub results bigger than this (small acks/errors aren't worth it)
+
+function compactTranscript(transcript: unknown[]): unknown[] {
+  if (JSON.stringify(transcript).length <= COMPACT_OVER) return transcript;
+  const cut = Math.max(0, transcript.length - KEEP_RECENT);
+  let changed = false;
+  const out = transcript.map((m, i) => {
+    if (i >= cut) return m;
+    const msg = m as { role?: string; content?: unknown };
+    if (msg?.role !== "user" || !Array.isArray(msg.content)) return m;
+    let msgChanged = false;
+    // deno-lint-ignore no-explicit-any
+    const content = (msg.content as any[]).map((b) => {
+      if (b?.type !== "tool_result" || typeof b.content !== "string" || b.content.length <= STUB_OVER) return b;
+      if (b.content.includes("[PRUNED")) return b; // already stubbed on a prior pass
+      msgChanged = true;
+      return { ...b, content: `${b.content.slice(0, 80)}… [PRUNED — an older full read, removed to keep context small. The live tree is in <book_state>; read_node/search_nodes again if you need this content.]` };
+    });
+    if (!msgChanged) return m;
+    changed = true;
+    return { ...msg, content };
+  });
+  return changed ? out : transcript;
+}
+
 // Sentinel prefixing the one-shot "act or finish" prod injected when an AUTONOMOUS turn ends with
 // prose and no tool call. Its presence in the previous user message means the model stalled twice
 // in a row — then the run goes idle honestly instead of prodding forever.
@@ -325,11 +362,15 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // P2.3 — enforced render→verify (auto only): if the prior turn was an applied prose render, inject a
     // plan-conformance verdict into the transcript before this turn's model call. Best-effort; returns the
     // originals if nothing to verify or on any error, so the loop is never blocked.
-    const { transcript: baseTranscript, steps: baseSteps } = auto
+    const { transcript: rawTranscript, steps: baseSteps } = auto
       ? await maybeInjectRenderVerify(service, apiKey, model, row)
       : { transcript: row.transcript as unknown[], steps: row.steps };
-    // A conversational system prompt grounded in the CURRENT book state (rebuilt per call so ids stay
-    // fresh), and the thread tool belt.
+    // Prune stale bulky reads once the transcript is big (see compactTranscript). Persisted below with
+    // the turns tick when it changed, so the row shrinks too (Realtime payload, next link's load).
+    const baseTranscript = compactTranscript(rawTranscript);
+    const compacted = baseTranscript !== rawTranscript;
+    // The stable system prompt + the volatile book state (rebuilt per call so ids stay fresh; injected
+    // into the latest message, not the system prompt — see threadSystem/withBookState), and the tool belt.
     const turns = row.turns + 1;
     // Boundaries removed (docs/agent-context-model.md): the agent always sees + may touch the whole book.
     // Forced null here (not row.context_scope) so even threads created under the old aspect-fence run
@@ -337,22 +378,24 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     const scope: Aspect[] | null = null;
     const effort = row.context_effort ?? "high";
     // `auto` (autonomous mode: never park, commit own picks) computed above for the turn ceiling.
-    const system = await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto, row.context_objective, row.context_attached_ids);
+    const { instructions, bookState } = await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto, row.context_objective, row.context_attached_ids);
     const tools = threadToolsFor(scope);
     // Count the turn BEFORE the call: a hard worker death mid-call still consumes budget, so a
     // crash-looping run hits MAX_TURNS instead of being revived forever by the watchdog.
     // Re-write `steps` (unchanged) alongside `turns` so this mid-"thinking" Realtime event carries the
     // steps column — otherwise Postgres omits the unchanged TOASTed jsonb from the WAL new-tuple and the
     // client's row arrives with steps=null, blanking the feed. (REPLICA IDENTITY FULL is the broader fix.)
-    await service.from("book_agent_runs").update({ turns, steps: baseSteps }).eq("id", runId);
+    await service.from("book_agent_runs").update({ turns, steps: baseSteps, ...(compacted ? { transcript: baseTranscript } : {}) }).eq("id", runId);
 
-    // Poll for cancel_requested every 5s during the call so a user stop aborts the in-flight
-    // Claude request rather than waiting up to CALL_TIMEOUT_MS for it to finish naturally.
+    // Poll for cancel_requested every 1s during the call so a user stop aborts the in-flight
+    // Claude request rather than waiting up to CALL_TIMEOUT_MS for it to finish naturally. (Was
+    // 5s — the composer stays locked until this fires, so the interval directly sets the worst-case
+    // "stop felt unresponsive" wait; 1s trades a few more cheap SELECTs for a tighter bound.)
     const cancelCtrl = new AbortController();
     const cancelPoll = setInterval(async () => {
       const { data: cr } = await service.from("book_agent_runs").select("cancel_requested").eq("id", runId).maybeSingle();
       if ((cr as { cancel_requested?: boolean } | null)?.cancel_requested) cancelCtrl.abort("cancel_requested");
-    }, 5000);
+    }, 1000);
     const callSignal = AbortSignal.any([AbortSignal.timeout(CALL_TIMEOUT_MS), cancelCtrl.signal]);
 
     let resp;
@@ -365,9 +408,9 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
         // five consecutive aborted-and-billed 120s calls). Medium keeps a turn at ~30-60s; the
         // author-gated plan review downstream is the quality backstop.
         output_config: { effort: "medium" },
-        system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+        system: [{ type: "text", text: instructions, cache_control: { type: "ephemeral" } }],
         tools,
-        messages: withCacheBreakpoints(baseTranscript),
+        messages: withBookState(withCacheBreakpoints(baseTranscript), bookState),
       }, {
         fn: "book-agent",
         bookId: row.book_id,
@@ -437,7 +480,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
           const ack = toolUses.map((t) => ({
             type: "tool_result", tool_use_id: t.id,
             content: t.id === opsCall.id
-              ? "✓ Applied to the tree (autonomous mode — no review step). Your next turn will show the updated tree above. Propose the next change if the request needs more, or call finish with a one-line summary to conclude."
+              ? "✓ Applied to the tree (autonomous mode — no review step). Your next turn will show the updated tree. If the request needs more, propose the next change — batching every remaining INDEPENDENT edit into one propose_node_ops call — or call finish with a one-line summary to conclude."
               : "ok",
           }));
           transcript.push({ role: "user", content: ack });
@@ -771,8 +814,11 @@ async function maybeTitleThread(service: SupabaseClient, apiKey: string, model: 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Execute a turn's non-terminal tool calls (read_node/get_schema/search_nodes/check_against_contract;
-// unknown tools get an error result) and return the tool_result blocks. `overrides` injects a prebuilt
-// result for a given tool_use id.
+// unknown tools get an error result) and return the tool_result blocks, in tool order. `overrides` injects
+// a prebuilt result for a given tool_use id. Independent calls FAN OUT concurrently (Promise.all) — the
+// system prompt tells the model its reads run in parallel, so a batched turn must not pay for them serially
+// (check_against_contract is an LLM judge call; two of them back-to-back used to double a turn's wall
+// clock). Steps append in tool order AFTER the fan-out, so the visible feed stays deterministic.
 // deno-lint-ignore no-explicit-any
 async function toolResults(
   service: SupabaseClient,
@@ -783,126 +829,144 @@ async function toolResults(
   overrides: Record<string, string> = {},
   _auto = false,
 ): Promise<unknown[]> {
-  const results: unknown[] = [];
-  for (const t of toolUses) {
-    if (overrides[t.id] != null) {
-      results.push({ type: "tool_result", tool_use_id: t.id, content: overrides[t.id], is_error: true });
-      continue;
+  const outs = await Promise.all(toolUses.map((t) => execTool(service, bookId, t, overrides)));
+  for (const o of outs) if (o.step) steps.push(o.step);
+  return outs.map((o) => o.result);
+}
+
+// One tool call → its tool_result block (+ the feed step it should log, if any). Must never throw:
+// every failure path returns an is_error result the model can react to.
+// deno-lint-ignore no-explicit-any
+async function execTool(
+  service: SupabaseClient,
+  bookId: number,
+  // deno-lint-ignore no-explicit-any
+  t: any,
+  overrides: Record<string, string>,
+): Promise<{ result: unknown; step?: AgentStep }> {
+  if (overrides[t.id] != null) {
+    return { result: { type: "tool_result", tool_use_id: t.id, content: overrides[t.id], is_error: true } };
+  }
+  if (t.name === "read_node") {
+    const id = String((t.input as { id?: string })?.id ?? "");
+    // Children (one level down) as a summary so the agent can navigate without re-reading everything;
+    // the kids query only needs the id, so it runs alongside the node fetch.
+    const [{ data: node }, { data: kids }] = await Promise.all([
+      service.from("book_nodes").select("id, kind, content, authoring, book_id").eq("id", id).maybeSingle(),
+      service.from("book_nodes").select("id, kind, content").eq("book_id", bookId).eq("parent_id", id).order("position", { ascending: true }),
+    ]);
+    if (!node || (node as { book_id?: number }).book_id !== bookId) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: `No node with id ${id} in this book.`, is_error: true } };
     }
-    if (t.name === "read_node") {
-      const id = String((t.input as { id?: string })?.id ?? "");
-      const { data: node } = await service
-        .from("book_nodes").select("id, kind, content, authoring, book_id").eq("id", id).maybeSingle();
-      if (!node || (node as { book_id?: number }).book_id !== bookId) {
-        results.push({ type: "tool_result", tool_use_id: t.id, content: `No node with id ${id} in this book.`, is_error: true });
-        continue;
-      }
-      const n = node as { id: string; kind: string; content: Record<string, unknown>; authoring: { locked?: boolean } };
-      // Children (one level down) as a summary so the agent can navigate without re-reading everything.
-      const { data: kids } = await service
-        .from("book_nodes").select("id, kind, content").eq("book_id", bookId).eq("parent_id", id).order("position", { ascending: true });
-      const childLines = (kids ?? []).map((k) => `  - [${(k as { id: string }).id}] ${(k as { kind: string }).kind}: ${nodeHandle((k as { content: Record<string, unknown> }).content)}`).join("\n");
-      const schema = schemaFor([n.kind]); // hand back the kind's field schema so an edit uses the right keys
-      steps.push({ t: "read", label: `Read ${n.kind} “${nodeHandle(n.content)}” in full.` });
-      results.push({
+    const n = node as { id: string; kind: string; content: Record<string, unknown>; authoring: { locked?: boolean } };
+    const childLines = (kids ?? []).map((k) => `  - [${(k as { id: string }).id}] ${(k as { kind: string }).kind}: ${nodeHandle((k as { content: Record<string, unknown> }).content)}`).join("\n");
+    const schema = schemaFor([n.kind]); // hand back the kind's field schema so an edit uses the right keys
+    return {
+      step: { t: "read", label: `Read ${n.kind} “${nodeHandle(n.content)}” in full.` },
+      result: {
         type: "tool_result", tool_use_id: t.id,
         content: `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}: ${JSON.stringify(n.content)}` + (childLines ? `\nchildren:\n${childLines}` : "") + (schema ? `\n\n${schema}` : ""),
-      });
-    } else if (t.name === "get_schema") {
-      const kinds = (Array.isArray((t.input as { kinds?: unknown })?.kinds) ? (t.input as { kinds: unknown[] }).kinds : [])
-        .filter((k): k is string => typeof k === "string");
-      const schema = schemaFor(kinds);
-      results.push(schema
+      },
+    };
+  }
+  if (t.name === "get_schema") {
+    const kinds = (Array.isArray((t.input as { kinds?: unknown })?.kinds) ? (t.input as { kinds: unknown[] }).kinds : [])
+      .filter((k): k is string => typeof k === "string");
+    const schema = schemaFor(kinds);
+    return {
+      result: schema
         ? { type: "tool_result", tool_use_id: t.id, content: schema }
-        : { type: "tool_result", tool_use_id: t.id, content: `No schema for ${JSON.stringify(kinds)}. Valid kinds: ${Object.keys(SCHEMA_BY_KIND).join(", ")}.`, is_error: true });
-    } else if (t.name === "search_nodes") {
-      // The agent's grep: per-FIELD substring match over EVERY node's content (incl. scene prose, which the
-      // digest drops). ~200 nodes/book — fetch all and match in JS; only id/kind/handle/field/snippet go back.
-      const q = String((t.input as { query?: string })?.query ?? "").trim();
-      if (!q) {
-        results.push({ type: "tool_result", tool_use_id: t.id, content: "Provide a non-empty query string.", is_error: true });
-        continue;
+        : { type: "tool_result", tool_use_id: t.id, content: `No schema for ${JSON.stringify(kinds)}. Valid kinds: ${Object.keys(SCHEMA_BY_KIND).join(", ")}.`, is_error: true },
+    };
+  }
+  if (t.name === "search_nodes") {
+    // The agent's grep: per-FIELD substring match over EVERY node's content (incl. scene prose, which the
+    // digest drops). ~200 nodes/book — fetch all and match in JS; only id/kind/handle/field/snippet go back.
+    const q = String((t.input as { query?: string })?.query ?? "").trim();
+    if (!q) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: "Provide a non-empty query string.", is_error: true } };
+    }
+    const { data: rows } = await service
+      .from("book_nodes").select("id, kind, content").eq("book_id", bookId);
+    const needle = q.toLowerCase();
+    const hits: string[] = [];
+    let more = 0;
+    // prose.text is unwrapped one level so its snippet stays plain text; other nested values fall back to a
+    // stringified sub-value (no deep recursion).
+    for (const r of (rows ?? []) as { id: string; kind: string; content: Record<string, unknown> | null }[]) {
+      for (const [field, value] of Object.entries(r.content ?? {})) {
+        let text: string;
+        if (typeof value === "string") text = value;
+        else if (field === "prose" && value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string") text = (value as { text: string }).text;
+        else if (value && typeof value === "object") text = JSON.stringify(value);
+        else continue;
+        const idx = text.toLowerCase().indexOf(needle);
+        if (idx === -1) continue;
+        if (hits.length >= 30) { more++; continue; }
+        const start = Math.max(0, idx - 60);
+        const end = Math.min(text.length, idx + needle.length + 60);
+        const snippet = (start > 0 ? "…" : "") + text.slice(start, end).replace(/\s+/g, " ") + (end < text.length ? "…" : "");
+        hits.push(`[${r.id}] ${r.kind} “${nodeHandle(r.content)}” — ${field}: “${snippet}”`);
       }
-      const { data: rows } = await service
-        .from("book_nodes").select("id, kind, content").eq("book_id", bookId);
-      const needle = q.toLowerCase();
-      const hits: string[] = [];
-      let more = 0;
-      // prose.text is unwrapped one level so its snippet stays plain text; other nested values fall back to a
-      // stringified sub-value (no deep recursion).
-      for (const r of (rows ?? []) as { id: string; kind: string; content: Record<string, unknown> | null }[]) {
-        for (const [field, value] of Object.entries(r.content ?? {})) {
-          let text: string;
-          if (typeof value === "string") text = value;
-          else if (field === "prose" && value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string") text = (value as { text: string }).text;
-          else if (value && typeof value === "object") text = JSON.stringify(value);
-          else continue;
-          const idx = text.toLowerCase().indexOf(needle);
-          if (idx === -1) continue;
-          if (hits.length >= 30) { more++; continue; }
-          const start = Math.max(0, idx - 60);
-          const end = Math.min(text.length, idx + needle.length + 60);
-          const snippet = (start > 0 ? "…" : "") + text.slice(start, end).replace(/\s+/g, " ") + (end < text.length ? "…" : "");
-          hits.push(`[${r.id}] ${r.kind} “${nodeHandle(r.content)}” — ${field}: “${snippet}”`);
-        }
-      }
-      steps.push({ t: "read", label: `Searched for “${q}” (${hits.length + more} hit${hits.length + more === 1 ? "" : "s"}).` });
-      results.push({
+    }
+    return {
+      step: { t: "read", label: `Searched for “${q}” (${hits.length + more} hit${hits.length + more === 1 ? "" : "s"}).` },
+      result: {
         type: "tool_result", tool_use_id: t.id,
         content: hits.length
           ? `${hits.length + more} match(es) for "${q}"${more ? ` (showing first 30)` : ""} — read_node any [id] for full content:\n${hits.join("\n")}`
           : `No nodes match "${q}".`,
-      });
-    } else if (t.name === "check_against_contract") {
-      const id = String((t.input as { id?: string })?.id ?? "");
-      const { data: node } = await service
-        .from("book_nodes").select("id, kind, content, book_id").eq("id", id).maybeSingle();
-      if (!node || (node as { book_id?: number }).book_id !== bookId) {
-        results.push({ type: "tool_result", tool_use_id: t.id, content: `No node with id ${id} in this book.`, is_error: true });
-        continue;
-      }
-      const n = node as { id: string; kind: string; content: SceneContent };
-      const proseText = (n.content?.prose?.text ?? "").trim();
-      if (n.kind !== "scene") {
-        results.push({ type: "tool_result", tool_use_id: t.id, content: `Node ${id} is a ${n.kind}, not a scene — only scene prose can be checked against the contract.`, is_error: true });
-        continue;
-      }
-      if (!proseText) {
-        results.push({ type: "tool_result", tool_use_id: t.id, content: `Scene ${id} has no prose yet (content.prose.text is empty). Render or write the scene before checking it.`, is_error: true });
-        continue;
-      }
-      const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-      if (!apiKey) {
-        results.push({ type: "tool_result", tool_use_id: t.id, content: "Contract check unavailable: ANTHROPIC_API_KEY not configured.", is_error: true });
-        continue;
-      }
-      const check = ((t.input as { check?: string })?.check ?? "both");
-      const doPlan = check !== "mandate", doMandate = check !== "plan";
-      const { agent: model } = await getRoleModels();
-      const meta = { fn: "book-agent-contract", bookId, taskTable: "book_agent_runs", taskId: null, userId: null };
+      },
+    };
+  }
+  if (t.name === "check_against_contract") {
+    const id = String((t.input as { id?: string })?.id ?? "");
+    const { data: node } = await service
+      .from("book_nodes").select("id, kind, content, book_id").eq("id", id).maybeSingle();
+    if (!node || (node as { book_id?: number }).book_id !== bookId) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: `No node with id ${id} in this book.`, is_error: true } };
+    }
+    const n = node as { id: string; kind: string; content: SceneContent };
+    const proseText = (n.content?.prose?.text ?? "").trim();
+    if (n.kind !== "scene") {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: `Node ${id} is a ${n.kind}, not a scene — only scene prose can be checked against the contract.`, is_error: true } };
+    }
+    if (!proseText) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: `Scene ${id} has no prose yet (content.prose.text is empty). Render or write the scene before checking it.`, is_error: true } };
+    }
+    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!apiKey) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: "Contract check unavailable: ANTHROPIC_API_KEY not configured.", is_error: true } };
+    }
+    const check = ((t.input as { check?: string })?.check ?? "both");
+    const doPlan = check !== "mandate", doMandate = check !== "plan";
+    const { agent: model } = await getRoleModels();
+    const meta = { fn: "book-agent-contract", bookId, taskTable: "book_agent_runs", taskId: null, userId: null };
+    try {
+      // The two judges are independent LLM calls — run them together.
+      const [planRes, mandateBody] = await Promise.all([
+        doPlan ? planConformanceSummary(service, apiKey, model, n.id, n.content, "book-agent-contract", bookId) : Promise.resolve(null),
+        doMandate
+          ? (async () => {
+            const { data: book } = await service.from("books").select("brief").eq("id", bookId).maybeSingle();
+            const brief = ((book as { brief?: Brief } | null)?.brief ?? {}) as Brief;
+            const axes = await judgeProse(apiKey, model, brief, proseText, meta);
+            return axes.map((a) => `  ${a.axis}: ${a.verdict.toUpperCase()} — ${a.detail}${a.evidence ? ` (e.g. "${a.evidence}")` : ""}`).join("\n");
+          })()
+          : Promise.resolve(null),
+      ]);
       const sections: string[] = [];
-      try {
-        if (doPlan) {
-          const res = await planConformanceSummary(service, apiKey, model, n.id, n.content, "book-agent-contract", bookId);
-          sections.push(`PLAN CONFORMANCE (does the prose deliver the scene's own plan?):\n${res?.summary ?? "  (no prose to check)"}`);
-        }
-        if (doMandate) {
-          const { data: book } = await service.from("books").select("brief").eq("id", bookId).maybeSingle();
-          const brief = ((book as { brief?: Brief } | null)?.brief ?? {}) as Brief;
-          const axes = await judgeProse(apiKey, model, brief, proseText, meta);
-          const body = axes.map((a) => `  ${a.axis}: ${a.verdict.toUpperCase()} — ${a.detail}${a.evidence ? ` (e.g. "${a.evidence}")` : ""}`).join("\n");
-          sections.push(`MANDATE CONFORMANCE (does the prose honor the brief?):\n${body || "  (judge returned no axes — inspect by hand)"}`);
-        }
-        steps.push({ t: "read", label: `Checked scene “${nodeHandle(n.content as Record<string, unknown>)}” against ${check === "both" ? "its plan + the brief" : check === "plan" ? "its plan" : "the brief"}.` });
-        results.push({ type: "tool_result", tool_use_id: t.id, content: sections.join("\n\n") || "No checks ran — inspect by hand." });
-      } catch (e) {
-        results.push({ type: "tool_result", tool_use_id: t.id, content: `Contract check failed: ${String((e as Error)?.message ?? e)}`, is_error: true });
-      }
-    } else {
-      results.push({ type: "tool_result", tool_use_id: t.id, content: `Unknown tool ${t.name}.`, is_error: true });
+      if (doPlan) sections.push(`PLAN CONFORMANCE (does the prose deliver the scene's own plan?):\n${planRes?.summary ?? "  (no prose to check)"}`);
+      if (doMandate) sections.push(`MANDATE CONFORMANCE (does the prose honor the brief?):\n${mandateBody || "  (judge returned no axes — inspect by hand)"}`);
+      return {
+        step: { t: "read", label: `Checked scene “${nodeHandle(n.content as Record<string, unknown>)}” against ${check === "both" ? "its plan + the brief" : check === "plan" ? "its plan" : "the brief"}.` },
+        result: { type: "tool_result", tool_use_id: t.id, content: sections.join("\n\n") || "No checks ran — inspect by hand." },
+      };
+    } catch (e) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: `Contract check failed: ${String((e as Error)?.message ?? e)}`, is_error: true } };
     }
   }
-  return results;
+  return { result: { type: "tool_result", tool_use_id: t.id, content: `Unknown tool ${t.name}.`, is_error: true } };
 }
 
 // §v1 fix (docs/agent-improvement-remaining.md): a beat's threads sometimes get minted verbatim onto EVERY
@@ -989,14 +1053,15 @@ async function maybeInjectRenderVerify(
     // Idempotency: skip if we already appended a verdict to this turn's ack (a transient call retry re-runs advance).
     if (lastMsg.content.some((b) => b.type === "text" && String(b.text ?? "").startsWith(VERIFY_SENTINEL))) return fallback;
 
-    const blocks: string[] = [];
-    for (const id of sceneIds) {
+    // One judge call per scene, all independent — run them together (this happens BEFORE the turn's
+    // model call, so serial judges here added straight to the author's perceived latency).
+    const blocks = (await Promise.all(sceneIds.map(async (id: string) => {
       const { data: sc } = await service.from("book_nodes").select("content").eq("id", id).maybeSingle();
       const content = (sc as { content?: SceneContent } | null)?.content;
       const res = await planConformanceSummary(service, apiKey, model, id, content, "book-agent-autoverify", row.book_id);
-      if (!res || !res.axes.length) continue; // no prose written yet, or no structural plan → nothing to enforce
-      blocks.push(`Scene [${id}] “${nodeHandle(content as Record<string, unknown>)}”:\n${res.summary}`);
-    }
+      if (!res || !res.axes.length) return null; // no prose written yet, or no structural plan → nothing to enforce
+      return `Scene [${id}] “${nodeHandle(content as Record<string, unknown>)}”:\n${res.summary}`;
+    }))).filter((b): b is string => !!b);
     if (!blocks.length) return fallback;
     const text = `${VERIFY_SENTINEL} (plan conformance — the server checked the scene(s) you just rendered against their own plan):\n\n${blocks.join("\n\n")}\n\nIf any axis FAILED, fix that scene FIRST — propose_prose_render again with a corrective brief, or propose_node_ops for a small wording fix — before rendering the next scene. If all PASSED, continue.`;
     const augmented = transcript.map((m, i) => i === transcript.length - 1 ? { ...m, content: [...m.content, { type: "text", text }] } : m);
@@ -1026,6 +1091,23 @@ function withCacheBreakpoints(transcript: unknown[]): unknown[] {
   };
   mark(0);
   if (msgs.length > 1) mark(msgs.length - 1);
+  return msgs;
+}
+
+// Request-time state injection (never persisted): the live book state rides as the FINAL block of the
+// latest user message, AFTER withCacheBreakpoints' marks — so the cached prefix (stable system prompt +
+// the whole stored transcript) stays byte-identical across turns and only the fresh digest is paid
+// uncached. Because it's never stored, the transcript holds exactly ONE current <book_state> per call —
+// older turns carry none, so the model can't ground on a stale tree. Call AFTER withCacheBreakpoints
+// (which deep-copies, making the append safe).
+function withBookState(msgs: unknown[], state: string): unknown[] {
+  if (!state.trim() || !msgs.length) return msgs;
+  const last = msgs[msgs.length - 1] as { role?: string; content?: unknown[] };
+  if (last?.role !== "user" || !Array.isArray(last.content)) return msgs; // every call follows a user message; anything else, skip
+  last.content = [...last.content, {
+    type: "text",
+    text: `<book_state note="the CURRENT live book — system-refreshed this turn; this is the tree/objective/analysis your instructions reference">\n${state}\n</book_state>`,
+  }];
   return msgs;
 }
 
@@ -1274,7 +1356,7 @@ const SYSTEM_THREAD = `## Role
 
 You are a sharp, warm developmental STORY EDITOR — the author's single AI collaborator for the whole book, in conversation in the studio's right-hand rail.
 
-You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tentpoles, voice) → structure (acts, beats, threads) → scenes → prose. You see the WHOLE book and may touch any node (except LOCKED ones); the author anchors your attention by attaching nodes, but never fences you out of the rest. The tree (given below in \`<dna_tree>\`) is a DIGEST — each node shows its handle/gist plus, for structure, its causal + meter spine (connector, needs, establishes, readings). When a node's full detail matters — a beat's whole summary, a character's wound/lie, a scene's prose — read_node it before judging or rewriting. To FIND where something appears across the whole book — a name, a motif, an echoed line, a phrase in the prose the digest doesn't show — use search_nodes, then read_node the hits.
+You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tentpoles, voice) → structure (acts, beats, threads) → scenes → prose. You see the WHOLE book and may touch any node (except LOCKED ones); the author anchors your attention by attaching nodes, but never fences you out of the rest. The tree (given in the \`<book_state>\` block at the end of the latest user message, refreshed every turn) is a DIGEST — each node shows its handle/gist plus, for structure, its causal + meter spine (connector, needs, establishes, readings). When a node's full detail matters — a beat's whole summary, a character's wound/lie, a scene's prose — read_node it before judging or rewriting. To FIND where something appears across the whole book — a name, a motif, an echoed line, a phrase in the prose the digest doesn't show — use search_nodes, then read_node the hits.
 
 ## What you can do
 
@@ -1292,6 +1374,10 @@ seed, premise, pillar; foundations — character, relationship, world_fact, loca
 ## Guided flow
 
 When a \`<current_objective>\` block is given, that's the one step to lead the author through next — the lowest unfinished rung of the book's DNA. If the author asks "what's next?", opens a fresh thread, or has no specific ask, drive THAT objective: do the step's recipe, then let the next message advance it. Don't march ahead to later rungs unprompted. But this is an anchor, not a leash — if the author steers somewhere else, follow them.
+
+## Working efficiently
+
+Your read tools run in PARALLEL: when you need several nodes, issue ALL the read_node / search_nodes / get_schema calls in the SAME turn — never read one node, wait, then read the next, unless a read genuinely depends on another read's result. Likewise, batch INDEPENDENT edits — different nodes, none needing another applied first (e.g. fixing several flagged phrases across different scenes) — into ONE propose_node_ops call: its \`ops\` is an array. Split work across turns only when a later step depends on seeing an earlier one's result.
 
 ## Style
 
@@ -1488,11 +1574,15 @@ async function proposeOptions(
   return { ok: true, handle: nodeHandle(node.content), count: proposals.length };
 }
 
-// The thread's system prompt carries the CURRENT DNA tree, FILTERED to the in-scope kinds and rebuilt
-// every call so ids stay fresh as the author edits (the transcript holds only the conversation). Each node
-// is a DIGEST — handle/gist + causal spine, full content via read_node (see digestNode). A one-line
-// premise/pillar frame is always included so the agent is grounded even when 'premise' isn't in scope.
-async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null): Promise<string> {
+// The thread's prompt in TWO parts (prompt-cache prefix discipline): `instructions` is the byte-stable
+// system prompt (role + mode lines — identical across a run's turns, so the cache prefix survives), and
+// `bookState` is the volatile grounding — the CURRENT DNA tree digest, objective, analysis, ledger —
+// rebuilt every call so ids stay fresh as the author edits. bookState is injected request-time at the END
+// of the latest user message (withBookState), never persisted and never in the system prompt: in auto mode
+// the tree changes after every apply, and carrying it at position 0 invalidated the whole cached prefix
+// (system + entire transcript) on every turn. Each node is a DIGEST — handle/gist + causal spine, full
+// content via read_node (see digestNode).
+async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null): Promise<{ instructions: string; bookState: string }> {
   const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
   const b = book as { name?: string; brief?: Brief } | null;
   const { data: rows } = await service
@@ -1627,7 +1717,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   // Autonomous mode: the author is AWAY. The agent must carry every request to a committed change with no
   // human gate — it makes the option choices itself and never waits. (The client auto-applies what it stages.)
   const autoLine = auto
-    ? "\n\n<autonomous_mode>\nThe author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n- Make ONE change per turn with propose_node_ops, OR render ONE scene per turn with propose_prose_render. Both are APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree/scene. Don't say \"I propose\" or wait for approval; just make the change (or request the render), then continue.\n- READ THEN ACT — don't over-read. The tree above is a DIGEST (handle/gist + causal spine). When the change needs a node's full detail (a beat's whole summary, a character's profile, a scene's prose), read_node it FIRST — but only the node(s) you're about to change. Don't sweep the tree; the digest is enough to decide what to touch.\n- At a GENUINE creative fork — a decision that shapes the story (an ending's direction, killing a character, a structural pivot) — call ask_author anyway, stating the question, your options, and which one you're choosing. In autonomous mode it never parks: the system answers instantly telling you to proceed with your stated choice, and the fork is journaled for the author to review later. Small mechanical choices don't warrant it.\n- Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n- ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish.\n</autonomous_mode>"
+    ? "\n\n<autonomous_mode>\nThe author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n- BATCH INDEPENDENT CHANGES: when the request decomposes into edits that don't depend on each other (fixing several lint hits across different scenes, touching several unrelated nodes), make them ALL in ONE propose_node_ops call — its ops is an array. Split into separate turns ONLY when a later change needs to see an earlier one applied first. Render ONE scene per turn with propose_prose_render. Changes are APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree/scene. Don't say \"I propose\" or wait for approval; just make the change (or request the render), then continue.\n- READ THEN ACT — don't over-read, and don't read in series. The tree in <book_state> is a DIGEST (handle/gist + causal spine). When changes need nodes' full detail (a beat's whole summary, a character's profile, a scene's prose), issue ALL the read_node/search_nodes calls for them in ONE turn — but only for the node(s) you're about to change. Don't sweep the tree; the digest is enough to decide what to touch.\n- At a GENUINE creative fork — a decision that shapes the story (an ending's direction, killing a character, a structural pivot) — call ask_author anyway, stating the question, your options, and which one you're choosing. In autonomous mode it never parks: the system answers instantly telling you to proceed with your stated choice, and the fork is journaled for the author to review later. Small mechanical choices don't warrant it.\n- Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n- ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish.\n</autonomous_mode>"
     : "";
-  return `${SYSTEM_THREAD}${scopeLine}${effortLine}${autoLine}\n\n${blocks.join("\n\n")}`;
+  return { instructions: `${SYSTEM_THREAD}${scopeLine}${effortLine}${autoLine}`, bookState: blocks.join("\n\n") };
 }

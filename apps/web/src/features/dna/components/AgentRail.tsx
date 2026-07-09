@@ -233,10 +233,17 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
     } finally { setBusy(false); }
   };
 
+  // Optimistic: flips the instant Stop is clicked, before the write round-trips, so the button
+  // reflects the click immediately instead of waiting on stopRun()'s await + a refetch SELECT to
+  // land row.cancel_requested. Resets itself once the row actually leaves `running` (below).
+  const [stopping, setStopping] = useState(false);
+  useEffect(() => { if (!running) setStopping(false); }, [running]);
+
   const stop = async () => {
     if (!row || !active) return;
+    setStopping(true);
     try { await stopRun("book_agent_runs", row.id, row.status); refetch(); }
-    catch (e) { toast({ title: "Couldn't stop", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+    catch (e) { setStopping(false); toast({ title: "Couldn't stop", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
   };
 
   // After archiving/restoring a chat, the count badge and (if reopened) the full list need a fresh read.
@@ -511,11 +518,11 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
                 rows={1} placeholder={running ? "the agent is working…" : "Ask the agent, or / for commands…"} disabled={busy || active}
                 className="pv-serif min-h-[42px] resize-none text-[14px] leading-[1.55]" />
               <button type="button" onClick={() => (running ? void stop() : void send(draft))}
-                disabled={running ? row?.cancel_requested : busy || active || !draft.trim()}
-                title={running ? (row?.cancel_requested ? "stopping…" : "Stop") : undefined}
+                disabled={running ? (stopping || row?.cancel_requested) : busy || active || !draft.trim()}
+                title={running ? ((stopping || row?.cancel_requested) ? "stopping…" : "Stop") : undefined}
                 className="inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40">
                 {running
-                  ? (row?.cancel_requested ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-3.5 w-3.5" />)
+                  ? ((stopping || row?.cancel_requested) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-3.5 w-3.5" />)
                   : busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
               </button>
             </div>
