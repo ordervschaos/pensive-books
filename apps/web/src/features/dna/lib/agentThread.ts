@@ -53,7 +53,7 @@ export interface AgentProposal { id: string; layer: "dna" | "prose-render" | "ex
 
 // An archived conversation (the "+ New chat" snapshot) — its own row in book_agent_sessions, not
 // embedded on the thread (see 20260701150000_book_agent_sessions_table.sql for why).
-export interface AgentSession { id: number; steps: AgentStep[]; transcript: unknown[]; proposals: AgentProposal[]; ended_at: string }
+export interface AgentSession { id: number; steps: AgentStep[]; transcript: unknown[]; proposals: AgentProposal[]; ended_at: string; title: string | null }
 
 export interface AgentThreadRow extends TaskRow {
   kind: string;
@@ -247,7 +247,7 @@ async function resolveProposal(threadId: number, proposal: AgentProposal, verb: 
 // the thread row — so archiving is a single INSERT instead of a read-modify-write of the whole history,
 // and the (REPLICA IDENTITY FULL) thread row never carries past chats over Realtime.
 
-const LIVE_COLS = "status, book_id, steps, transcript, proposals";
+const LIVE_COLS = "status, book_id, steps, transcript, proposals, title";
 
 /** True while the row is mid-turn — the edge fn owns transcript/steps/proposals then, so a client write
  *  (archiving/restoring a session) would race it. Same guard `logAgentTurn`/`stageGeneratedProposal` use. */
@@ -265,7 +265,7 @@ export async function fetchAgentSessionCount(threadId: number): Promise<number> 
 /** The full archived history, newest first — only fetched when the author opens "Past chats". */
 export async function fetchAgentSessions(threadId: number): Promise<AgentSession[]> {
   const { data, error } = await supabase.from("book_agent_sessions")
-    .select("id, steps, transcript, proposals, ended_at").eq("thread_id", threadId).order("ended_at", { ascending: false });
+    .select("id, steps, transcript, proposals, ended_at, title").eq("thread_id", threadId).order("ended_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as unknown as AgentSession[];
 }
@@ -279,11 +279,13 @@ export async function startNewAgentSession(threadId: number): Promise<void> {
   const { error: insertError } = await supabase.from("book_agent_sessions").insert({
     thread_id: threadId, book_id: data!.book_id,
     steps, transcript: data?.transcript ?? [], proposals: data?.proposals ?? [],
+    title: (data as { title?: string | null } | null)?.title ?? null,
     ended_at: new Date().toISOString(),
   });
   if (insertError) throw insertError;
+  // Reset title too — the next chat's first message names it afresh (a stale title would mislabel the new chat).
   const { error } = await supabase.from("book_agent_runs")
-    .update({ steps: [], transcript: [], proposals: [], pending: null, status: "idle" })
+    .update({ steps: [], transcript: [], proposals: [], pending: null, status: "idle", title: null })
     .eq("id", threadId);
   if (error) throw error;
 }
@@ -292,21 +294,23 @@ export async function startNewAgentSession(threadId: number): Promise<void> {
 export async function resumeAgentSession(threadId: number, sessionId: number): Promise<void> {
   const { data } = await supabase.from("book_agent_runs").select(LIVE_COLS).eq("id", threadId).maybeSingle();
   if (isBusy(data?.status)) throw new Error("The agent is mid-turn — wait for it to finish, then continue that chat.");
-  const { data: target } = await supabase.from("book_agent_sessions").select("steps, transcript, proposals").eq("id", sessionId).maybeSingle();
+  const { data: target } = await supabase.from("book_agent_sessions").select("steps, transcript, proposals, title").eq("id", sessionId).maybeSingle();
   if (!target) return;
   const liveSteps = Array.isArray(data?.steps) ? (data!.steps as AgentStep[]) : [];
   if (liveSteps.length > 0) {
     const { error: insertError } = await supabase.from("book_agent_sessions").insert({
       thread_id: threadId, book_id: data!.book_id,
       steps: liveSteps, transcript: data?.transcript ?? [], proposals: data?.proposals ?? [],
+      title: (data as { title?: string | null } | null)?.title ?? null,
       ended_at: new Date().toISOString(),
     });
     if (insertError) throw insertError;
   }
   const { error: deleteError } = await supabase.from("book_agent_sessions").delete().eq("id", sessionId);
   if (deleteError) throw deleteError;
+  // Restore the resumed chat's own title onto the live thread, so if it's archived again it keeps its name.
   const { error } = await supabase.from("book_agent_runs")
-    .update({ steps: target.steps, transcript: target.transcript, proposals: target.proposals, pending: null, status: "idle" })
+    .update({ steps: target.steps, transcript: target.transcript, proposals: target.proposals, pending: null, status: "idle", title: (target as { title?: string | null }).title ?? null })
     .eq("id", threadId);
   if (error) throw error;
 }

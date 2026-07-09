@@ -18,7 +18,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { type Brief, briefContext } from "../_shared/brief.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { callLLM } from "../_shared/llm.ts";
+import { callLLM, textFromLLM } from "../_shared/llm.ts";
 import { getRoleModels } from "../_shared/model-config.ts";
 // The pure engine + guided-journey derivation, edge twins of the web app's novelDna/dnaJourney (parity-locked
 // by novelDna.parity.test.ts). threadSystem re-runs these on the LIVE tree each chain link so the objective +
@@ -95,8 +95,9 @@ interface RunRow {
   context_auto: boolean | null; // auto-accept mode: run autonomously, never park on ask_author
   turns: number;
   cancel_requested: boolean;
+  title: string | null; // short label generated from the chat's first message (history rail); null = not yet named
 }
-const ROW_COLS = "id, book_id, created_by, kind, status, transcript, steps, pending, proposals, context_scope, context_analysis, context_objective, context_attached_ids, context_effort, context_auto, turns, cancel_requested";
+const ROW_COLS = "id, book_id, created_by, kind, status, transcript, steps, pending, proposals, context_scope, context_analysis, context_objective, context_attached_ids, context_effort, context_auto, turns, cancel_requested, title";
 
 // Context filter aspects mirror the DNA tree's visual layers. null/[] scope = all.
 type Aspect = "seed" | "premise" | "cast_world" | "story" | "prose";
@@ -317,6 +318,9 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // instead of clobbering it with a pre-ack snapshot (the note would flash onto the row then vanish).
     if (row.turns === 0) {
       await maybeEagerAck(service, apiKey, row, ackModel);
+      // Name the chat from its first message, once, off the response path (the history rail lists chats by
+      // this title). Fire-and-forget: a failure or slow model must never delay the author's actual turn.
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(maybeTitleThread(service, apiKey, ackModel, row));
     }
     // P2.3 — enforced render→verify (auto only): if the prior turn was an applied prose render, inject a
     // plan-conformance verdict into the transcript before this turn's model call. Best-effort; returns the
@@ -721,6 +725,46 @@ async function maybeEagerAck(service: SupabaseClient, apiKey: string, row: RunRo
   } catch (e) {
     if (isBillingError(e)) throw e;
     console.error(`book-agent run ${row.id} eager ack skipped:`, e);
+  }
+}
+
+const TITLE_SYSTEM = `You name a story-editor chat from its opening message, so the author can find it later in a list.
+Reply with ONLY a title: 2 to 6 words, Title Case, no quotes, no trailing punctuation, no markdown.
+Name the subject or task the message is about ("Sharpen the midpoint reversal", "Idris's slave-papers scene"),
+not the author or the act of chatting. If the message is generic ("continue", "next step"), reply: Continue The Draft.`;
+
+// Name a fresh chat from its first message, once. Runs off the response path (fire-and-forget) so a slow or
+// failed title never delays the author's turn. Guarded on title being empty, so it fires only on the opening
+// turn and never overwrites a name. Best-effort: any failure leaves title null and the rail falls back to the
+// client-derived title (the first message, trimmed).
+async function maybeTitleThread(service: SupabaseClient, apiKey: string, model: string, row: RunRow) {
+  if (row.title && row.title.trim()) return;
+  const first = row.steps.find((s) => s.t === "user")?.label?.trim();
+  if (!first) return;
+  try {
+    const resp = await callLLM(apiKey, {
+      model,
+      max_tokens: 24,
+      system: [{ type: "text", text: TITLE_SYSTEM }],
+      messages: [{ role: "user", content: [{ type: "text", text: first.slice(0, 1500) }] }],
+    }, {
+      fn: "book-agent-title",
+      bookId: row.book_id,
+      taskTable: "book_agent_runs",
+      taskId: row.id,
+      userId: row.created_by,
+    }, { signal: AbortSignal.timeout(ACK_TIMEOUT_MS) });
+    const title = textFromLLM(resp)
+      .replace(/\s+/g, " ")
+      .replace(/^["'“”]+|["'“”.]+$/g, "")
+      .trim()
+      .slice(0, 60);
+    if (!title) return;
+    // Don't clobber a title a concurrent turn may have set; only fill it while still null.
+    await service.from("book_agent_runs").update({ title }).eq("id", row.id).is("title", null);
+  } catch (e) {
+    if (isBillingError(e)) throw e;
+    console.error(`book-agent run ${row.id} title skipped:`, e);
   }
 }
 
