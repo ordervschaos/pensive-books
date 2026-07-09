@@ -9,6 +9,9 @@
    retry/backoff) shipped 2026-07-09 but haven't been re-run on a live "build all." This tests
    M1's bar directly — ranked ahead of EPUB/revalidation, which are adjacent (import quality,
    publish pipe), not M1-blocking. Ratified 2026-07-09 PM review.
+   *Extended bar (2026-07-09 `/pm`):* also record **read-round-trip counts per turn** from
+   `ai_calls` (alongside the existing cache-read ≫ input check) — this is the evidence gate for
+   the "deterministic context hydration" Later item (`doc_1783594573553.md`).
 2. **Monetization rails v1 (GTM R1).** Stripe checkout + webhook → entitlement model → feature
    gating at existing chokepoints + pricing page on the SSG marketing site. First rung of the
    monetize-ASAP ladder (GTM.md); sells the *mature* pillar, so it doesn't wait on M1. Owner
@@ -74,6 +77,13 @@ R1/R2 graduated, moved to STATE.md.
 - Scene ledger P3 consumers (`ledgerAt` wiring)
 - Incremental digest bridge twin (only if bridge path becomes load-bearing again)
 - Scene images via MuleRouter (pending URL/model)
+- **Deterministic context hydration** — extend the focus-tray path (`attachedIds → focusNodes`,
+  `book-agent/index.ts`) so the server pre-inlines FULL content for nodes it can know the turn
+  is about (objective TARGET NODE, lint-flagged ids, author-named scenes) into `<book_state>`.
+  Scope guard: non-prose content + at most the draft-target scene. **Pull only if** the live
+  build-all run (Now #1) shows read_node round-trips remain a per-turn cost — batched parallel
+  reads may already collapse them to ≤1/turn. Rationale + cost model: `doc_1783594573553.md`.
+  Ratified 2026-07-09 `/pm` (evidence-gated).
 
 ## Icebox / open questions (undecided, revisit at review)
 

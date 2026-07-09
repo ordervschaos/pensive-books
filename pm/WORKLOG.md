@@ -17,6 +17,51 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-09 — Compaction v3 (bulky-newest rule) + replace_text surgical prose op `[ship]`
+- **What:** User's transcript showed the remaining loop: read sweep → ONE fix → re-search/re-read everything → ONE fix… Two causes, two fixes. (1) Compaction v2's "newest tool-results message" flipped to the tiny post-apply "✓ Applied" ACK (it IS a tool_result message), pruning the read sweep right after every apply — v3 keys protection to the newest message carrying a BULKY (>700 char) unpruned result. (2) Prose edits couldn't batch: an `edit` op resends the whole prose text (~2.6k tokens/scene), so 8k max_tokens ≈ 1 fix/turn — added `{op:'replace_text', id, find, replace}` (Claude Code Edit-tool shape, first occurrence, scene prose only): server validates `find` against LIVE prose and bounces mismatches back by name; client applyNodeOps applies with literal-$ replacer + re-indexes the scene so same-scene batched patches compose; describeOps renders find→replace; AgentRail labels "patch prose · …". Tool schema + system prompt updated to mandate batching every small prose fix into one proposal. 930 web tests pass; deployed.
+- **Files/commits:** supabase/functions/book-agent/index.ts, apps/web/src/features/dna/lib/dnaChat.ts, apps/web/src/features/dna/components/AgentRail.tsx (uncommitted).
+- **PM impact:** same "Agent speed" STATE row. Gotcha: a client that hasn't reloaded silently skips replace_text ops (old applyNodeOps has no branch) — refresh the studio tab once.
+
+## 2026-07-09 — VS Code terminal-tab naming investigation (tooling, not pensive-books) `[chore]`
+- **What:** User asked how to auto-name VS Code integrated-terminal tabs across parallel Claude Code
+  sessions. Root-caused via binary forensics on the installed Claude Code CLI (`currentSessionTitle`
+  vs `currentSessionAiTitle`, the `terminalTitleFromRename` setting, and the `SessionStart`/
+  `UserPromptSubmit` hook `sessionTitle` field) plus live testing (`/rename`, raw OSC `printf` to
+  `/dev/tty`) that neither actually moved the VS Code tab. Root cause found: VS Code's own
+  `terminal.integrated.tabs.title` was set to `${process}` (OS process name — Claude Code's on-disk
+  binary is literally named after its version, e.g. `2.1.205`, explaining the tab labels), not
+  `${sequence}` (which listens for OSC title escapes). Fix is a VS Code settings change, not a
+  Claude Code hook. No pensive-books code touched; produced `doc_1783595049780.md` (untracked,
+  local-only per [[feedback_no_commit_learning_files]] convention) as the write-up.
+- **Files/commits:** none in the app; `doc_1783595049780.md` (repo-root scratch doc, not committed).
+- **PM impact:** none — environment/tooling question, not a product change.
+
+## 2026-07-09 — Compaction v2: policy keyed to newest tool-results message `[ship]`
+- **What:** Live verification caught v1 compaction never firing: ai_calls showed the request still at 261k chars, 0 pruned stubs. Root cause — batched turns pack a whole read sweep into ONE huge message (the transcript was only 7 messages), so v1's "keep last 6 messages" window protected everything. v2 stubs bulky tool_results in every message EXCEPT the newest tool-results message (structure-keyed, not count-keyed); never stubbing the newest also prevents re-read thrash. Fixed a reduce<number> type inference error, deno check back to 28-error EdgeRuntime baseline, redeployed mid-run; verification poll running on the next chain links.
+- **Files/commits:** supabase/functions/book-agent/index.ts (uncommitted on top of 0baab6e, which had captured v1).
+- **PM impact:** same "Agent speed" STATE row; lesson worth keeping — count-based context windows break when message granularity changes; key trimming policies to structure.
+
+## 2026-07-09 — Committed today's accumulated uncommitted work `[chore]`
+- **What:** User asked to commit "this" (the node inspector); scoped up to "everything uncommitted"
+  after flagging that the working tree also held parallel-session work (MuleRouter switch, agent
+  loop speedup + Stop button fix, tab-strip cleanup) intermixed in shared files. Split into 4
+  commits by logical unit rather than one giant commit: (1) `835db4c` DNA studio Analytics
+  consolidation + node inspector (this conversation's work, carries the tab-strip-cleanup hunk
+  since it shared `DnaTreePage.tsx`), (2) `8384176` MuleRouter takeover switch, (3) `0baab6e` agent
+  loop speedup + Stop button latency fix (this commit turned out to already include another
+  session's later `compactTranscript` transcript-pruning addition — its own WORKLOG entry landed
+  after `git add` had already staged the file, so the code was captured a commit before its
+  message describes it; the code itself is fine, just under-described in that commit's message),
+  (4) `ba765d7` PM tracking files. Verified no hardcoded secrets in the MuleRouter diff before
+  staging. Left `doc_*.md` scratch files uncommitted, matching this repo's existing convention.
+- **Files/commits:** `835db4c`, `8384176`, `0baab6e`, `ba765d7`. Not pushed to any remote.
+- **PM impact:** none new — formalizes work already catalogued in the entries below.
+
+## 2026-07-09 — Agent transcript compaction (context editing) `[ship]`
+- **What:** The live lint-fix run on book 1229 exposed the transcript-bloat ceiling: 14 full scene reads pushed the prompt to ~62k tokens, and MuleRouter calls then mostly died at the 140s worker timeout (uncached prefill + qwen's reasoning phase, which MuleRouter can't cap — probed reasoning_effort/enable_thinking, both silently ignored), crawling at ~1 successful turn per 4 attempts. Added compactTranscript to book-agent: once the stored transcript exceeds 120k chars, tool_result bodies >700 chars in all but the last 6 messages are stubbed to a one-line "[PRUNED — re-read if needed]" pointer. Blocks replaced, never removed (tool_use↔tool_result pairing survives); deterministic across retried links; pruned transcript persisted with the turns tick so the row shrinks too. Deployed mid-run — the next chain link picks it up automatically; verification poll running.
+- **Files/commits:** supabase/functions/book-agent/index.ts (uncommitted).
+- **PM impact:** folded into the existing "Agent speed (de-serialize the loop)" STATE row (same success bar); no new row.
+
 ## 2026-07-09 — Session touched no project files (VS Code tab-naming question) `[chore]`
 - **What:** User asked an environment/tooling question (how to auto-rename VS Code integrated-terminal
   tabs / Claude Code sessions via a hook) unrelated to the pensive-books codebase. No files in the repo
