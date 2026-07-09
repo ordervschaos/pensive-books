@@ -934,6 +934,17 @@ export const meterSeries = (nodes: DnaNode[], meterId: string): MeterPoint[] => 
 /** The OBSERVED series — what the editor's read measured off the prose (`observed_readings`). The 3rd trace. */
 export const observedSeries = (nodes: DnaNode[], meterId: string): MeterPoint[] => seriesFrom(nodes, meterId, "observed_readings");
 
+/** ONE beat's own reading on every meter (plan + observed) — the per-beat inverse of the aggregate SerialGraph,
+ *  which only ever plots the whole series. Carry-forward per seriesFrom, so a beat with no reading of its own
+ *  still shows the level HELD from the nearest earlier reading. */
+export function beatMeterReadings(nodes: DnaNode[], beatId: string): { meterId: string; name: string; plan: number | null; observed: number | null }[] {
+  return nodes.filter((n) => n.kind === "meter").map((m) => {
+    const plan = meterSeries(nodes, m.id).find((p) => p.id === beatId)?.value ?? null;
+    const observed = observedSeries(nodes, m.id).find((p) => p.id === beatId)?.value ?? null;
+    return { meterId: m.id, name: (m.content as MeterContent).name ?? m.id, plan, observed };
+  });
+}
+
 /** Summary stats the lints + UI read off a series: range used, # direction changes (oscillation), longest
  *  flat run, terminal value. Carry-forward nulls (leading gaps before the first reading) are ignored. */
 export function meterShape(series: MeterPoint[]): { range: number; oscillations: number; flatRun: number; last: number | null } {
@@ -1770,6 +1781,26 @@ function dialogueShare(prose: string): number {
     return quotes >= 2 || QUOTE_CHARS.has(l[0]);
   }).length;
   return dialogue / lines.length;
+}
+
+/** ONE scene's own raw prose numbers — the same per-scene precompute proseLints does (words / dialogue share /
+ *  em-dash rate / sentence-length spread), but returned instead of thrown away after thresholding. Informational
+ *  only: no ceiling/floor judgement here, that's the lints' job. Null if the scene has no drafted prose. */
+export function sceneProseStats(nodes: DnaNode[], sceneId: string): { words: number; dialoguePct: number; emDashPer100: number; sentenceCV: number } | null {
+  const scene = nodes.find((n) => n.id === sceneId);
+  const prose = (scene?.content as SceneContent | undefined)?.prose?.text ?? "";
+  if (!prose.trim()) return null;
+  const words = facetWords(prose).length;
+  const dialoguePct = dialogueShare(prose);
+  const dashes = (prose.match(/—|--/g) ?? []).length;
+  const emDashPer100 = words ? (dashes / words) * 100 : 0;
+  const sentences = sentenceLengths(prose);
+  let sentenceCV = 0;
+  if (sentences.length >= 2) {
+    const mean = sentences.reduce((a, b) => a + b, 0) / sentences.length;
+    sentenceCV = mean ? Math.sqrt(sentences.reduce((a, b) => a + (b - mean) ** 2, 0) / sentences.length) / mean : 0;
+  }
+  return { words, dialoguePct, emDashPer100, sentenceCV };
 }
 
 const NAME_SOUP_MIN_WORDS = 150;      // below this a scene is too short for density to mean anything

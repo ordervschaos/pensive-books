@@ -31,6 +31,7 @@ import { BriefOrigin } from "@/features/dna/components/tree/BriefSection";
 import { FocusPanel, JourneyStrip, SpineTimeline, VoiceFeelPanel } from "@/features/dna/components/tree/panels";
 import { CharactersPane, StoryPane } from "@/features/dna/components/tree/panes";
 import { MetersPane } from "@/features/dna/components/tree/MetersPane";
+import { LedgerPane } from "@/features/dna/components/tree/LedgerPane";
 import { DiscardStoryModal, HistoryModal, NodeDetailsModal, ProseReaderModal } from "@/features/dna/components/tree/modals";
 import { useBookNodesLiveSync } from "@/features/dna/hooks/useBookNodesLiveSync";
 
@@ -54,18 +55,16 @@ export default function DnaTreePage() {
   const consoleMode = themeName === "terminal" ? "terminal" as const : "paper" as const;
   setConsoleTheme(consoleMode);
   const themeClass = consoleMode === "terminal" ? "theme-terminal dark" : "theme-paper";
-  const tab: "tree" | "taste" | "overview" | "analytics" | "meters" | "characters" | "story" =
+  const tab: "tree" | "taste" | "overview" | "analytics" | "characters" | "story" =
     location.pathname.endsWith("/overview") ? "overview"
     : location.pathname.endsWith("/taste") ? "taste"
     : location.pathname.endsWith("/analytics") ? "analytics"
-    : location.pathname.endsWith("/meters") ? "meters"
     : location.pathname.endsWith("/characters") ? "characters"
     : location.pathname.endsWith("/story") ? "story"
     : "tree";
   const treePath = `/books/${bookSlug}/dna/tree`;
   const overviewPath = `${treePath}/overview`;
   const analyticsPath = `${treePath}/analytics`;
-  const metersPath = `${treePath}/meters`;
   const charactersPath = `${treePath}/characters`;
   const storyPath = `${treePath}/story`;
 
@@ -548,17 +547,6 @@ export default function DnaTreePage() {
   // origin — reference by then, not active work); an explicit toggle overrides the live journey default.
   const briefOpen = briefOpenPref ?? journeyNowIndex === 0;
 
-  // #7 — health pip: plain words, not glyph soup ("2 errors · 21 warnings" over "2× 21⚠"). Deep-links into
-  // Analytics, where the lints behind the score actually live.
-  const healthPip = (health.errors + health.warns) > 0 ? (
-    <button onClick={() => navigate(analyticsPath)} title="open Analytics — the lints, pacing, promises & topography behind these bars"
-      style={{ display: "flex", alignItems: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-      <span style={{ fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", color: health.errors ? T.bad : T.warn, fontFamily: MONO, whiteSpace: "nowrap" }}>
-        {[health.errors ? `${health.errors} error${health.errors === 1 ? "" : "s"}` : "", health.warns ? `${health.warns} warning${health.warns === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ")} →
-      </span>
-    </button>
-  ) : null;
-
   // #2 — json / fork / history: developer-grade + rarely-used utilities, folded into one overflow menu
   // instead of sitting with equal billing next to the core actions.
   const overflowMenu = (
@@ -617,7 +605,7 @@ export default function DnaTreePage() {
       {discardOpen && <DiscardStoryModal nodes={nodes} onClose={() => setDiscardOpen(false)} />}
       {historyOpen && nodes && <HistoryModal bookId={bookId} nodes={nodes} onClose={() => setHistoryOpen(false)} />}
       {detailsNodeId && index.get(detailsNodeId) && (
-        <NodeDetailsModal node={index.get(detailsNodeId)!} onClose={() => setDetailsNodeId(null)} />
+        <NodeDetailsModal node={index.get(detailsNodeId)!} nodes={nodes ?? []} onClose={() => setDetailsNodeId(null)} />
       )}
       {/* The tool-using editor's agent (durable book-agent thread), promoted into the tree rail. The
           studio components read the Paper-DS CSS vars, which the theme-paper wrapper above resolves —
@@ -674,9 +662,9 @@ export default function DnaTreePage() {
       {/* Tab strip — Chrome-style: the active tab's bottom border is erased and its background matches
           the content below, so it visually fuses with whatever pane is open; inactive tabs sit recessed
           on a shared baseline. Working surfaces (overview / tree / voice) vs. read-only projections
-          (analytics / meters / characters / story) are visually grouped by a thin divider between them —
+          (analytics / characters / story) are visually grouped by a thin divider between them —
           same route, splat path, no remount. */}
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 2, padding: "8px 16px 0", borderBottom: `1px solid ${T.border}` }}>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 2, padding: "8px 16px 0" }}>
         {([["overview", "overview", overviewPath], ["tree", "tree", treePath], ["taste", "voice", `${treePath}/taste`]] as const).map(([key, label, to]) => (
           <button key={key} onClick={() => navigate(to)} style={{
             background: tab === key ? T.bg : "transparent",
@@ -688,7 +676,7 @@ export default function DnaTreePage() {
           }}>{label}</button>
         ))}
         <span style={{ width: 1, alignSelf: "stretch", marginBottom: 6, background: T.border }} />
-        {([["analytics", "analytics", analyticsPath], ["meters", "meters", metersPath], ["characters", "characters", charactersPath], ["story", "story", storyPath]] as const).map(([key, label, to]) => (
+        {([["analytics", "analytics", analyticsPath], ["characters", "characters", charactersPath], ["story", "story", storyPath]] as const).map(([key, label, to]) => (
           <button key={key} onClick={() => navigate(to)} style={{
             background: tab === key ? T.bg : "transparent",
             border: `1px solid ${tab === key ? T.border : "transparent"}`,
@@ -698,16 +686,14 @@ export default function DnaTreePage() {
             letterSpacing: "0.1em", textTransform: "uppercase", padding: "7px 16px", fontFamily: MONO,
           }}>{label}</button>
         ))}
+        <span style={{ marginLeft: "auto", marginBottom: 6, display: "flex", alignItems: "center" }}>{overflowMenu}</span>
       </div>
 
-      {/* Below-tabs action bar — only rendered off the tree tab, where the journey strip absorbs it (#5):
-          health pip + whatever utilities apply page-wide. */}
+      {/* Below-tabs action bar — only rendered off the tree tab, where the journey strip absorbs it (#5). */}
       {tab !== "tree" && (
         <div style={{ padding: "8px 16px", borderBottom: `1px solid ${T.borderSoft}`, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          {healthPip}
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
             <DecomposeButton bookId={bookId} nodes={nodes} />
-            {overflowMenu}
           </div>
         </div>
       )}
@@ -723,8 +709,10 @@ export default function DnaTreePage() {
         <VoiceFeelPanel nodes={nodes} index={index} asPage onJump={(id) => { navigate(treePath); jumpTo(id); }} />
       )}
 
-      {/* ── analytics tab: the review report — lints + pacing/promises/topography. Read-only projection of
-          the tree; every row deep-links back into the structural tree via goToNode / openStage. ── */}
+      {/* ── analytics tab: the one comprehensive "what's wrong" surface — deterministic lints, every semantic
+          read trigger (Shape/Craft/Cold-read/Meter-trace via MetersPane, continuity ledger via LedgerPane),
+          then pacing/promises/topography. Read-only projection of the tree; every row deep-links back into
+          the structural tree via goToNode / openStage. ── */}
       {tab === "analytics" && (
         <div style={{ padding: "16px" }}>
           {/* full health readout (the detail behind the header pip) */}
@@ -762,16 +750,15 @@ export default function DnaTreePage() {
             <div style={{ fontSize: 11, color: T.good, fontFamily: MONO, marginBottom: 16 }}>✓ no lints — the tree is conformant</div>
           )}
 
+          {/* Shape / Craft / Cold-read / Meter emotional-trace — same MetersPane the standalone /dna/meters
+              route renders; a projection of the live tree, reads write back onto it. */}
+          <MetersPane nodes={nodes} bookId={bookId} bookSlug={bookSlug ?? ""} />
+
+          {/* continuity ledger — same LedgerPane the standalone /dna/ledger route renders. */}
+          <LedgerPane nodes={nodes} bookId={bookId} bookSlug={bookSlug ?? ""} />
+
           {/* pacing · promises · topography (lints hidden here — shown in the list above) */}
           <DnaAnalysis nodes={nodes} settings={settings} onOpen={openStage} hideLints />
-        </div>
-      )}
-
-      {/* ── meters tab: the story's shape — serial graph + shape/craft/cold reads. Same MetersPane the
-          standalone /dna/meters route renders; a projection of the live tree, reads write back onto it. ── */}
-      {tab === "meters" && (
-        <div style={{ padding: "16px" }}>
-          <MetersPane nodes={nodes} bookId={bookId} bookSlug={bookSlug ?? ""} />
         </div>
       )}
 
@@ -795,13 +782,11 @@ export default function DnaTreePage() {
           onGapClick={(key) => { goStage(key); setRailOpen(true); }}
           right={
             <>
-              {healthPip}
               <DecomposeButton bookId={bookId} nodes={nodes} />
               <button onClick={expandAll} style={smallBtnStyle}>expand all</button>
               <button onClick={collapseAll} style={smallBtnStyle}>collapse all</button>
               <QuickToggle active={timelineOpen} accent={T.accent} icon="▦" label="Timeline" onClick={() => setTimelineOpen((v) => !v)} />
               <QuickToggle active={legendOpen} accent={T.accent} icon="?" label="Key" onClick={() => setLegendOpen((v) => !v)} />
-              {overflowMenu}
             </>
           } />
       )}

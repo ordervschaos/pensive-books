@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, saveNode } from "@/features/dna/lib/bookNodes";
-import { byId, scenesInOrder, type DnaNode, type NodeContent, type SceneContent } from "@/features/dna/lib/novelDna";
+import {
+  beatMeterReadings, byId, causality, ledgerAt, scenesInOrder, sceneProseStats, traceDiff,
+  type DnaNode, type NodeContent, type PillarContent, type PremiseContent, type SceneContent,
+} from "@/features/dna/lib/novelDna";
 import { diffAgainstVersion, listVersions, loadVersion, restoreVersion, snapshotTree, type TreeDiff, type TreeVersion } from "@/features/dna/lib/treeVersions";
 import { nodeTitle } from "./nodeDisplay";
 import { MONO, SERIF, T } from "./treeChrome";
@@ -376,7 +379,140 @@ function CopyBlock({ label, text }: { label: string; text: string }) {
   );
 }
 
-export function NodeDetailsModal({ node, onClose }: { node: DnaNode; onClose: () => void }) {
+// A collapsible group of Rows — same visual language as CopyBlock's toggle, but for structured
+// data instead of a text blob (no copy affordance, no char count).
+function Section({ label, defaultOpen = true, children }: { label: string; defaultOpen?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ borderTop: `1px solid ${T.borderSoft}`, paddingTop: 10, marginTop: 10 }}>
+      <span onClick={() => setOpen((v) => !v)} style={{ display: "block", fontFamily: MONO, fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: T.muted, cursor: "pointer", userSelect: "none", marginBottom: open ? 6 : 0 }}>
+        {open ? "▾" : "▸"} {label}
+      </span>
+      {open && <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>{children}</div>}
+    </div>
+  );
+}
+function Row({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div style={{ display: "flex", gap: 8, fontFamily: MONO, fontSize: 11, alignItems: "baseline" }}>
+      <span style={{ color: T.muted, flexShrink: 0, minWidth: 140 }}>{label}</span>
+      <span style={{ color: T.inkSoft }}>{value}</span>
+    </div>
+  );
+}
+
+// The inspector: every computed-but-otherwise-invisible signal about THIS node and its immediate
+// relations, scoped by kind. Informational only — no thresholds, no pass/fail; the lints already
+// own that job. Every function here is a pure read of the live tree — nothing is fetched or cached.
+function NodeAnalysis({ node, nodes }: { node: DnaNode; nodes: DnaNode[] }) {
+  const index = byId(nodes);
+  const name = (id: string): string => { const n = index.get(id); return n ? (nodeTitle(n) || id) : id; };
+  const pct = (n: number) => `${Math.round(n * 100)}%`;
+
+  if (node.kind === "scene") {
+    const stats = sceneProseStats(nodes, node.id);
+    const digest = (node.authoring as { prose_digest?: { line?: string } }).prose_digest?.line;
+    const c = node.content as SceneContent;
+    const L = ledgerAt(nodes, node.id);
+    const gaps = traceDiff(nodes).filter((g) => g.sceneId === node.id);
+    return (
+      <>
+        {stats && (
+          <Section label="prose stats">
+            <Row label="words" value={stats.words} />
+            <Row label="dialogue share" value={pct(stats.dialoguePct)} />
+            <Row label="em-dash rate" value={`${stats.emDashPer100.toFixed(2)} / 100 words`} />
+            <Row label="sentence-length CV" value={stats.sentenceCV.toFixed(2)} />
+          </Section>
+        )}
+        {digest && <Section label="continuity digest"><Row label="story-so-far line" value={digest} /></Section>}
+        {(c.observed_value_carrier || c.observed_fingerprint) && (
+          <Section label="value + technique read">
+            {c.observed_value_carrier && <Row label="value embodied" value={c.observed_value_carrier.embodied ? `yes${c.observed_value_carrier.tell ? ` — ${c.observed_value_carrier.tell}` : ""}` : "no"} />}
+            {c.observed_fingerprint && Object.entries(c.observed_fingerprint).filter(([, v]) => v).map(([k, v]) => <Row key={k} label={k} value={String(v)} />)}
+          </Section>
+        )}
+        <Section label="entering this scene (ledger)" defaultOpen={false}>
+          <Row label="established" value={L.causality.established.length ? L.causality.established.join(", ") : "—"} />
+          <Row label="open threads" value={L.threads.filter((t) => t.state === "open").map((t) => `${name(t.ref)}${(t.scenesSinceTouch ?? 0) > 1 ? ` (held ${t.scenesSinceTouch})` : ""}`).join("; ") || "—"} />
+          <Row label="relationship moves" value={L.relations.filter((r) => r.moves > 0).map((r) => `${name(r.ref)} ×${r.moves}`).join("; ") || "—"} />
+          <Row label="meters held" value={L.meters.map((m) => `${name(m.ref)}=${m.value}`).join("; ") || "—"} />
+          <Row label="positions" value={L.positions.map((p) => `${name(p.ref)}${p.loc ? ` @ ${name(p.loc)}` : ""}`).join("; ") || "—"} />
+          <Row label="facet exposure" value={L.exposure.length ? `${L.exposure.length} facet(s) echoed${L.exposure.some((e) => e.saturated) ? " (some saturated)" : ""}` : "—"} />
+          <Row label="folded facts" value={L.facts.length ? `${L.facts.length} fact(s)` : "—"} />
+        </Section>
+        {gaps.length > 0 && (
+          <Section label="trace gaps">
+            {gaps.map((g, i) => <Row key={i} label={g.axis} value={g.note} />)}
+          </Section>
+        )}
+      </>
+    );
+  }
+
+  if (node.kind === "beat") {
+    const row = causality(nodes).find((r) => r.beatId === node.id);
+    const readings = beatMeterReadings(nodes, node.id).filter((r) => r.plan != null || r.observed != null);
+    if (!row && !readings.length) return null;
+    return (
+      <>
+        {row && (
+          <Section label="causality">
+            <Row label="connector" value={row.connector ?? "—"} />
+            <Row label="needs" value={row.needs.length ? row.needs.join(", ") : "—"} />
+            <Row label="unmet" value={row.unmet.length ? row.unmet.join(", ") : "none"} />
+            <Row label="produces" value={row.produces.length ? row.produces.join(", ") : "—"} />
+            <Row label="reverses polarity" value={row.reversed ? "yes" : "no"} />
+          </Section>
+        )}
+        {readings.length > 0 && (
+          <Section label="meter readings">
+            {readings.map((r) => <Row key={r.meterId} label={r.name} value={`plan ${r.plan ?? "—"} · observed ${r.observed ?? "—"}`} />)}
+          </Section>
+        )}
+      </>
+    );
+  }
+
+  if (node.kind === "act") {
+    const premise = nodes.find((n) => n.kind === "premise");
+    const fits = ((premise?.content as PremiseContent | undefined)?.observed_shape_fit ?? []).filter((f) => f.actIds.includes(node.id));
+    if (!fits.length) return null;
+    return (
+      <Section label="shape fit">
+        {fits.map((f, i) => <Row key={i} label={`movement ${f.movement + 1}`} value={`${f.fit}/5${f.note ? ` — ${f.note}` : ""}`} />)}
+      </Section>
+    );
+  }
+
+  if (node.kind === "pillar") {
+    const rows = (node.content as PillarContent).observed_craft ?? [];
+    if (!rows.length) return null;
+    return (
+      <Section label="craft read">
+        {rows.map((r, i) => <Row key={i} label={r.axis} value={`${r.score}/5${r.note ? ` — ${r.note}` : ""}`} />)}
+      </Section>
+    );
+  }
+
+  if (node.kind === "premise") {
+    const c = node.content as PremiseContent;
+    const movements = c.shape?.movements ?? [];
+    if (!movements.length) return null;
+    return (
+      <Section label="shape">
+        {movements.map((m, i) => {
+          const fit = c.observed_shape_fit?.find((f) => f.movement === i);
+          return <Row key={i} label={`${i + 1}.`} value={`${m}${fit ? ` — ${fit.fit}/5` : ""}`} />;
+        })}
+      </Section>
+    );
+  }
+
+  return null;
+}
+
+export function NodeDetailsModal({ node, nodes, onClose }: { node: DnaNode; nodes: DnaNode[]; onClose: () => void }) {
   const mono = MONO;
   const [call, setCall] = useState<AiCallDetail | null | "loading" | "error">(node.last_ai_call_id ? "loading" : null);
 
@@ -432,6 +568,7 @@ export function NodeDetailsModal({ node, onClose }: { node: DnaNode; onClose: ()
               <CopyBlock label="raw output" text={call.output ?? ""} />
             </>
           )}
+          <NodeAnalysis node={node} nodes={nodes} />
         </div>
       </DialogContent>
     </Dialog>
