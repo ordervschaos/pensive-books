@@ -28,6 +28,7 @@
     "functions:stop": "supabase stop",
     "functions:serve": "supabase functions serve",
     "functions:logs": "supabase functions logs",
-    "functions:list": "supabase functions list"
+    "functions:list": "supabase functions list",
+    "functions:check": "bash scripts/check-edge-functions.sh"
   }
 }
