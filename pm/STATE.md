@@ -46,6 +46,7 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 | Agent-curated prose (render brief + read-repair loop) | shipped | Stream still writes prose |
 | Agent sessions table (archived chats off jsonb) | shipped | Fixed slow "New chat" + Realtime amplification |
 | Agent improvement plan (dead-reckoning → sensing) | shipped (code) | P0→P4 landed 2026-07-02; exercised live 2026-07-08 (book 1229, build-all attempt): auto-verify/auto-accept/search/digest confirmed; §v2/§v3 FIXED+deployed 2026-07-08; §v1 (payoff-thread scoping) + §v4 (546 retry/backoff; watchdog already covered it) FIXED+deployed 2026-07-09 — `docs/agent-improvement-remaining.md`. Not yet re-exercised live post-fix. Remaining: §4a/§4b/§3a |
+| Agent speed (de-serialize the loop) | shipped (code) | 2026-07-09: batched independent ops/reads (prompt), Promise.all in toolResults + auto-verify, book state moved out of the system prompt into request-time `withBookState` injection (prompt-cache prefix now survives auto-applies) — `doc_1783588839417.md`. Bar: 7-lint run ≤4 model calls; cache-read ≫ input on links ≥2 in `ai_calls`. Not yet exercised live |
 
 ### Verify layer (reading the artifact back)
 

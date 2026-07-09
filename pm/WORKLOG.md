@@ -17,6 +17,157 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-09 — Session touched no project files (VS Code tab-naming question) `[chore]`
+- **What:** User asked an environment/tooling question (how to auto-rename VS Code integrated-terminal
+  tabs / Claude Code sessions via a hook) unrelated to the pensive-books codebase. No files in the repo
+  were edited by this session; the pre-existing uncommitted diff (proseProxy/llm/book-agent/DNA changes,
+  pm/* edits) predates this session and belongs to prior work already in flight.
+- **Files/commits:** none touched this session.
+- **PM impact:** none — logged only to satisfy the Stop-hook catalogue requirement.
+
+## 2026-07-09 — MuleRouter takeover switch for model spend `[ship]`
+- **What:** OpenRouter ran dry mid-run (402 "Prompt tokens limit exceeded" — their prompt cap scales with balance), killing the agent's lint-fix run. User has MuleRouter balance, so: `_shared/llm.ts` now routes slashed OpenRouter ids with a bare-id MuleRouter equivalent (qwen3.7-plus, deepseek-v4-*, gpt-5.5 + full catalogue allowlist) to `api.mulerouter.ai/vendors/openai/v1/chat/completions` whenever the `MULE_ROUTER_API_KEY` secret is set — unset it to flip back. Twin mapping in `apps/web/api/_proseProxy.ts` for prose streaming. Tool calling verified on MuleRouter before cutover. NOT covered (no Mule equivalent, still OpenRouter): qwen3-235b-a22b (digest model), qwen3-8b (low tier), kimi/glm/minimax tiers. Secret set in Supabase edge env + Vercel prod/dev (preview skipped — old CLI loops); all 10 llm.ts-importing edge fns redeployed.
+- **Files/commits:** supabase/functions/_shared/llm.ts, apps/web/api/_proseProxy.ts (uncommitted). Discovered en route: pensive Vercel project has NO OPENROUTER_API_KEY in prod — prod prose streaming was likely already broken.
+- **PM impact:** memory project_model_stack_openrouter updated with the takeover switch; no STATE row (infra/spend switch, not a product project).
+
+## 2026-07-09 — Node inspector: surface computed-but-hidden per-node/relational signals `[ship]`
+- **What:** Follow-up to the lint-visibility audit: user asked to surface every signal the DNA
+  engine already computes but never renders, "even if not actionable" — e.g. `ledgerAt` (what's
+  true entering a scene), `causality` (a beat's needs/produces/reversed chain, today only a
+  pass/fail glyph), per-beat meter values (only ever shown aggregated), a scene's own raw prose
+  stats (dialogue %, em-dash rate, sentence-length CV — computed then discarded by the lints),
+  and fields already stored on nodes with zero UI readers (`prose_digest`,
+  `observed_value_carrier`, `observed_fingerprint`, `observed_shape_fit`, `observed_craft`).
+  Extended the existing per-node "view details" modal (`NodeDetailsModal`, already reachable from
+  every tree row) with a new kind-conditional "Analysis" section: scene/beat/act/pillar/premise
+  each get their own block, built from mostly-existing pure functions plus two small new ones
+  (`sceneProseStats`, `beatMeterReadings`). Plan approved via EnterPlanMode
+  (`~/.claude/plans/fizzy-doodling-eich.md`, overwritten from the earlier Meters-merge plan).
+  Typechecked clean. **Visually confirmed** by the user via screenshot: opening a scene node's
+  "view details" now shows the new "PROSE STATS" section (words / dialogue share, with em-dash
+  rate + sentence CV below the fold) directly under the existing prompt/output provenance —
+  beat/act/pillar sections not individually screenshotted but share the same code path.
+- **Incident, logged for the record:** while navigating to find a scene node to test, a click
+  intended for a Tree-tab breadcrumb pill instead landed on a live AgentRail "next step" card —
+  that book (1229) already had auto-accept armed from an earlier session. This kicked off an
+  autonomous agent run that applied two real prose-echo fixes (scenes 6 and 25) before hitting an
+  OpenRouter 402 (out of credits) and halting on its own. Surfaced this to the user immediately
+  before continuing; user reviewed and said leave both edits (they're legitimate echo fixes).
+  Note for future sessions: this book has auto-accept ON — breadcrumb/stage-pill clicks near the
+  rail carry real side-effect risk, navigate carefully or check the rail's mode first.
+- **Files/commits:** `apps/web/src/features/dna/lib/novelDna.ts` (2 new exported functions),
+  `apps/web/src/features/dna/components/tree/modals.tsx` (`NodeAnalysis`/`Section`/`Row` +
+  `NodeDetailsModal` gains a `nodes` prop), `apps/web/src/features/dna/pages/DnaTreePage.tsx`
+  (pass `nodes` at the call site). Not committed yet.
+- **PM impact:** none filed — a visibility feature, not a roadmap-tracked project.
+
+## 2026-07-09 — De-serialized the agent loop (batching, fan-out, cache-stable prompt) `[ship]`
+- **What:** Implemented the 4-part speed fix from today's analysis: (1) `<autonomous_mode>` + post-apply ack now mandate batching INDEPENDENT edits into one propose_node_ops (was "ONE change per turn"); (2) new "Working efficiently" system-prompt section tells the model to issue all independent read_node/search_nodes calls in the SAME turn; (3) toolResults refactored to execTool + Promise.all fan-out (contract check's plan+mandate judges also concurrent), auto-verify's per-scene judges parallelized; (4) threadSystem split into byte-stable `instructions` (cached system prompt) + volatile `bookState` injected request-time at the tail of the latest user message via new `withBookState` (never persisted) — the prompt-cache prefix now survives auto-mode applies instead of missing every turn. Deployed; deno check clean vs baseline (28 pre-existing EdgeRuntime errors only).
+- **Files/commits:** supabase/functions/book-agent/index.ts (uncommitted); analysis in doc_1783588839417.md.
+- **PM impact:** new "Agent speed (de-serialize the loop)" row in STATE §Agent, shipped (code) — success bar recorded there; verify on the next live auto run (ai_calls cache-read tokens + turn count).
+
+## 2026-07-09 — Diagnosed the agent's slowness: four compounding serializations `[wip]`
+- **What:** Analysis only (no code yet). The AgentRail agent fixes lints one at a time because of: (1) the `<autonomous_mode>` "ONE change per turn" rule applied even to independent fixes (propose_node_ops already accepts batched ops); (2) no prompt instruction to batch parallel read_node calls in one turn; (3) serial `for…await` in toolResults/maybeInjectRenderVerify (LLM judge calls back-to-back); (4) the live tree digest inside the system prompt invalidates the whole prompt-cache prefix every auto-mode apply. Fix plan ranked: prompt edits → Promise.all → move volatile state to request-time injection after the transcript. Bar: 7-lint run in ≤4 model calls.
+- **Files/commits:** doc_1783588839417.md (analysis; uncommitted). No source changes.
+- **PM impact:** none (awaiting go-ahead to implement).
+
+## 2026-07-09 — DNA tab-strip chrome cleanup `[chore]`
+- **What:** User flagged the errors/warnings pip duplicated in both the below-tabs bar and the
+  Tree tab's journey strip — removed it (Analytics tab still has the full breakdown). Moved the
+  "More" overflow menu (json/fork/history) out of those per-tab rows into the tab strip itself,
+  right-aligned, so it's now one consistent control across all tabs instead of shifting per-tab.
+  Also removed the horizontal rule under the tab strip per a follow-up screenshot, so the active
+  tab now fuses directly into its content with no seam. Verified live via chrome-devtools MCP
+  against the running dev server (book 1229, Analytics + Tree tabs).
+- **Files/commits:** `apps/web/src/features/dna/pages/DnaTreePage.tsx` (uncommitted).
+- **PM impact:** none — pure chrome polish, no roadmap/decision change.
+
+## 2026-07-09 — Blended Meters into Analytics; added the missing Ledger trigger `[ship]`
+- **What:** Follow-up to explaining the lint system: user pointed at the Meters tab's working
+  Shape/Craft/Cold-read/emotional-trace buttons and asked for one comprehensive "what's wrong +
+  every trigger" surface. Extracted `LedgerPane.tsx` (new, mirrors `MetersPane`'s pattern) from
+  `DnaLedgerPage.tsx`'s body — the continuity-ledger/`read-facts` trigger that previously had no
+  UI anywhere in the studio tab bar, only an orphaned standalone `/dna/ledger` route. Restyled it
+  off hardcoded hex onto the shared `T` tokens so it renders correctly embedded in Analytics (both
+  Paper/Terminal themes). In `DnaTreePage.tsx`, folded `MetersPane` + the new `LedgerPane` into the
+  `analytics` tab body (after the lint list, before pacing/promises/topography) and removed
+  "meters" as a separate top-level tab (type union, path ternary, tab-bar entry, its own render
+  block). `DnaLedgerPage.tsx` slimmed to a thin wrapper exactly like `DnaMetersPage.tsx`. Plan
+  approved via EnterPlanMode first (`~/.claude/plans/fizzy-doodling-eich.md`).
+- **Files/commits:** `apps/web/src/features/dna/components/tree/LedgerPane.tsx` (new),
+  `apps/web/src/features/dna/pages/DnaLedgerPage.tsx`, `apps/web/src/features/dna/pages/DnaTreePage.tsx`.
+  Typechecked clean (`tsc -p apps/web/tsconfig.app.json`). Verified live in-browser by the user on
+  book 1229 (`fork-of-fork-of-mastering-freedom-v3`) — screenshots confirm the merged Analytics
+  tab renders lints → Shape → Craft → Cold read → Ledger (new) → pacing/promises/topography, tab
+  bar no longer shows Meters. Not committed yet.
+- **PM impact:** none filed yet — this closes part of the gap the "DNA UI self-explanatory pass"
+  Next item flagged (`pm/ROADMAP.md`); worth a follow-up decision line once committed.
+
+## 2026-07-09 — AgentRail Stop button: cut real + perceived latency `[ship]`
+- **What:** User-reported bug: clicking Stop on the AgentRail chat didn't free the UI for the next
+  message. Traced root cause: Stop is COOP-cancel (`stopRun.ts` only flips `cancel_requested`);
+  the composer's `disabled` is gated on server-authoritative `status`, which only flips to
+  `cancelled` once `book-agent`'s in-call poll notices the flag — that poll ran every **5s**, so
+  worst case the textarea sat dead with zero feedback for up to 5s. Investigated whether the
+  composer could unlock immediately instead (skip the wait entirely): no — `book_agent_runs` has
+  one thread row per book with no DB mutex, only an app-level one (client `active` guard + server
+  409 on `status IN (running, awaiting_input)`); sending before the row reaches `cancelled` would
+  just 409 silently, so unlocking Send early is unsafe. Shipped the two safe wins instead: (1)
+  `supabase/functions/book-agent/index.ts` poll interval 5000ms → 1000ms — cuts the real
+  worst-case abort latency 5x; (2) `AgentRail.tsx` — new local `stopping` state flips synchronously
+  in `stop()` before the network round-trip, so the Stop button's spinner/tooltip reflects the
+  click instantly instead of waiting on `stopRun()`'s await + a refetch SELECT to land
+  `row.cancel_requested`; resets via `useEffect` once `running` goes false. Textarea itself stays
+  gated on `active` (unchanged — correctly so, per the mutex above).
+- **Files/commits:** `supabase/functions/book-agent/index.ts` (poll interval), `apps/web/src/features/dna/components/AgentRail.tsx` (`stopping` state + button conditions). Deployed `book-agent` via `supabase functions deploy`. Typechecked clean (`tsc -p apps/web/tsconfig.app.json`). Not yet exercised live in-browser (Claude-in-Chrome extension wasn't connected this session) — verify on next live AgentRail use, tied to the Now #1 "re-exercise the live full-book build" item.
+- **PM impact:** none — small bugfix, not a roadmap-tracked project; no STATE/ROADMAP row to move.
+
+## 2026-07-09 — DNA UI self-explanatory pass: audited + ratified + Analytics fix designed `[decision]`
+- **What:** User asked (via `/pm`, two screenshots of Tree + Analytics tabs) to make the whole
+  DNA Studio self-explanatory. Audited the real code (not just the screenshots) — found the gap
+  is mostly hover-only content (real copy exists, e.g. `KIND_EXPLAINER`, but is undiscoverable),
+  with Analytics/lints as the one place with a genuine content gap (no why/fix copy) plus a
+  narrower `dangling_ref` field-clarity gap. Corrected a first-pass mistake along the way: the
+  screenshot's lint list is actually rendered by a hand-rolled block in `DnaTreePage.tsx`, not
+  `DnaAnalysis.tsx`'s lints section (which is dead code, always hidden) — click-to-jump already
+  works, contrary to the first read. User ratified: new Next item, comprehensive scope (all 6
+  tabs). Then designed the first slice (Analytics tab fix) in detail — no code written yet.
+- **Files/commits:** `pm/ROADMAP.md` (new Next #1), `docs/dna-ui-self-explanatory.md` (new —
+  audit + Analytics implementation design), `doc_1783585977440.md` / `doc_1783586926444.md`
+  (session docs, local-only, not part of the change-set to commit).
+- **PM impact:** `pm/ROADMAP.md` Next list updated (ratified); `pm/DECISIONS.md` entry added for
+  the scope/priority call. `pm/STATE.md` untouched — nothing shipped yet.
+
+## 2026-07-09 — Investigating lint auto-clear + LLM-based lints (in progress) `[wip]`
+- **What:** Follow-up to the Analytics-lint-staleness explanation: user asked (1) whether a lint
+  clears once its cause is fixed in prose/tree, (2) whether any lints are LLM/semantic (not just
+  deterministic) — per memory, the "DNA verify layer" added cold-read/synopsis-read/craft_flag
+  which sound semantic. Forked an agent to verify against `novelDna.ts` / `_shared/novel-dna.ts`;
+  result not yet back. No code changes made. Also noted (not authored by this session) two
+  pre-existing untracked scratch docs (`doc_1783581935000.md`, `doc_1783585977440.md`) from
+  earlier unrelated PM/DNA-UI tasks — local-only by convention, not part of this change-set.
+- **Files/commits:** none this turn; investigation only.
+- **PM impact:** none yet — will follow up once the fork returns.
+
+## 2026-07-09 — Explained Analytics-tab lint staleness (no code change) `[chore]`
+- **What:** User asked how to know if the DNA tree's Analytics tab lints (dangling_ref,
+  prose_echo, static_relationship, etc.) are up to date. Traced the pipeline: `dnaHealth(nodes)`
+  runs uncached in the render body of `DnaTreePage.tsx`, over `nodes` kept live by a Supabase
+  Realtime subscription — no edge fn, no LLM call, no DB round-trip at lint time, so the report
+  can't go stale relative to the tree. Wrote up findings + architecture vocabulary for the user.
+- **Files/commits:** no repo changes; wrote `doc_1783585656834.md` +
+  `learning_1783585656834_analytics-lint-staleness.md` (both local-only, not committed).
+- **PM impact:** none — investigation/explanation only, no ship/decision.
+
+## 2026-07-09 — PM-system essay: two editorial passes (front-load, then sell-value + how-to) `[chore]`
+- **What:** Refined `doc_1783581935000.md` (the "PM out of five markdown files" essay). Pass 1:
+  inverted-pyramid opening (inventory + 3-of-4 receipt first). Pass 2: benefit-led second-person
+  vignette opening, deleted the "honest gap list" meta-section, folded its fixes (HEAD-stamped
+  sentinel, SessionStart injection, grep-never-load) into the how-to as current behavior; snippet
+  re-verified against the real `pm-worklog.sh`.
+- **Files/commits:** `doc_1783581935000.md` (uncommitted, untracked; user's essay draft).
+- **PM impact:** none.
+
 ## 2026-07-09 — Builder loop iter 10: dedupe triplicated live-sync effect; scope closed `[chore]`
 - **What:** Read the last unexplored corner, `features/dna/pages/` (`DnaTreePage.tsx` 839 lines,
   `DnaJsonPage.tsx`, `DnaMetersPage.tsx`, `DnaLedgerPage.tsx`, `DnaArchitecturePage.tsx` 750 lines).

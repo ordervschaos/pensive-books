@@ -6,6 +6,20 @@
 
 ## Log
 
+### 2026-07-09 — DNA UI self-explanatory pass ratified as Next, comprehensive scope
+User request (two screenshots: raw schema labels in Tree, raw lint rule-ids in Analytics) to make
+the whole DNA Studio self-explanatory. Audit showed the gap is mostly **discoverability**, not
+missing content — plain-English copy already exists for node kinds and journey stages but is
+hover-only; Analytics/lints is the one place with a real content gap (no why/fix copy) plus a
+`dangling_ref` field-clarity gap. Ranked as a new **Next** item (not bumped into Now, which was
+already at its 2-item WIP limit) — offered scoped-vs-comprehensive and Now-vs-Next as explicit
+choices; user chose **comprehensive (all 6 tabs)** and **Next** rather than folding a smaller
+slice into the in-flight Monetization rails v1 item. Rationale for rank: NORTH_STAR §9 explicitly
+includes intuitiveness as a ranking axis, and it directly de-risks R1 (a paid studio with a
+cryptic Analytics tab reads as unfinished). Audit + phased design live in
+`docs/dna-ui-self-explanatory.md`; Analytics tab (first slice) has a full implementation design
+as of this entry, not yet built.
+
 ### 2026-07-09 — 45 legacy books left stranded off the DNA tree (deliberate)
 `migrateBookToDna` (legacy brief/foundations/spine/pages → `book_nodes`) lost its only UI trigger
 when the old DnaStudio "Migrate" button was deleted in the 2026-07-03 one-studio consolidation.

@@ -44,12 +44,20 @@ R1/R2 graduated, moved to STATE.md.
 
 ## Next
 
-1. **Unblock publish revalidation** — set REVALIDATE_SECRET (small ops task; now a GTM
+1. **DNA UI self-explanatory pass.** Comprehensive pass across all 6 studio tabs (Tree, Analytics,
+   Overview, Meters, Voice, Characters, Story): promote existing hover-only explanations
+   (`KIND_EXPLAINER`, `DNA_STAGES` captions) to visible affordances, add plain-language why/fix
+   copy + click-to-jump to the Analytics lints list (currently the one section without it), give
+   `dangling_ref` a resolution path, extend the Tree tab's STALE-popover pattern to Meters. Full
+   audit in `docs/dna-ui-self-explanatory.md`. Ranked ahead of the two items below: directly
+   serves R1 (Monetization rails v1, in Now) — a paid studio with a cryptic Analytics tab and
+   unfixable errors reads as unfinished. Ratified 2026-07-09 (user request + `/pm` scoping).
+2. **Unblock publish revalidation** — set REVALIDATE_SECRET (small ops task; now a GTM
    precondition — artifact-as-ad needs the publish → marketing pipe live; also unblocks C5b).
-2. **Import-funnel productization (GTM R2)** — free-import limit + per-book/credit checkout on
+3. **Import-funnel productization (GTM R2)** — free-import limit + per-book/credit checkout on
    the R1 Stripe rails + import landing page (before/after) + bundled editor's-read report.
    Prereq: measure decompose COGS via the gen-cost method.
-3. **EPUB Layer B follow-through** — scene enrichment + act re-segmentation (Layer B core
+4. **EPUB Layer B follow-through** — scene enrichment + act re-segmentation (Layer B core
    shipped 2026-07-08; these finish the import → readable-plan story and raise R2's quality).
 
 > **Pattern note:** 3 of 4 Next items checked this session were already shipped before `pm/`
