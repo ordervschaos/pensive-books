@@ -49,6 +49,8 @@ export interface CallMeta {
   taskId?: number | null;           // …and the row id, for the join
   source?: "edge" | "bridge";       // defaults to 'edge'
   userId?: string | null;           // auth user who triggered this call; null = automated/system
+  nodeId?: string | null;           // the book_nodes id this call read/wrote, when the call is node-scoped
+  operation?: string | null;        // what the call was doing to that node (e.g. 'sketch', 'prose', 'beatsheet')
   // Labeled inputs that composed this call's prompt (brief, objective, beat, character_states,
   // open_loops, preceding-prose refs…). Logged to ai_calls.artifacts as provenance — the full merged
   // prompt is still in `input`. Optional; callers that don't assemble unit context leave it null.
@@ -100,7 +102,7 @@ export async function callLLM(
           "Authorization": `Bearer ${deepseekKey}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify(anthropicToOpenAI(body)),
+        body: JSON.stringify(anthropicToOpenAI(body, "deepseek")),
       });
     } else if (isOpenRouter) {
       const openRouterKey = Deno.env.get("OPENROUTER_API_KEY") ?? apiKey;
@@ -111,7 +113,7 @@ export async function callLLM(
           "Authorization": `Bearer ${muleModel ? muleKey : openRouterKey}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify(muleModel ? { ...anthropicToOpenAI(body), model: muleModel } : anthropicToOpenAI(body)),
+        body: JSON.stringify(muleModel ? { ...anthropicToOpenAI(body, "mulerouter"), model: muleModel } : anthropicToOpenAI(body, "openrouter")),
       });
     } else {
       res = await fetch(ANTHROPIC_URL, {
@@ -157,9 +159,48 @@ export function textFromLLM(data: any): string {
 // Convert an Anthropic-format request body to OpenAI-compatible format (DeepSeek, MuleRouter/Qwen).
 // Carries TOOLS both ways: Anthropic tool defs → OpenAI function defs, assistant tool_use blocks →
 // tool_calls, and tool_result blocks → role:"tool" messages — so tool-using loops (book-agent)
-// work on the OpenAI-compatible tiers. Drops what those APIs don't speak: cache_control, thinking
-// blocks, and Anthropic-specific params (`thinking`, `output_config`).
-function anthropicToOpenAI(body: Record<string, unknown>): Record<string, unknown> {
+// work on the OpenAI-compatible tiers. Drops what those APIs don't speak: cache_control and
+// thinking blocks. `output_config.effort` is NOT dropped — it maps to the target's reasoning
+// bound (see reasoningParamsFor); silently dropping it let qwen reason unbounded and was the
+// root cause of the 2026-07-09 book-agent 140s-timeout streaks (doc_1783599238000.md).
+type OpenAITarget = "deepseek" | "openrouter" | "mulerouter";
+
+// Reasoning tokens are the latency budget: decode runs ~55 tok/s, and an edge worker call must
+// fit a ~140s timer, so an unbounded chain-of-thought (observed: 25k chars on a hard prompt) is
+// a guaranteed timeout. Anthropic bounds it via output_config.effort + max_tokens (thinking
+// counts INSIDE max_tokens there); the OpenAI-compatible tiers each need their own dialect —
+// and qwen's reasoning does NOT count against max_tokens, so without this param it's unbounded.
+// Budgets are timer-aware: even "high" must leave room for a ~5k answer inside ~140s.
+//
+// ⚠️ Known limit, verified 2026-07-09 (probes on qwen3.7-plus, hard planning prompt, n=2-3 each):
+// NOTHING bounds qwen3.7-plus through today's routers — MuleRouter's /vendors/openai facade drops
+// `reasoning_effort`, `reasoning:{effort}`, `thinking_budget` AND `enable_thinking` (~7.4k
+// completion tokens / ~25k reasoning chars / 200-390s in every condition, same as baseline), and
+// OpenRouter ignores `reasoning:{effort}` for this model as well (`reasoning:{max_tokens}`
+// untestable — the account was out of credits). We still send the mapping: it documents intent,
+// is harmless (no 400s, verified live), and starts working the day a router forwards it. Until
+// then a qwen agent tier structurally risks 140s timeouts on hard-reasoning turns — the working
+// bound is max_tokens on Anthropic tiers (thinking counts inside it), i.e. keep the agent role
+// on an Anthropic model, or move the call off-worker like prose (docs/agent-runtime-architecture.md).
+const EFFORT_THINKING_BUDGET: Record<string, number> = { low: 1000, medium: 2500, high: 4000 };
+
+function reasoningParamsFor(body: Record<string, unknown>, target: OpenAITarget): Record<string, unknown> {
+  const effort = (body.output_config as { effort?: string } | undefined)?.effort;
+  if (!effort || !(effort in EFFORT_THINKING_BUDGET)) return {};
+  switch (target) {
+    case "openrouter":
+      // OpenRouter's unified param, normalized per-provider; ignored for qwen3.7-plus (see above).
+      return { reasoning: { max_tokens: EFFORT_THINKING_BUDGET[effort] } };
+    case "mulerouter":
+      // DashScope-native name; currently swallowed by the facade (see above) but the right field.
+      return { thinking_budget: EFFORT_THINKING_BUDGET[effort] };
+    case "deepseek":
+      // deepseek-chat doesn't think; deepseek-reasoner has no budget knob. Send nothing.
+      return {};
+  }
+}
+
+function anthropicToOpenAI(body: Record<string, unknown>, target: OpenAITarget): Record<string, unknown> {
   // deno-lint-ignore no-explicit-any
   const textOf = (blocks: any[]): string =>
     blocks.filter((b) => b?.type === "text").map((b) => b.text ?? "").join("\n").trim();
@@ -207,6 +248,7 @@ function anthropicToOpenAI(body: Record<string, unknown>): Record<string, unknow
     model: body.model,
     messages,
     max_tokens: body.max_tokens ?? 8192,
+    ...reasoningParamsFor(body, target),
   };
   if (Array.isArray(body.tools) && (body.tools as unknown[]).length) {
     // deno-lint-ignore no-explicit-any
@@ -278,6 +320,8 @@ async function logStart(body: Record<string, unknown>, meta: CallMeta): Promise<
       fn: meta.fn,
       source: meta.source ?? "edge",
       user_id: meta.userId ?? null,
+      node_id: meta.nodeId ?? null,
+      operation: meta.operation ?? null,
       model: (body.model as string) ?? null,
       system: systemText(body.system),
       input: body.messages ?? null,
@@ -325,6 +369,8 @@ async function logEnd(
       fn: meta.fn,
       source: meta.source ?? "edge",
       user_id: meta.userId ?? null,
+      node_id: meta.nodeId ?? null,
+      operation: meta.operation ?? null,
       model: (body.model as string) ?? null,
       system: systemText(body.system),
       input: body.messages ?? null,

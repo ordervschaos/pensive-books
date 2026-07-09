@@ -6,6 +6,34 @@
 
 ## Log
 
+### 2026-07-09 — Amendment: qwen3.7-plus reasoning is unboundable via routers; fix verified on Anthropic path
+Follow-up to the same-day timeout decision below. Both fixes deployed; live result: **17
+post-deploy book-agent turns, 0 timeouts** (was ~37% error rate) with `max_tokens: 5000` on the
+sonnet tier. But controlled probes (hard planning prompt, n=2–3 per condition) falsified the
+"map the effort param" half for qwen: MuleRouter's `/vendors/openai` facade silently drops
+`reasoning_effort`, `reasoning:{effort}`, `thinking_budget` and `enable_thinking` (all ~7.4k
+completion tokens / 200–390s, indistinguishable from baseline), and OpenRouter ignores
+`reasoning:{effort}` for this model; qwen's thinking also does NOT count against `max_tokens`.
+The mapping ships anyway (documented intent, harmless, works the day a router forwards it).
+Operative decision: **the agent role belongs on an Anthropic tier** (current default) until
+either a router forwards a thinking bound or agent calls move off-worker like prose. Also
+flagged operationally: OpenRouter credits exhausted — `dna-expand-digest` (qwen3-235b, no Mule
+equivalent) failing 100% with 402 during live renders; needs top-up or a model re-point.
+Details: `doc_1783607491000.md`.
+
+### 2026-07-09 — book-agent timeouts root-caused to dropped effort param; fix plan set
+~37% of book-agent calls were dying at the 140s abort in streaks of 2–3 (each billed — abort
+doesn't stop provider-side generation). `ai_calls` evidence: latency tracks output tokens
+(~55 tok/s → the timer fits ~7k generated tokens vs `max_tokens: 8000`), not input — 70k-token
+prompts prefilled fine in ~20s while a 25k-token prompt timed out 3× on identical retries. Root
+cause: the `anthropicToOpenAI()` adapter in `_shared/llm.ts` drops `output_config`/`thinking`,
+so the `effort:"medium"` bound book-agent sends never reaches qwen on the MuleRouter path — it
+only ever worked on the Anthropic path (silent contract break; the "too much context" hypothesis
+was falsified, transcript compaction is working as designed). Agreed fix order: (1) map effort →
+OpenAI-side `reasoning:{effort}` in the adapter, (2) lower agent `max_tokens` to ~5000 to fit
+the timer, (3) degrade retries instead of replaying verbatim. Analysis of record:
+`doc_1783599238000.md`. Replaces nothing — first principled account of these timeouts.
+
 ### 2026-07-09 — DNA UI self-explanatory pass ratified as Next, comprehensive scope
 User request (two screenshots: raw schema labels in Tree, raw lint rule-ids in Analytics) to make
 the whole DNA Studio self-explanatory. Audit showed the gap is mostly **discoverability**, not

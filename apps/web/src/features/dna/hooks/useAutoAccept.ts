@@ -18,12 +18,17 @@ import type { DnaNode } from "@/features/dna/lib/novelDna";
 const AUTO_ANSWER =
   "I'm away — auto-accept mode is on, so I can't answer. Make the strongest creative call yourself and keep going.";
 
-export function useAutoAccept({ enabled, bookId, row, nodes, refetch }: {
+export function useAutoAccept({ enabled, bookId, row, nodes, refetch, onApplyingChange, abortRef }: {
   enabled: boolean;
   bookId: number;
   row: AgentThreadRow | null | undefined;
   nodes: DnaNode[];
   refetch: () => void;
+  // Mirrors the manual apply path's applyingId/abort-controller state up into the rail so a card being
+  // applied BY THE WATCHER shows the same live "applying"/Stop feedback as a manual click — otherwise an
+  // autonomous expansion/render runs silently for minutes with the card reading as idle (looks stuck).
+  onApplyingChange?: (id: string | null) => void;
+  abortRef?: { current: AbortController | null };
 }): void {
   const busy = useRef(false);
   const skip = useRef<Set<string>>(new Set()); // ids that errored once — don't retry forever
@@ -61,10 +66,17 @@ export function useAutoAccept({ enabled, bookId, row, nodes, refetch }: {
         // An un-settled apply never releases `busy`, which kills the watcher for the life of the
         // page — so abort on a deadline; the apply promise must ALWAYS settle.
         const ctrl = new AbortController();
+        if (abortRef) abortRef.current = ctrl;
+        onApplyingChange?.(p.id);
         const deadline = window.setTimeout(() => ctrl.abort(), p.layer === "prose-render" ? 6 * 60_000 : 3 * 60_000);
         try { await applyAgentProposal(bookId, row.id, p, all, nodes, ctrl.signal); }
         catch { await discardAgentProposal(row.id, p.id, all).catch(() => {}); }
-        finally { window.clearTimeout(deadline); await continueAgent(row.id).catch(() => {}); }
+        finally {
+          window.clearTimeout(deadline);
+          if (abortRef) abortRef.current = null;
+          onApplyingChange?.(null);
+          await continueAgent(row.id).catch(() => {});
+        }
       };
     } else if (row.status === "idle" && optionNode) {
       // Staged options the author would pick among: commit the first, then resume the run (the edge case

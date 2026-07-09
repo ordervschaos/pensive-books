@@ -416,11 +416,19 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     try {
       resp = await callLLM(apiKey, {
         model,
-        max_tokens: 8000,
+        // Sized to the 140s timer, not to ambition: decode runs ~55 tok/s on both the qwen and
+        // sonnet tiers, so ~5k generated tokens (+ ~20s prefill) is all that physically fits. 8000
+        // promised more than the clock could deliver — near-max turns died at 140s, were retried
+        // verbatim, and timed out again in billed streaks (ai_calls 7830-32, 7853-55, 2026-07-09).
+        // On Anthropic, thinking counts inside max_tokens, so this bounds the whole turn; big
+        // proposals split across turns by design (replace_text keeps edits small).
+        max_tokens: 5000,
         thinking: { type: "adaptive" },
         // effort defaults to HIGH, which made every turn think past the 120s timer (observed:
         // five consecutive aborted-and-billed 120s calls). Medium keeps a turn at ~30-60s; the
-        // author-gated plan review downstream is the quality backstop.
+        // author-gated plan review downstream is the quality backstop. On the OpenAI-compatible
+        // tiers this now maps to a provider reasoning bound in llm.ts (it was silently dropped
+        // before — qwen reasoned unbounded, the root cause of the 2026-07-09 timeout streaks).
         output_config: { effort: "medium" },
         system: [{ type: "text", text: instructions, cache_control: { type: "ephemeral" } }],
         tools,
@@ -955,7 +963,7 @@ async function execTool(
     const check = ((t.input as { check?: string })?.check ?? "both");
     const doPlan = check !== "mandate", doMandate = check !== "plan";
     const { agent: model } = await getRoleModels();
-    const meta = { fn: "book-agent-contract", bookId, taskTable: "book_agent_runs", taskId: null, userId: null };
+    const meta = { fn: "book-agent-contract", bookId, nodeId: n.id, operation: "check-contract", taskTable: "book_agent_runs", taskId: null, userId: null };
     try {
       // The two judges are independent LLM calls — run them together.
       const [planRes, mandateBody] = await Promise.all([
@@ -1035,7 +1043,7 @@ async function planConformanceSummary(
     direction: c.sketch?.direction,
   };
   if (!planHasContent(plan)) return { axes: [], summary: "  this scene has no structural plan (no value_shift / establishes / threads) to check against." };
-  const axes = await judgeAgainstPlan(apiKey, model, plan, proseText, { fn, bookId, taskTable: "book_agent_runs", taskId: null, userId: null });
+  const axes = await judgeAgainstPlan(apiKey, model, plan, proseText, { fn, bookId, nodeId: sceneId, operation: "plan-conformance", taskTable: "book_agent_runs", taskId: null, userId: null });
   const summary = axes.map((a) => `  ${a.field}: ${a.verdict.toUpperCase()} — ${a.detail}${a.evidence ? ` (e.g. "${a.evidence}")` : ""}`).join("\n");
   return { axes, summary };
 }

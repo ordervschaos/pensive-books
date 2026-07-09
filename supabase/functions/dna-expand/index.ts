@@ -519,7 +519,8 @@ Deno.serve(async (req: Request) => {
     const roleModels = await getRoleModels();
     const isProseRender = target === "prose" || (!target && node.kind === "scene");
     const model = isProseRender ? roleModels.prose : roleModels.structure;
-    const meta: CallMeta = { fn: "dna-expand", bookId, userId };
+    const operation = target ?? (node.kind === "scene" ? "prose" : "children");
+    const meta: CallMeta = { fn: "dna-expand", bookId, userId, nodeId, operation };
     // Prose → digest v2 (all-page continuity + anti-echo). The per-page fold runs on DIGEST_MODEL (qwen-plus,
     // a reasoning model) — NOT the cheap `low` model: the digest is read-comprehension that downstream prose
     // trusts as authoritative, so a weak model's misreadings poison every later page.

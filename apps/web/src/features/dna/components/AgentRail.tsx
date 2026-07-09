@@ -18,7 +18,7 @@ import {
   type AgentProposal, type AgentSession, type Aspect, type AgentStep, type AgentThreadRow,
 } from "@/features/dna/lib/agentThread";
 import { availableCommands, matchCommands, type AgentCommand } from "@/features/dna/lib/agentCommands";
-import { describeOps, humanizeNodeRefs, nodeLabel, type NodeOp } from "@/features/dna/lib/dnaChat";
+import { describeOps, humanizeNodeRefs, nodeLabel, type NodeOp, type OpRow } from "@/features/dna/lib/dnaChat";
 import { analysisText, byId, type BookSettings, type DnaNode, type NodeKind } from "@/features/dna/lib/novelDna";
 import { currentObjective, currentObjectiveKey, nextDraftTarget } from "@/features/dna/lib/dnaJourney";
 import { useChatScroll } from "@/components/book/shared/useChatScroll";
@@ -140,9 +140,6 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
   const awaiting = row?.status === "awaiting_input";
   const active = running || awaiting;
 
-  // Auto-accept watcher — when armed, performs the author's gestures (apply / pick / answer) automatically.
-  useAutoAccept({ enabled: auto, bookId, row, nodes, refetch });
-
   const [draft, setDraft] = useState("");
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
@@ -150,6 +147,11 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
   // Only the slow engine layers (expansion/prose-render) get a real Stop — applyingAbortRef holds the
   // in-flight controller so ProposalCard's Stop button can cancel the browser-side generation mid-call.
   const applyingAbortRef = useRef<AbortController | null>(null);
+
+  // Auto-accept watcher — when armed, performs the author's gestures (apply / pick / answer) automatically.
+  // Shares applyingId/applyingAbortRef with the manual path so a card the watcher is applying shows the
+  // same live "applying"/Stop feedback instead of looking idle while it streams in the background.
+  useAutoAccept({ enabled: auto, bookId, row, nodes, refetch, onApplyingChange: setApplyingId, abortRef: applyingAbortRef });
   const [historyOpen, setHistoryOpen] = useState(false);
   // Past chats live in book_agent_sessions, not on the row (20260701150000) — a thread can carry a lot
   // of archived history, so we only load a cheap count for the badge and fetch the full list (with each
@@ -659,18 +661,49 @@ function opLine(op: NodeOp): string {
   return "change";
 }
 
+// The per-op change list — target node, each field's old → new, blast radius — shared by the pre-apply
+// preview (ProposalCard) and the post-apply history (ResolvedCard) so a change reads identically whether
+// you're about to accept it or looking back at it later.
+function DiffRows({ rows }: { rows: OpRow[] }) {
+  return (
+    <ul className="space-y-2.5">
+      {rows.map((row, i) => (
+        <li key={i} className="border-l-2 border-[hsl(var(--pv-border-soft))] pl-2.5">
+          <div className="flex items-baseline gap-2">
+            <span className={`pv-mono text-[9.5px] uppercase tracking-[0.12em] ${row.verb === "delete" ? "text-red-600" : row.verb === "add" ? "text-emerald-600" : "text-amber-600"}`}>{row.verb}</span>
+            <span className="pv-serif text-[13px] text-foreground">{row.kind} · {row.label}</span>
+            {row.parentLabel && <span className="pv-serif text-[11.5px] italic text-[hsl(var(--pv-text-faint))]">in {row.parentLabel}</span>}
+            {!!row.restales && <span className="pv-mono text-[9px] text-[hsl(var(--pv-text-faint))]">±{row.restales}</span>}
+          </div>
+          {row.fields.map((f) => (
+            <div key={f.key} className="mt-0.5">
+              <span className="pv-mono text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">{f.key}</span>
+              {f.old && <p className="pv-serif text-[12px] leading-[1.45] text-[hsl(var(--pv-text-faint))] line-through decoration-[hsl(var(--pv-text-faint))]/40">{f.old}</p>}
+              <p className="pv-serif text-[12.5px] leading-[1.5] text-[hsl(var(--pv-text-muted))]">{f.next}</p>
+            </div>
+          ))}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // A resolved proposal kept in the chat for context: a collapsed one-line summary (✓ applied / ✕ discarded)
 // that expands to the list of changes. Mirrors ProposalCard's look but read-only — the change already landed.
 function ResolvedCard({ step, nodes }: { step: AgentStep; nodes: DnaNode[] }) {
   const [open, setOpen] = useState(false);
   const applied = step.t === "applied";
   const ops = step.ops ?? [];
+  // `diff` is the before/after frozen at apply time (describeOps run against the pre-apply tree) — present on
+  // steps written after this landed. Older steps (or a discard, which never mutated anything) fall back to the
+  // flat op-line summary below, which is all that's available for them.
+  const diff = step.diff ?? [];
   // A prose-render step never carries ops (the change is a browser-streamed render, not a node op) — its
   // detail is which scene(s) + the brief that rode into that render, so the card has something to show.
   const isProseRender = !!step.sceneIds?.length;
   const index = byId(nodes);
   const scenes = isProseRender ? step.sceneIds!.map((id) => index.get(id)).filter((n): n is DnaNode => !!n) : [];
-  const hasDetail = isProseRender ? scenes.length > 0 || !!step.brief || !!step.renderedProse : ops.length > 0;
+  const hasDetail = isProseRender ? scenes.length > 0 || !!step.brief || !!step.renderedProse : diff.length > 0 || ops.length > 0;
   return (
     <div className={`rounded-xl border px-3 py-2 ${applied ? "border-emerald-600/30 bg-emerald-600/[0.04]" : "border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/30"}`}>
       <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 text-left">
@@ -711,7 +744,12 @@ function ResolvedCard({ step, nodes }: { step: AgentStep; nodes: DnaNode[] }) {
           )}
         </div>
       )}
-      {open && !isProseRender && ops.length > 0 && (
+      {open && !isProseRender && diff.length > 0 && (
+        <div className="mt-2 border-t border-[hsl(var(--pv-border-soft))]/50 pt-2">
+          <DiffRows rows={diff} />
+        </div>
+      )}
+      {open && !isProseRender && diff.length === 0 && ops.length > 0 && (
         <ul className="mt-2 space-y-1 border-t border-[hsl(var(--pv-border-soft))]/50 pt-2">
           {ops.map((op, i) => (
             <li key={i} className="pv-mono text-[10.5px] leading-snug text-[hsl(var(--pv-text-faint))]">· {opLine(op)}</li>
@@ -779,25 +817,9 @@ function ProposalCard({ proposal, nodes, applying, onApply, onDiscard, onStop }:
           {briefBlock}
         </div>
       ) : (
-        <ul className="mt-3 space-y-2.5">
-          {rows.map((row, i) => (
-            <li key={i} className="border-l-2 border-[hsl(var(--pv-border-soft))] pl-2.5">
-              <div className="flex items-baseline gap-2">
-                <span className={`pv-mono text-[9.5px] uppercase tracking-[0.12em] ${row.verb === "delete" ? "text-red-600" : row.verb === "add" ? "text-emerald-600" : "text-amber-600"}`}>{row.verb}</span>
-                <span className="pv-serif text-[13px] text-foreground">{row.kind} · {row.label}</span>
-                {row.parentLabel && <span className="pv-serif text-[11.5px] italic text-[hsl(var(--pv-text-faint))]">in {row.parentLabel}</span>}
-                {!!row.restales && <span className="pv-mono text-[9px] text-[hsl(var(--pv-text-faint))]">±{row.restales}</span>}
-              </div>
-              {row.fields.map((f) => (
-                <div key={f.key} className="mt-0.5">
-                  <span className="pv-mono text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">{f.key}</span>
-                  {f.old && <p className="pv-serif text-[12px] leading-[1.45] text-[hsl(var(--pv-text-faint))] line-through decoration-[hsl(var(--pv-text-faint))]/40">{f.old}</p>}
-                  <p className="pv-serif text-[12.5px] leading-[1.5] text-[hsl(var(--pv-text-muted))]">{f.next}</p>
-                </div>
-              ))}
-            </li>
-          ))}
-        </ul>
+        <div className="mt-3">
+          <DiffRows rows={rows} />
+        </div>
       )}
       <div className="mt-3.5 flex items-center gap-4">
         <button type="button" onClick={applying && isAbortable ? onStop : onApply} disabled={applying && !isAbortable}

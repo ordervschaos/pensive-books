@@ -22,7 +22,7 @@ const AI_CALL_EVALS: string = "ai_call_evals";
 // context + completion (tens of KB–MBs each). Fetching them for 200 rows on every poll was burning GBs
 // of DB egress, so the list pulls metadata only and the detail panel fetches the heavy fields on demand.
 const AI_CALL_LIST_COLUMNS =
-  "id, created_at, book_id, user_id, task_table, task_id, fn, source, status, model, input_tokens, output_tokens, latency_ms, stop_reason, error";
+  "id, created_at, book_id, user_id, task_table, task_id, fn, source, status, model, node_id, operation, input_tokens, output_tokens, latency_ms, stop_reason, error";
 const AI_CALL_HEAVY_COLUMNS = "system, input, output, artifacts";
 
 interface AiCall {
@@ -36,6 +36,8 @@ interface AiCall {
   source: string;
   status: string;
   model: string | null;
+  node_id: string | null;
+  operation: string | null;
   system: string | null;
   input: unknown;
   output: string | null;
@@ -268,7 +270,8 @@ export default function AiCalls() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-12">#</TableHead>
-              <TableHead>fn</TableHead>
+              <TableHead>fn / op</TableHead>
+              <TableHead>book / node</TableHead>
               <TableHead>source</TableHead>
               <TableHead>model</TableHead>
               <TableHead className="text-right">tokens</TableHead>
@@ -288,12 +291,18 @@ export default function AiCalls() {
                   <TableCell className="tabular-nums text-muted-foreground">{c.id}</TableCell>
                   <TableCell className="font-medium">
                     {c.fn}
+                    {c.operation && <span className="ml-1.5 font-normal text-muted-foreground">· {c.operation}</span>}
                     {c.status === "running" && (
                       <Badge variant="outline" className="ml-2 text-xs gap-1">
                         <Loader2 className="h-3 w-3 animate-spin" />running
                       </Badge>
                     )}
                     {c.error && <Badge variant="destructive" className="ml-2 text-xs">error</Badge>}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                    {c.book_id != null ? `book ${c.book_id}` : "—"}
+                    {c.node_id && <span className="block font-mono">{c.node_id}</span>}
+                    {c.task_table && <span className="block">{c.task_table}#{c.task_id}</span>}
                   </TableCell>
                   <TableCell><Badge variant={c.source === "bridge" ? "outline" : "secondary"} className="text-xs">{c.source}</Badge></TableCell>
                   <TableCell className="text-muted-foreground text-xs">{c.model}</TableCell>
@@ -346,7 +355,7 @@ export default function AiCalls() {
               );
             })}
             {visible.length === 0 && (
-              <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">No AI calls yet — run something AI in the app.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No AI calls yet — run something AI in the app.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
@@ -423,6 +432,8 @@ function CallDialog({ call, evals, onClose, onJudge, onAbort, judging, profile }
                 </span>
               ) : null}
               <span>book {call.book_id ?? "—"}</span>
+              {call.node_id && <span className="font-mono">node {call.node_id}</span>}
+              {call.operation && <span>op: {call.operation}</span>}
               {call.task_table && <span>→ {call.task_table}#{call.task_id}</span>}
               {(call.input_tokens != null || call.output_tokens != null) && <span>tokens {call.input_tokens ?? "?"}/{call.output_tokens ?? "?"}</span>}
               {call.latency_ms != null && <span>{(call.latency_ms / 1000).toFixed(1)}s</span>}

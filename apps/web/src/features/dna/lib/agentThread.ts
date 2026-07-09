@@ -7,7 +7,7 @@
 // Realtime (useLatestTaskRow); refresh = no-op.
 import { supabase } from "@/integrations/supabase/client";
 import type { TaskRow } from "@/hooks/useLatestTaskRow";
-import { applyNodeOps, type NodeOp, type OpValidation } from "@/features/dna/lib/dnaChat";
+import { applyNodeOps, describeOps, type NodeOp, type OpRow, type OpValidation } from "@/features/dna/lib/dnaChat";
 import type { DnaNode, NodeKind, RenderBrief } from "@/features/dna/lib/novelDna";
 
 export interface AgentStep {
@@ -19,7 +19,12 @@ export interface AgentStep {
   label: string;
   options?: string[]; // present on decision steps — the choices the agent weighed (its pick stated in-text)
   at?: string; // present on decision steps — ISO timestamp of the fork
-  ops?: NodeOp[]; // present on applied/discarded 'dna' steps — the change, for the collapsed card's detail
+  ops?: NodeOp[]; // present on applied/discarded 'dna'/'expansion' steps — the change, for the collapsed card's detail
+  // Per-op before/after, frozen at APPLY time (describeOps run against the pre-apply tree) — so the resolved
+  // card can show the real old→new per field forever, even once the live tree has moved past it. Without this
+  // the card can only echo the op's own payload (the new value, or "edit a node" when it has no readable
+  // handle) — never what it replaced. Present on applied/discarded 'dna'/'expansion' steps.
+  diff?: OpRow[];
   sceneIds?: string[]; // present on applied/discarded 'prose-render' steps (ops is always []) — which scene(s)
   brief?: RenderBrief; // ditto — the curated brief that rode into that render, if any
   renderedProse?: Record<string, string>; // sceneId → a snippet of what actually got written, so the card shows
@@ -184,8 +189,11 @@ export async function applyAgentProposal(bookId: number, threadId: number, propo
     // dynamic import breaks the agentThread ↔ dnaExpand cycle. A stale/invalid target throws → caller discards.
     const { generateExpansionOps } = await import("@/features/dna/lib/dnaExpand");
     const { ops, callId } = await generateExpansionOps(bookId, node, proposal.target ?? "", proposal.brief, signal);
+    // Diff against the pre-apply tree — the engine's own ops, not proposal.ops (empty for this layer), so the
+    // resolved card can finally show what an expansion actually did (previously totally opaque).
+    const diff = describeOps(ops, nodes);
     const validation = await applyNodeOps(bookId, ops, callId);
-    await resolveProposal(threadId, proposal, "applied", all);
+    await resolveProposal(threadId, proposal, "applied", all, { diff, ops });
     return validation;
   }
   if (proposal.layer === "prose-render") {
@@ -200,9 +208,12 @@ export async function applyAgentProposal(bookId: number, threadId: number, propo
       const { text } = await expandNode(bookId, scene, "prose", { brief: proposal.brief, signal });
       if (text) renderedProse[id] = proseSnippet(text);
     }
-    await resolveProposal(threadId, proposal, "applied", all, renderedProse);
+    await resolveProposal(threadId, proposal, "applied", all, { renderedProse });
     return { ok: [], rejected: [] };
   }
+  // Diff against the pre-apply tree (the same `nodes` ProposalCard already rendered as the accept preview) —
+  // frozen here so the resolved card can show the real before/after even after the live tree moves on.
+  const diff = describeOps(proposal.ops, nodes);
   const validation = await applyNodeOps(bookId, proposal.ops);
   // Game-twin invariant (docs/dna-structure-analysis.md Finding 2): if this proposal created a game, mint its
   // score meter + resolution thread. Dynamic import breaks the agentThread ↔ dnaExpand cycle; guarded so a
@@ -211,7 +222,7 @@ export async function applyAgentProposal(bookId: number, threadId: number, propo
     const { reconcileGameTwins } = await import("@/features/dna/lib/dnaExpand");
     await reconcileGameTwins(bookId).catch(() => {});
   }
-  await resolveProposal(threadId, proposal, "applied", all);
+  await resolveProposal(threadId, proposal, "applied", all, { diff });
   return validation;
 }
 
@@ -226,15 +237,19 @@ export async function discardAgentProposal(threadId: number, proposalId: string,
 // the resolution stays visible in the feed as a collapsed card. One row write (steps AND proposals re-read
 // fresh — not the caller's possibly-stale `all` — so a concurrent resolver that already landed is detected
 // and this call becomes a no-op instead of writing a second, byte-identical step).
-async function resolveProposal(threadId: number, proposal: AgentProposal, verb: "applied" | "discarded", all: AgentProposal[], renderedProse?: Record<string, string>): Promise<void> {
+async function resolveProposal(
+  threadId: number, proposal: AgentProposal, verb: "applied" | "discarded", all: AgentProposal[],
+  extra?: { renderedProse?: Record<string, string>; diff?: OpRow[]; ops?: NodeOp[] },
+): Promise<void> {
   const { data } = await supabase.from("book_agent_runs").select("steps, proposals").eq("id", threadId).maybeSingle();
   const steps = Array.isArray(data?.steps) ? (data!.steps as AgentStep[]) : [];
   const currentProposals = Array.isArray(data?.proposals) ? (data!.proposals as AgentProposal[]) : all;
   if (!currentProposals.some((p) => p.id === proposal.id)) return; // already resolved by a concurrent caller
   const step: AgentStep = {
-    t: verb, label: proposal.summary, ops: proposal.ops,
+    t: verb, label: proposal.summary, ops: extra?.ops ?? proposal.ops,
     ...(proposal.layer === "prose-render" ? { sceneIds: proposal.sceneIds, brief: proposal.brief } : {}),
-    ...(renderedProse && Object.keys(renderedProse).length ? { renderedProse } : {}),
+    ...(extra?.renderedProse && Object.keys(extra.renderedProse).length ? { renderedProse: extra.renderedProse } : {}),
+    ...(extra?.diff?.length ? { diff: extra.diff } : {}),
   };
   const next = currentProposals.filter((p) => p.id !== proposal.id);
   const { error } = await supabase.from("book_agent_runs").update({ steps: [...steps, step], proposals: next }).eq("id", threadId);

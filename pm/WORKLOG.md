@@ -17,6 +17,101 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-09 — Fixed auto-accept's missing "applying" UI feedback `[ship]`
+- **What:** User reported "auto accept isn't working" (auto-run of sketch/render looked stuck).
+  Live-diagnosed against their actual book_agent_runs row (book 1229) by polling status/turns/
+  proposals across a time window: the apply-and-continue loop was actually cycling correctly
+  unattended. Real bug: `useAutoAccept`'s watcher calls `applyAgentProposal` directly, bypassing
+  the `applyingId` React state the ProposalCard's spinner/Stop-button UI is keyed on (only the
+  manual Apply handler set it) — so a multi-minute autonomous engine/render call ran silently
+  with the card looking idle. Fixed by threading `onApplyingChange`/`abortRef` callbacks into
+  `useAutoAccept` so both paths drive the same UI state.
+- **Files/commits:** `apps/web/src/features/dna/hooks/useAutoAccept.ts`,
+  `apps/web/src/features/dna/components/AgentRail.tsx` (uncommitted).
+- **PM impact:** none — small frontend bugfix, no roadmap/state change. Side finding flagged but
+  not fixed: a raw `.select()` from one user's session returned another user's private book row
+  (app route guard blocked UI access, but the query itself wasn't blocked) — worth a dedicated
+  RLS look, out of scope here.
+
+## 2026-07-09 — Timeout fix deployed + live-verified; qwen reasoning proven unboundable via routers `[ship]`
+- **What:** Deployed the two ratified fixes and drove them live. (1) `max_tokens` 8000→5000 in
+  book-agent — **verified: 17 post-deploy agent turns, 0 timeouts** (was ~37% error rate), max
+  latency 57.9s, outputs ≤2.3k tok; qwen turns 22–45s clean too. (2) effort→reasoning-bound
+  mapping in `anthropicToOpenAI(body, target)` (openrouter `reasoning:{max_tokens}`, mulerouter
+  `thinking_budget`, deepseek nothing; budgets low/med/high = 1000/2500/4000, timer-aware).
+  **Correction to the earlier wip entry:** probes proved NO param bounds qwen3.7-plus through
+  either router — MuleRouter's /vendors/openai facade drops `reasoning_effort`, `reasoning:{…}`,
+  `thinking_budget` AND `enable_thinking`; OpenRouter ignores `reasoning:{effort}` for this model.
+  The mapping ships as documented intent (harmless, verified no-400 live), not as a working bound.
+  Safe config = agent role on an Anthropic tier (current default). Side-finding: OpenRouter
+  credits EXHAUSTED — 36/36 dna-expand-digest calls 402'd mid-test (digest model has no Mule
+  equivalent); continuity digests silently failing until top-up.
+- **Files/commits:** `supabase/functions/_shared/llm.ts`, `supabase/functions/book-agent/index.ts`
+  (uncommitted); book-agent deployed 2×; full write-up `doc_1783607491000.md`.
+- **PM impact:** STATE "Agent speed" row updated (fix verified live); DECISIONS amended with the
+  router-limitation verdict + the OpenRouter-credits operational flag.
+
+## 2026-07-09 — Explained why `/api/stream-prose` doesn't produce a live-typing UI `[chore]`
+- **What:** User asked why the prose call is named "stream" but nothing streams visibly.
+  Traced the chain: `_proseProxy.ts:streamProse()` really does yield real SSE deltas from
+  OpenRouter/Anthropic, but `dnaExpand.ts:streamText()` fully buffers them (`text += decoder
+  .decode(value)`) and only returns after `done`, so no caller ever sees a partial chunk. The
+  streaming transport exists for reliability (escape the ~150s Supabase worker ceiling — see
+  [[project_prose_streaming_proxy]] — and idle-timeout detection via `bump()`), not for a
+  typing-effect UX, which was never built. Read-only investigation, no code changed.
+- **Files/commits:** none touched; explanation in `doc_1783607434817.md`.
+- **PM impact:** none — pure consult. A live-streaming UI would be a separate, scoped follow-up
+  (`onDelta` callback in `streamText`) if ever wanted.
+
+## 2026-07-09 — Landed the ratified fix for book-agent 140s timeouts (effort param + max_tokens) `[wip]`
+- **What:** Implemented the fix plan from the same-day timeout diagnosis (see decision below):
+  (1) `_shared/llm.ts`'s `anthropicToOpenAI()` now takes a `target` and maps `output_config.effort`
+  to each OpenAI-compatible tier's own reasoning-bound param (`reasoning:{max_tokens}` for
+  OpenRouter, `thinking_budget` for MuleRouter/DashScope, nothing for deepseek — verified
+  empirically that MuleRouter ignores both OpenAI-style `reasoning_effort` and OpenRouter-style
+  `reasoning:{effort}`, only its native `thinking_budget` lands) instead of silently dropping it;
+  (2) `book-agent/index.ts` lowered agent `max_tokens` 8000→5000 to actually fit the ~140s timer
+  at ~55 tok/s decode. Code is written and present in the working tree but **not yet committed,
+  deployed, or verified live** — this entry exists so the change isn't lost/uncatalogued, not to
+  claim it's shipped.
+- **Files/commits:** `supabase/functions/_shared/llm.ts`, `supabase/functions/book-agent/index.ts`
+  (both uncommitted).
+- **PM impact:** none yet — promote to STATE.md's "Agent speed" row once committed, deployed to
+  Supabase, and confirmed to stop the timeout streaks on a live run.
+
+## 2026-07-09 — Explained scene "sketch" field absence in DNA tree UI `[chore]`
+- **What:** User asked why a scene node's rendered view shows no "sketch" section. Traced it:
+  `sketch` is a real `scene`-kind field (`dnaSchema.ts:155`) but flagged `genOnly: true`, so
+  `editSpecs()` excludes it from the main form; it only surfaces under the collapsed `▸ structural`
+  toggle (`TreeRow.tsx`/`nodeDisplay.ts`), and even there `hiddenFields()` drops empty values
+  before they render — so an ungenerated `sketch` is invisible by design, not a bug. Read-only
+  investigation (Explore subagent), no code changed.
+- **Files/commits:** none touched; explanation in `doc_1783606816206.md`.
+- **PM impact:** none — pure consult.
+
+## 2026-07-09 — Diagnosed book-agent 140s timeout streaks: dropped effort param, not context `[decision]`
+- **What:** ~15/40 book-agent calls timing out at 140s during a shape-read fix session. Evidence
+  from `ai_calls` (errored rows keep their prompt JSON): latency tracks OUTPUT tokens (~55 tok/s;
+  timer fits ~7k generated) not input (70k-tok prompts finished in 21s; a 25k-tok prompt timed out
+  3×). Root cause: `anthropicToOpenAI()` in `_shared/llm.ts` silently drops `output_config.effort`
+  + `thinking`, so qwen reasons unbounded on the MuleRouter path — the `effort:"medium"` defense in
+  `book-agent/index.ts:424` never reaches the model. Retries replay the identical prompt → billed
+  streaks of 2–3 (abort still bills). Ranked fix: map effort→`reasoning:{effort}` in the adapter;
+  lower agent max_tokens 8000→~5000; degrade on retry. Diagnosis only — no code changed yet.
+- **Files/commits:** none changed; analysis in `doc_1783599238000.md`.
+- **PM impact:** DECISIONS entry (root cause + fix plan ratified as the analysis of record).
+
+## 2026-07-09 — Explained MuleRouter→OpenRouter flip-back procedure `[chore]`
+- **What:** User asked how to shift model routing off MuleRouter back to OpenRouter. No code
+  change needed — confirmed via `_shared/llm.ts`/`_proseProxy.ts` that it's a pure env-presence
+  kill switch (`MULE_ROUTER_API_KEY` set → Mule; unset → falls through to OpenRouter). Gave the
+  two unset commands (Supabase secret + Vercel env) but did not execute them (Vercel env change
+  needs explicit confirmation).
+- **Files/commits:** none touched; read-only confirmation of `supabase/functions/_shared/llm.ts`
+  and `apps/web/api/_proseProxy.ts`.
+- **PM impact:** none — no state change, just a consult. Untracked `doc_*.md` files in the repo
+  root predate this session (prior investigation docs, not yet cleaned up).
+
 ## 2026-07-09 — Compaction v3 (bulky-newest rule) + replace_text surgical prose op `[ship]`
 - **What:** User's transcript showed the remaining loop: read sweep → ONE fix → re-search/re-read everything → ONE fix… Two causes, two fixes. (1) Compaction v2's "newest tool-results message" flipped to the tiny post-apply "✓ Applied" ACK (it IS a tool_result message), pruning the read sweep right after every apply — v3 keys protection to the newest message carrying a BULKY (>700 char) unpruned result. (2) Prose edits couldn't batch: an `edit` op resends the whole prose text (~2.6k tokens/scene), so 8k max_tokens ≈ 1 fix/turn — added `{op:'replace_text', id, find, replace}` (Claude Code Edit-tool shape, first occurrence, scene prose only): server validates `find` against LIVE prose and bounces mismatches back by name; client applyNodeOps applies with literal-$ replacer + re-indexes the scene so same-scene batched patches compose; describeOps renders find→replace; AgentRail labels "patch prose · …". Tool schema + system prompt updated to mandate batching every small prose fix into one proposal. 930 web tests pass; deployed.
 - **Files/commits:** supabase/functions/book-agent/index.ts, apps/web/src/features/dna/lib/dnaChat.ts, apps/web/src/features/dna/components/AgentRail.tsx (uncommitted).
