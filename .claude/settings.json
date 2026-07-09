@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/pm-session-start.sh\""
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",
