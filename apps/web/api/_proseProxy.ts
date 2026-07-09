@@ -11,6 +11,25 @@
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const MULEROUTER_URL = "https://api.mulerouter.ai/vendors/openai/v1/chat/completions";
+
+// MuleRouter takeover — twin of the mapping in supabase/functions/_shared/llm.ts (keep in sync):
+// serves a SUBSET of the OpenRouter catalogue under BARE ids at an OpenAI-compatible endpoint (same SSE
+// shape, incl. delta.reasoning frames). When MULE_ROUTER_API_KEY is set, slashed ids with an equivalent
+// below stream from MuleRouter instead of OpenRouter; the rest stay put. Unset the env to flip back.
+const MULEROUTER_MODELS = new Set([
+  "deepseek-v4-flash", "deepseek-v4-pro", "glm-5.1", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano",
+  "gpt-5.5", "grok-4", "grok-4-20-non-reasoning", "grok-code-fast-1", "kimi-k2.6", "qwen-flash",
+  "qwen-plus", "qwen-vl-max", "qwen3-max", "qwen3-max-2026-01-23", "qwen3-omni-flash", "qwen3-vl-flash",
+  "qwen3-vl-plus", "qwen3.5-flash", "qwen3.5-omni-flash", "qwen3.5-omni-plus", "qwen3.5-plus",
+  "qwen3.6-flash", "qwen3.6-max-preview", "qwen3.6-plus", "qwen3.7-max", "qwen3.7-plus",
+]);
+function muleRouterModelFor(model: string): string | null {
+  const slash = model.indexOf("/");
+  if (slash < 0) return null;
+  const bare = model.slice(slash + 1);
+  return MULEROUTER_MODELS.has(bare) ? bare : null;
+}
 
 // Heartbeat byte emitted during a reasoning model's thinking phase (see the reasoning branch below). NUL
 // never occurs in valid prose, so the client strips it before persisting. Exported so the client uses the
@@ -206,14 +225,17 @@ export async function* streamProse(body: PrepareReq, authToken: string, onLogId?
       return;
     }
 
-    const key = process.env.OPENROUTER_API_KEY;
+    const muleKey = process.env.MULE_ROUTER_API_KEY;
+    const muleModel = muleKey ? muleRouterModelFor(model) : null;
+    const key = muleModel ? muleKey : process.env.OPENROUTER_API_KEY;
     if (!key) throw new ProxyError(500, "OPENROUTER_API_KEY not configured");
+    const provider = muleModel ? "MuleRouter" : "OpenRouter";
 
-    const res = await fetch(OPENROUTER_URL, {
+    const res = await fetch(muleModel ? MULEROUTER_URL : OPENROUTER_URL, {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
       body: JSON.stringify({
-        model: body.model,
+        model: muleModel ?? body.model,
         max_tokens: body.max_tokens ?? 8000,
         stream: true,
         messages: [
@@ -224,7 +246,7 @@ export async function* streamProse(body: PrepareReq, authToken: string, onLogId?
     });
     if (!res.ok || !res.body) {
       const t = await res.text().catch(() => "");
-      throw new ProxyError(502, `OpenRouter ${res.status}: ${t.slice(0, 300)}`);
+      throw new ProxyError(502, `${provider} ${res.status}: ${t.slice(0, 300)}`);
     }
 
     // OpenAI/OpenRouter SSE: newline-delimited `data: {json}` frames, terminal `data: [DONE]`; `:`-comment

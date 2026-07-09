@@ -19,6 +19,28 @@ import { serviceClient } from "./task.ts";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const MULEROUTER_URL = "https://api.mulerouter.ai/vendors/openai/v1/chat/completions";
+
+// MuleRouter (mulerouter.ai) serves a SUBSET of the OpenRouter catalogue under BARE ids (no vendor
+// prefix) at an OpenAI-compatible endpoint — tool calling verified on qwen3.7-plus (2026-07-09).
+// When MULE_ROUTER_API_KEY is set in the edge env, a slashed id whose bare suffix appears below routes
+// to MuleRouter instead of OpenRouter (a spend/failover switch — unset the secret to flip back).
+// Ids with NO MuleRouter equivalent (qwen3-235b-a22b, qwen3-8b, kimi-k2.7, glm-5.2, minimax-m3…)
+// stay on OpenRouter. List from GET /vendors/openai/v1/models, 2026-07-09 — refresh when tiers change.
+const MULEROUTER_MODELS = new Set([
+  "deepseek-v4-flash", "deepseek-v4-pro", "glm-5.1", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano",
+  "gpt-5.5", "grok-4", "grok-4-20-non-reasoning", "grok-code-fast-1", "kimi-k2.6", "qwen-flash",
+  "qwen-plus", "qwen-vl-max", "qwen3-max", "qwen3-max-2026-01-23", "qwen3-omni-flash", "qwen3-vl-flash",
+  "qwen3-vl-plus", "qwen3.5-flash", "qwen3.5-omni-flash", "qwen3.5-omni-plus", "qwen3.5-plus",
+  "qwen3.6-flash", "qwen3.6-max-preview", "qwen3.6-plus", "qwen3.7-max", "qwen3.7-plus",
+]);
+// The bare MuleRouter id for an OpenRouter-style `vendor/model` id, or null when MuleRouter can't serve it.
+export function muleRouterModelFor(model: string): string | null {
+  const slash = model.indexOf("/");
+  if (slash < 0) return null;
+  const bare = model.slice(slash + 1);
+  return MULEROUTER_MODELS.has(bare) ? bare : null;
+}
 
 export interface CallMeta {
   fn: string;                       // logical step name recorded on the log row
@@ -58,6 +80,10 @@ export async function callLLM(
   // OpenRouter even when they start with "deepseek"; only bare deepseek-* ids go to the direct DeepSeek API.
   const isOpenRouter = model.includes("/");
   const isDeepSeek = !isOpenRouter && model.startsWith("deepseek");
+  // MuleRouter takeover: same OpenAI shape, bare model id, different host + key. Only when the
+  // secret is set AND this model has a MuleRouter equivalent; otherwise OpenRouter as before.
+  const muleKey = Deno.env.get("MULE_ROUTER_API_KEY");
+  const muleModel = isOpenRouter && muleKey ? muleRouterModelFor(model) : null;
 
   let raw = "";
   // deno-lint-ignore no-explicit-any
@@ -78,14 +104,14 @@ export async function callLLM(
       });
     } else if (isOpenRouter) {
       const openRouterKey = Deno.env.get("OPENROUTER_API_KEY") ?? apiKey;
-      res = await fetch(OPENROUTER_URL, {
+      res = await fetch(muleModel ? MULEROUTER_URL : OPENROUTER_URL, {
         method: "POST",
         signal: opts?.signal,
         headers: {
-          "Authorization": `Bearer ${openRouterKey}`,
+          "Authorization": `Bearer ${muleModel ? muleKey : openRouterKey}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify(anthropicToOpenAI(body)),
+        body: JSON.stringify(muleModel ? { ...anthropicToOpenAI(body), model: muleModel } : anthropicToOpenAI(body)),
       });
     } else {
       res = await fetch(ANTHROPIC_URL, {
@@ -100,7 +126,7 @@ export async function callLLM(
       });
     }
     raw = await res.text();
-    if (!res.ok) errMsg = `${isDeepSeek ? "DeepSeek" : isOpenRouter ? "OpenRouter" : "Claude"} API ${res.status}: ${raw.slice(0, 500)}`;
+    if (!res.ok) errMsg = `${isDeepSeek ? "DeepSeek" : muleModel ? "MuleRouter" : isOpenRouter ? "OpenRouter" : "Claude"} API ${res.status}: ${raw.slice(0, 500)}`;
     else {
       const parsed = JSON.parse(raw);
       data = (isDeepSeek || isOpenRouter) ? openAIToAnthropic(parsed) : parsed;
