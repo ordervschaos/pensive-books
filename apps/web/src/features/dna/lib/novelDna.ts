@@ -469,7 +469,6 @@ export function editContent(node: DnaNode, patch: NodeContent): DnaNode {
   };
 }
 export const lock = (node: DnaNode, locked = true): DnaNode => ({ ...node, authoring: { ...node.authoring, locked } });
-export const setStatus = (node: DnaNode, status: AuthoringStatus): DnaNode => ({ ...node, authoring: { ...node.authoring, status } });
 
 /** Accept one of a node's proposals: its content becomes the node's, status→accepted, source→ai. */
 export function chooseProposal(node: DnaNode, proposalId: string): DnaNode {
