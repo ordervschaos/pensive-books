@@ -8,6 +8,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { ledgerFull, scenesInOrder, traceDiff, validate, type DnaNode } from "@/features/dna/lib/novelDna";
 import { ledgerFindingsMessage, runLedgerScan, sendBreaksToEditor, traceFindingsMessage, type LedgerScanProgress } from "@/features/dna/lib/factLedger";
+import { useBookNodesLiveSync } from "@/features/dna/hooks/useBookNodesLiveSync";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -27,15 +28,7 @@ export default function DnaLedgerPage() {
   }, [bookId]);
 
   // live subscription (refresh = no-op: the page is a projection of server state)
-  useEffect(() => {
-    if (!bookId) return;
-    let t: ReturnType<typeof setTimeout> | null = null;
-    const soon = () => { if (t) clearTimeout(t); t = setTimeout(() => void supabase.from("book_nodes").select("*").eq("book_id", bookId).order("position").then(({ data }) => { if (data) setNodes(data as DnaNode[]); }), 400); };
-    const ch = supabase.channel(`ledger_${bookId}_${Math.random().toString(36).slice(2)}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "book_nodes", filter: `book_id=eq.${bookId}` }, soon)
-      .subscribe();
-    return () => { if (t) clearTimeout(t); void supabase.removeChannel(ch); };
-  }, [bookId]);
+  useBookNodesLiveSync(bookId, "ledger", setNodes);
 
   const { facts, breaks, traceGaps, sceneNum } = useMemo(() => {
     const ns = nodes ?? [];

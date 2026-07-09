@@ -32,6 +32,7 @@ import { FocusPanel, JourneyStrip, SpineTimeline, VoiceFeelPanel } from "@/featu
 import { CharactersPane, StoryPane } from "@/features/dna/components/tree/panes";
 import { MetersPane } from "@/features/dna/components/tree/MetersPane";
 import { DiscardStoryModal, HistoryModal, NodeDetailsModal, ProseReaderModal } from "@/features/dna/components/tree/modals";
+import { useBookNodesLiveSync } from "@/features/dna/hooks/useBookNodesLiveSync";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -220,15 +221,7 @@ export default function DnaTreePage() {
   }, [bookId]);
 
   // Live subscription
-  useEffect(() => {
-    if (!bookId) return;
-    let t: ReturnType<typeof setTimeout> | null = null;
-    const soon = () => { if (t) clearTimeout(t); t = setTimeout(() => void supabase.from("book_nodes").select("*").eq("book_id", bookId).order("position").then(({ data }) => { if (data) setNodes(data as DnaNode[]); }), 400); };
-    const ch = supabase.channel(`tree_${bookId}_${Math.random().toString(36).slice(2)}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "book_nodes", filter: `book_id=eq.${bookId}` }, soon)
-      .subscribe();
-    return () => { if (t) clearTimeout(t); void supabase.removeChannel(ch); };
-  }, [bookId]);
+  useBookNodesLiveSync(bookId, "tree", setNodes);
 
   // Live subscription on the `books` row — name/author/brief can change from elsewhere (e.g. a second tab
   // on Book Edit), so the tree needs its own live projection of it too (refresh = no-op).

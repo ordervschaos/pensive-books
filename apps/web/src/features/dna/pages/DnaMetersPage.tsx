@@ -9,6 +9,7 @@ import { type DnaNode } from "@/features/dna/lib/novelDna";
 import { MetersPane } from "@/features/dna/components/tree/MetersPane";
 import { setConsoleTheme, T } from "@/features/dna/components/tree/treeChrome";
 import { useTheme } from "@/components/theme/ThemeProvider";
+import { useBookNodesLiveSync } from "@/features/dna/hooks/useBookNodesLiveSync";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
@@ -30,15 +31,7 @@ export default function DnaMetersPage() {
   }, [bookId]);
 
   // live subscription (refresh = no-op: the page is a projection of server state)
-  useEffect(() => {
-    if (!bookId) return;
-    let t: ReturnType<typeof setTimeout> | null = null;
-    const soon = () => { if (t) clearTimeout(t); t = setTimeout(() => void supabase.from("book_nodes").select("*").eq("book_id", bookId).order("position").then(({ data }) => { if (data) setNodes(data as DnaNode[]); }), 400); };
-    const ch = supabase.channel(`meters_${bookId}_${Math.random().toString(36).slice(2)}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "book_nodes", filter: `book_id=eq.${bookId}` }, soon)
-      .subscribe();
-    return () => { if (t) clearTimeout(t); void supabase.removeChannel(ch); };
-  }, [bookId]);
+  useBookNodesLiveSync(bookId, "meters", setNodes);
 
   if (error) return <div className={themeClass} style={{ padding: 24, color: T.bad, fontFamily: "monospace", background: T.bg, minHeight: "100vh" }}>error: {error}</div>;
   if (!nodes) return <div className={themeClass} style={{ padding: 24, color: T.muted, fontFamily: "monospace", background: T.bg, minHeight: "100vh" }}>loading…</div>;
