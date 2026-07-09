@@ -1,6 +1,6 @@
 // Pure display derivations over DnaNode — titles, field display strings, and the
 // prose-completion rollup. No React, no IO; everything here is (nodes) => value.
-import { isProseStale, type BeatContent, type DnaNode, type SceneContent } from "@/features/dna/lib/novelDna";
+import { isProseStale, type BeatContent, type CausalityRow, type DnaNode, type SceneContent } from "@/features/dna/lib/novelDna";
 import { editSpecs, NODE_SCHEMA, type EditSpec } from "@/features/dna/lib/dnaSchema";
 
 // ── Title extraction per kind (first meaningful field) ───────────────────────
@@ -31,6 +31,13 @@ export function beatGlyph(n: DnaNode): string {
   if (n.kind !== "beat") return "";
   const c = (n.content as BeatContent).connector;
   return c === "therefore" ? "∴ " : c === "but" ? "↯ " : "";
+}
+
+// A causal link reads "hollow" when its connector promises something the row doesn't back up:
+// `therefore` with an unmet upstream need, or `but` with neither a polarity reversal nor a real
+// need. Shared by DnaStoryMap's beat rows and DnaAnalysis's causality strip — same test, one place.
+export function isHollowCausalLink(connector: "therefore" | "but" | undefined, causal?: Pick<CausalityRow, "unmet" | "reversed" | "needs">): boolean {
+  return (connector === "therefore" && (causal?.unmet.length ?? 0) > 0) || (connector === "but" && !causal?.reversed && !causal?.needs.length);
 }
 
 // ── Field value helpers ───────────────────────────────────────────────────────

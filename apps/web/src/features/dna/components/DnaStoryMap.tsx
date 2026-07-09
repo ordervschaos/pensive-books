@@ -5,6 +5,7 @@
 // carries a focusId). Pure projection of the tree + the engine's causality axis; nothing generates here.
 import { ChevronRight } from "lucide-react";
 import { Eyebrow } from "@/components/book/shared/studioUi";
+import { isHollowCausalLink } from "@/features/dna/components/tree/nodeDisplay";
 import type { StageKey } from "@/features/dna/lib/dnaJourney";
 import {
   beatsInOrder, causality, childrenOf, scenesInOrder,
@@ -80,8 +81,7 @@ function BeatRow({ beat, scenes, causal, onOpen }: {
 }) {
   const c = beat.content as BeatContent;
   const glyph = c.connector === "therefore" ? "∴" : c.connector === "but" ? "↯" : "·";
-  // the same hollow-link test the analysis panel uses
-  const hollow = (c.connector === "therefore" && (causal?.unmet.length ?? 0) > 0) || (c.connector === "but" && !causal?.reversed && !(causal?.needs.length));
+  const hollow = isHollowCausalLink(c.connector, causal);
   return (
     <div className="space-y-1">
       <button type="button" onClick={() => onOpen(beat.id, "structure")}

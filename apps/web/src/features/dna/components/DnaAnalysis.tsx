@@ -7,6 +7,7 @@
 import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, TriangleAlert } from "lucide-react";
 import { Eyebrow } from "@/components/book/shared/studioUi";
+import { isHollowCausalLink } from "@/features/dna/components/tree/nodeDisplay";
 import { causality, openObligations, pacing, topography, validate, type DnaNode, type ObligationKind } from "@/features/dna/lib/novelDna";
 import type { BookSettings } from "@/features/dna/lib/novelDna";
 import type { StageKey } from "@/features/dna/lib/dnaJourney";
@@ -130,7 +131,7 @@ export function DnaAnalysis({ nodes, settings, onOpen, hideLints, defaultOpen = 
               <p className="pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">causality · why each turn follows (∴ therefore · ↯ but)</p>
               <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                 {causal.map((r) => {
-                  const hollow = (r.connector === "therefore" && r.unmet.length > 0) || (r.connector === "but" && !r.reversed && !r.needs.length);
+                  const hollow = isHollowCausalLink(r.connector, r);
                   const glyph = r.connector === "therefore" ? "∴" : r.connector === "but" ? "↯" : "·";
                   const tip = [
                     r.connector ? `connector: ${r.connector}` : "first beat",
