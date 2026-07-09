@@ -1,8 +1,12 @@
 // migrateToDna — Phase 3: lift a book's legacy stack (brief/foundations/spine/outline + pages' prose)
-// into the Novel DNA tree (book_nodes). The PURE builder is testable; the thin wrapper loads + saves.
-// See docs/novel-dna-spec.md §9. Idempotent at the call site (caller clears prior nodes first).
-import { supabase } from "@/integrations/supabase/client";
-import { saveNodes } from "@/features/dna/lib/bookNodes";
+// into the Novel DNA tree shape (book_nodes). PURE — no DB. See docs/novel-dna-spec.md §9.
+//
+// Originally paired with an async `migrateBookToDna` wrapper (load a legacy book, delete its prior
+// nodes, build, save) wired to the old DnaStudio "Migrate" button. That surface was deleted in the
+// 2026-07-03 "one studio" consolidation, orphaning the wrapper (0 callers) — removed 2026-07-09. The
+// pure builder lives on: `importEpub.ts` reuses it for Layer A (epub → tree with locked user prose).
+// Note: ~45 books still have foundations/spine + pages but no book_nodes and are not reachable by any
+// current migration path — deleting the wrapper was a deliberate call, not an oversight.
 import {
   byId, newId, stampInput, stampProse, type Authoring, type DnaNode, type NodeContent, type NodeKind,
 } from "@/features/dna/lib/novelDna";
@@ -115,21 +119,4 @@ export function buildDnaFromStack(bookId: number, input: MigrationInput): DnaNod
     if (n.kind === "scene" && (n.content as { prose?: { text?: string } }).prose?.text) out = stampProse(out);
     return out;
   });
-}
-
-/** Load a book's legacy stack, build the DNA tree, and persist it. Clears any prior nodes first. */
-export async function migrateBookToDna(bookId: number): Promise<{ count: number }> {
-  const [{ data: book }, { data: pageData }] = await Promise.all([
-    supabase.from("books").select("brief, foundations, spine").eq("id", bookId).maybeSingle(),
-    supabase.from("pages").select("id, page_index, page_type, title, content, metadata").eq("book_id", bookId).eq("archived", false).order("page_index", { ascending: true }),
-  ]);
-  await supabase.from("book_nodes").delete().eq("book_id", bookId); // idempotent: rebuild from scratch
-  const nodes = buildDnaFromStack(bookId, {
-    brief: (book?.brief as Brief | null) ?? null,
-    foundations: (book?.foundations as Foundations | null) ?? null,
-    spine: (book?.spine as { text?: string } | null) ?? null,
-    pages: (pageData as MigrationPage[] | null) ?? [],
-  });
-  await saveNodes(nodes);
-  return { count: nodes.length };
 }
