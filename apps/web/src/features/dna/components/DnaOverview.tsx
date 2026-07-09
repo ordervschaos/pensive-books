@@ -42,7 +42,7 @@ function NodePip({ node, index }: { node: DnaNode; index: Map<string, DnaNode> }
 }
 
 // One clickable row in the shape map: pip · kind · title · meta · jump arrow. Indented by depth.
-function TreeRow({ node, index, label, title, meta, depth, onOpen }: {
+function ShapeRow({ node, index, label, title, meta, depth, onOpen }: {
   node?: DnaNode; index: Map<string, DnaNode>; label: string; title?: string; meta?: string; depth: number; onOpen: () => void;
 }) {
   return (
@@ -284,9 +284,9 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
           <Eyebrow tone="muted">The tree</Eyebrow>
         </div>
         <div className="space-y-px">
-          {seed && <TreeRow node={seed} index={index} label="seed" title={str((seed.content as { logline?: string }).logline)} depth={0} onOpen={() => onOpen("premise")} />}
-          {premise && <TreeRow node={premise} index={index} label="premise" title={str((premise.content as { dramatic_question?: string }).dramatic_question)} depth={1} onOpen={() => onOpen("premise")} />}
-          {pillar && <TreeRow node={pillar} index={index} label="pillar" title={str((pillar.content as { controlling_idea?: string }).controlling_idea)} depth={2} onOpen={() => onOpen("foundations")} />}
+          {seed && <ShapeRow node={seed} index={index} label="seed" title={str((seed.content as { logline?: string }).logline)} depth={0} onOpen={() => onOpen("premise")} />}
+          {premise && <ShapeRow node={premise} index={index} label="premise" title={str((premise.content as { dramatic_question?: string }).dramatic_question)} depth={1} onOpen={() => onOpen("premise")} />}
+          {pillar && <ShapeRow node={pillar} index={index} label="pillar" title={str((pillar.content as { controlling_idea?: string }).controlling_idea)} depth={2} onOpen={() => onOpen("foundations")} />}
 
           {/* entity branches off the pillar — grouped as count chips (the interlinked context) */}
           {pillar && counts.some(([k]) => of(k).length > 0) && (
@@ -304,7 +304,7 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
             const b = childrenOf(nodes, m.id).filter((c) => c.kind === "beat").length;
             const sc = sceneCountOf(m);
             return (
-              <TreeRow key={m.id} node={m} index={index} label={`act ${i + 1}`}
+              <ShapeRow key={m.id} node={m} index={index} label={`act ${i + 1}`}
                 title={str((m.content as { title?: string }).title) ?? str((m.content as { goal?: string }).goal)}
                 meta={`${b} beat${b === 1 ? "" : "s"}${sc ? ` · ${sc} scene${sc === 1 ? "" : "s"}` : ""}`}
                 depth={3} onOpen={() => onOpen("structure")} />
