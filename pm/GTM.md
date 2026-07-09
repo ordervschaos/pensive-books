@@ -1,47 +1,90 @@
-# GTM — go-to-market (working draft)
+# GTM — go-to-market (committed plan v1)
 
-> Status: **thinking surface, not a committed plan.** The hypothesis (NORTH_STAR §1) must clear
-> first — GTM before a readable book is premature scaling. But we sketch now so the product
-> decisions (pricing chokepoints, onboarding wedges) are made with distribution in mind.
-> Snapshot date: 2026-07-08.
+> Status: **committed plan v1.** Owner directive 2026-07-09: **monetize ASAP.** The revenue track
+> now runs *parallel* to M1 instead of waiting behind M2. The old gate ("nobody pays to generate
+> slop") still applies — but only to **generation** pricing. It never applied to the two surfaces
+> that are already good: the mature Writing/publishing pillar and the import→structure pipeline
+> (where the prose is the user's own truth). We sell those first.
+> Snapshot date: **2026-07-09**.
 
-## The wedge (what we already have)
+## The strategy in one line
 
-Pensive is not starting from zero: it has authors, a book editor, and a **publishing path**
-(book → statically-generated marketing site → EPUB/Kindle). The Studio is the generation engine
-that fills that existing pipe. GTM is therefore *"add generation to a publishing tool,"* not
-*"launch an AI writing app into a crowded market."*
+Sell the tool that already works (publishing + structure), use it to fund and market the tool
+we're still proving (generation) — and let every published book be the ad.
 
-## ICP (ideal customer profile) — two entry doors, one product
+## What's sellable today — honest inventory
 
-| | AI-native authors | Story-first authors |
-|---|---|---|
-| Arrive with | Generated prose blobs (paste workflow) | A story idea and a blank page |
-| Door | **EPUB/text import → DNA tree** (Layer A shipped, Layer B = the magic) | **Brief → generated draft** (the ladder) |
-| Promise | "Your prose, with a spine — continuity handled" | "Answer a few small questions, get a readable draft" |
+| Surface | Maturity | M1-gated? | Monetizable now? |
+|---|---|---|---|
+| Writing pillar (editor, publish→web, EPUB/Kindle) | mature | no | **yes — R1** |
+| EPUB import → DNA tree + semantic ascent (Layer A+B) | shipped | no (prose is user's) | **yes — R2** |
+| Editor's-read eval (~$0.33 COGS) | shipped | no | **yes — R2 add-on** |
+| Studio generation (brief → book) | pre-M1 | **yes** | not yet — R3 |
 
-## Positioning (the moat sentence)
+## The monetization ladder
+
+### R1 — Pensive Pro subscription (target: first paying customer)
+The fastest first dollar: a paid tier on the *mature* pillar. Free stays generous (it's the
+funnel); Pro gates the power features.
+
+- **Candidate gates:** unlimited books, Kindle delivery, publish-to-web on the marketing site,
+  (later) custom domain. Exact split = open decision below.
+- **Product build:** Stripe checkout + webhook → `entitlements` (or `profiles.plan`) →
+  feature gating at the existing chokepoints. Billing portal for self-serve cancel.
+- **Marketing build:** pricing page on the SSG marketing site (keep it static — standing rule).
+- **Price hypothesis:** **$8/mo or $80/yr** (writing-tool comparable, not AI-tool comparable).
+  Validate against first 10 conversations, not against our own guess.
+
+### R2 — Paid structure: the import wedge (target: first per-unit revenue)
+"Bring your messy AI draft, leave with a structured book." Unique, defensible, and COGS-bounded
+(decompose cost ≪ generation cost — **measure it**, same `ai_calls` method as below).
+
+- **Unit:** per-book fee or credit pack. Hypothesis: **$5–10/book** import+ascent, with the
+  **editor's-read report bundled** ($0.33 COGS → high-margin perceived value: "here's what a
+  structural editor sees in your draft").
+- **Product build:** credits/one-time checkout on the same Stripe rails; gate `dna-decompose`
+  behind it past N free imports.
+- **Marketing build:** dedicated import-funnel landing page with a before/after (blob → tree →
+  readable plan). This is the shareable artifact.
+
+### R3 — Metered generation (gated on M1, unchanged)
+Only after the builder reads a full self-generated book without the edit-reflex. Facts we hold:
+~$10/book generation **upper bound** (dev-era, book 1192), input tokens dominate 16:1, errors
+are ~24% of calls. Implication: per-book price ≥ **$20–25**, or metered credits, or **BYOK**
+(sell the tool, not the tokens). Decision deferred until M1 + a clean cost rerun.
+
+## Build lists (both tracks live in this repo)
+
+**Product track (rails first, they serve all three rungs):**
+1. Stripe integration: checkout, webhook → entitlement row, billing portal.
+2. Plan/entitlement model + gating helpers at existing chokepoints (Kindle send, publish, import).
+3. Metering substrate: `ai_calls` already logs per-book tokens — promote the scratchpad cost
+   script to `scripts/gen-cost.mjs` and compute per-book COGS on demand.
+4. Free-tier limits (N books, N imports) — the conversion pressure.
+
+**Marketing track:**
+1. **Unblock publish revalidation** (set REVALIDATE_SECRET) — precondition for artifact-as-ad;
+   promoted from Next.
+2. Pricing page (SSG) — R1 launch surface.
+3. Import-funnel landing page with before/after — R2 launch surface.
+4. Exemplar books published openly with DNA tree visible ("read the book, then look at its
+   skeleton") — the SEO + proof loop; each M1-quality book compounds this.
+5. Community posts (AI-writing subreddits, NaNo-adjacent) — only with an artifact in hand.
+
+## Positioning (unchanged — the moat sentence)
 
 > Not "AI writes prose" — **AI grows a book from a structure that remembers itself.**
 > Continuity, causality, and series-canon are what clipboard workflows can't do.
 
-## Channels (candidates, unvalidated)
-
-1. **SEO via the marketing site** — already statically generated for this reason; published
-   generated books are themselves indexable proof-of-work. (Standing rule: keep it SSG.)
-2. **The artifact as ad** — a genuinely readable generated book, published openly with its DNA
-   tree visible, is the demo. "Read the book, then look at its skeleton."
-3. **Import funnel** — "bring your messy AI draft, leave with a structured book" is a shareable
-   before/after.
-4. Author communities (NaNoWriMo-adjacent, AI-writing subreddits) — only with the artifact in hand.
+Two doors, one product: story-first authors (brief → draft; R3) and AI-native authors
+(import → spine; R2). R1 underwrites both.
 
 ## Pricing anchors (facts we have)
 
-- Editor's-read eval: **~$0.33/book** (7.4k words, premium model) — the eval-cost baseline.
-- **Full-book generation: ~$10 observed** (book 1192, measured 2026-07-08 — see spec below).
+- Editor's-read eval: **~$0.33/book** (7.4k words, premium model).
+- **Full-book generation: ~$10 observed upper bound** (book 1192, dev-era, measured 2026-07-08).
   Partial build (foundations + structure + 3 scenes, book 1229): **~$0.75**.
-- Directional shape: free Writing pillar (existing), paid Studio generation (metered or
-  per-book), *after* M1/M2.
+- Import/decompose cost: **not yet measured** — required before pricing R2 (same method below).
 
 ### Generation-cost measurement (spec — rerun per finished book)
 
@@ -65,21 +108,33 @@ window 06-24 → 07-02): **$10.27**, 1,213 calls (292 errored), 21.5M input / 1.
 
 **Caveats.** 1192 spans dev iteration (experiments, retries), so ~$10 is an *upper bound* for
 "one book"; a clean rerun on the next finished book gives the honest unit cost. Denominator
-gap: per-word cost not yet computed (prose lives in rendered pages; 1192's page rows carry
-content in a format the old fetch script doesn't parse — resolve when rerunning). Anthropic
-bridge calls (`claude-code-local` etc.) log zero/unpriced tokens and are excluded.
+gap: per-word cost not yet computed. Anthropic bridge calls log zero/unpriced tokens, excluded.
 
-## Sequencing gate
+## Sequencing (revised 2026-07-09)
 
 ```
-M1 (builder reads own book) ──▶ M2 (someone else reads one) ──▶ publish exemplars ──▶ open funnel ──▶ paid tier
+                 ┌── R1 Pro sub (mature pillar) ──── first paying customer
+monetize track ──┤
+                 └── R2 import wedge ─────────────── first per-unit revenue
+                                                          │
+product track ─── M1 (builder reads own book) ── M2 ──────┴──▶ R3 metered generation
 ```
 
-No channel spend, no launch, no pricing page before M2. Until then GTM work = keep the publishing
-pipe healthy (revalidation unblock), measure per-book cost, and collect exemplar books.
+The two tracks run in parallel. What survives from the old gate: **no generation pricing before
+M1**, and no paid channel spend before the funnel converts organically.
 
-## Open questions (for review sessions)
+## Success metrics (owner scoreboard)
 
-- What's the *category* word? ("Book generator"? "Story studio"? "Structured ghostwriter"?)
-- Is the first paid unit a subscription, a per-book fee, or bring-your-own-key?
-- Does the DNA tree itself become shareable/remixable content (a network loop), or stay private?
+- Date of **first paying customer** (R1) and **first per-unit sale** (R2).
+- MRR + unit sales, weekly.
+- Funnel: marketing visit → signup → (import | publish) → pay.
+- COGS per paid unit (from `ai_calls`) — margin must be visible per rung.
+
+## Open questions (decide during R1 build, not before)
+
+- Exact free/Pro gate split (which features convert without gutting the funnel?).
+- R1 price point ($8/mo hypothesis — test in first 10 user conversations).
+- R2 unit shape: per-book fee vs credit pack.
+- Does the DNA tree itself become shareable/remixable content (network loop), or stay private?
+- Category word ("book generator"? "story studio"? "structured ghostwriter"?) — needed for the
+  pricing page copy; decide when writing it.

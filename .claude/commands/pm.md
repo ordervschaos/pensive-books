@@ -42,3 +42,7 @@ User input: `$ARGUMENTS`
 - Update the snapshot date in any file you edit.
 - A conclusion that isn't written into a file didn't happen — land it before ending.
 - When awaiting a ratification, play the ping (`afplay /System/Library/Sounds/Ping.aiff`).
+- **Stamp before ending.** Once this session's `pm/` edits are landed, run
+  `.claude/hooks/pm-worklog.sh stamp` so the Stop hook acknowledges the change-set (same step as
+  `/wrap`'s stamp — a `/pm` session catalogues via the curated files, so it must acknowledge too).
+  Skip only if you edited nothing.

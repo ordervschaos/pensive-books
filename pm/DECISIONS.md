@@ -6,6 +6,31 @@
 
 ## Log
 
+### 2026-07-09 — 45 legacy books left stranded off the DNA tree (deliberate)
+`migrateBookToDna` (legacy brief/foundations/spine/pages → `book_nodes`) lost its only UI trigger
+when the old DnaStudio "Migrate" button was deleted in the 2026-07-03 one-studio consolidation.
+Before deleting the now-orphaned function (builder loop iter 3), checked the DB: **45 books**
+still have real pages + foundations/spine but zero `book_nodes` rows — this was their only path
+onto the DNA tree, and none exists now. Flagged to the user with the count; explicit call was to
+delete the function anyway rather than keep it unwired or rebuild the entry point. Why it matters:
+those 45 books cannot reach the Studio surface without new migration code being written from
+scratch — this was a conscious tradeoff, not an oversight, if anyone asks later why they're stuck
+on the old rail.
+
+### 2026-07-09 — Monetize ASAP: revenue track unhooked from M2 (owner directive)
+GTM.md promoted from "thinking surface" to **committed plan v1**. The old sequencing gate ("no
+pricing page before M2, paid tier = M4") is narrowed: it now guards only **generation** pricing
+(R3). The mature Writing pillar (R1 Pro subscription) and the import→structure wedge (R2 per-unit)
+monetize immediately — their quality doesn't depend on clearing M1, and R2's prose is the user's
+own. Replaces: the blanket "no GTM before M2" stance. Monetization rails v1 takes ROADMAP Now
+slot 2; both marketing and product build lists live in GTM.md.
+
+### 2026-07-09 — Live full-book build re-exercise promoted to Now
+ROADMAP had both Now slots free with the highest-leverage item (re-testing §v1/§v4 agent-loop
+fixes on a live "build all") sitting as a footnote, while EPUB Layer B and REVALIDATE_SECRET —
+both real but adjacent to M1 — held the two ranked Next slots. Promoted the live-build
+re-exercise to Now; it tests M1's bar ("one self-generated book read end-to-end") directly.
+
 ### 2026-07-09 — All work routes through the PM via a firehose + curated view
 Added `pm/WORKLOG.md` (append-only, one entry per task, **never read into an agent session** —
 write-only, zero context cost) as the raw catalogue, feeding the curated STATE/ROADMAP/DECISIONS.

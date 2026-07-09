@@ -24,7 +24,7 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 |---|---|---|
 | DNA tree substrate (`book_nodes`, novelDna.ts engine) | shipped | Single source of truth; pages = projection |
 | DNA tree editor (grouped tree, typed fields, CRUD, reviser rail) | shipped | The ONE studio surface (vanilla /dna studio deprecated 2026-07-03) |
-| Structure-as-render (outline → reconcile → pages) | shipped | Cheap JSON edits, deliberate render |
+| Structure-as-render (outline → reconcile → pages) | shipped | Cheap JSON edits, deliberate render; reader export paginates by beat (not chapter) as of 2026-07-09, scene breaks marked "***" |
 | Causality axis (state keys, earned `therefore`) | shipped | Generation constraint, not just lint |
 | Meters (comedy/heat/game-score plottable axes) | shipped (P1) | Vertical fit cascade remaining |
 | Scene ledger (unified between-scenes read) | shipped (P1–P2) | P3 `ledgerAt` composes but consumers not wired |
@@ -65,6 +65,7 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 | EPUB import Layer B (semantic ascent) | shipped | 2026-07-08 (`4330bfc` + `84fb407` durable-task promotion: book_decompositions row, self-chain, stopRun); remaining: scene enrichment + act re-segmentation |
 | Publish → marketing revalidation (DB trigger → pg_net) | blocked | REVALIDATE_SECRET env not yet set |
 | Sequel canon (book-2 constrained by book-1 packet) | shipped | O5 groundwork |
+| Legacy-book → DNA migration | gap | 45 books have real pages + foundations/spine but 0 `book_nodes`; `migrateBookToDna` (their only path) deleted 2026-07-09 after losing its UI trigger in the 2026-07-03 studio consolidation — deliberate tradeoff, see DECISIONS.md. No current path onto the DNA tree for them. |
 
 ### Infrastructure & ops
 
