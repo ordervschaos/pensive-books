@@ -1,9 +1,10 @@
 // novelDnaRender — Phase 2: render the Novel DNA tree onto `pages` (the reader-facing projection).
 //
-// A chapter → a SECTION page (title) + a TEXT page (its scenes' prose, concatenated). The DNA tree is the
-// source of truth; pages are produced here and nowhere else. Incremental (only changed rows write),
-// non-destructive (archive, never hard-delete), idempotent (keyed on pages.metadata.node_id = "ch:…").
-// Generalizes lib/outline.ts's reconcile one level up (chapter, not scene, is the page unit). Spec §8.
+// A chapter → a SECTION page (title) + one TEXT page per beat (that beat's scenes' prose, concatenated,
+// scene breaks marked "***"). The DNA tree is the source of truth; pages are produced here and nowhere
+// else. Incremental (only changed rows write), non-destructive (archive, never hard-delete), idempotent
+// (keyed on pages.metadata.node_id = "ch:…"). Generalizes lib/outline.ts's reconcile one level up
+// (chapter/beat, not scene, is the page unit). Spec §8.
 import { supabase } from "@/integrations/supabase/client";
 import { buildDoc } from "@/lib/inlineMarkdown";
 import { loadTree } from "@/features/dna/lib/bookNodes";

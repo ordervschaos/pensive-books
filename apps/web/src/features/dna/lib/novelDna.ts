@@ -301,8 +301,11 @@ export function chapters(nodes: DnaNode[]): Chapter[] {
 }
 
 // ── Render projection (Phase 2): the pages a chapter materializes ─────────────
-// A chapter → a SECTION page (title) + a TEXT page (its scenes' prose, concatenated). Pure: the DB reconcile
-// (novelDnaRender.reconcileDna) applies this list to `pages`. nodeId is the stable page key.
+// A chapter → a SECTION page (title) + one TEXT page PER BEAT (a beat's scenes, concatenated, scene breaks
+// marked "***"). scenesInOrder walks beats in position order, so a beat's scenes are already a contiguous
+// run within a chapter's sceneIds — split on parent_id change rather than re-deriving beat membership.
+// Pure: the DB reconcile (novelDnaRender.reconcileDna) applies this list to `pages`. nodeId is the stable
+// page key.
 export interface RenderedPage { nodeId: string; kind: "section" | "text"; title: string; proseText: string }
 export function renderPages(nodes: DnaNode[]): RenderedPage[] {
   const index = byId(nodes);
@@ -310,11 +313,22 @@ export function renderPages(nodes: DnaNode[]): RenderedPage[] {
   for (const ch of chapters(nodes)) {
     const key = ch.sceneIds[0] ?? `i${ch.index}`; // first scene id is the chapter's stable boundary key
     out.push({ nodeId: `ch:${key}`, kind: "section", title: ch.title, proseText: "" });
-    const prose = ch.sceneIds
-      .map((id) => (index.get(id)?.content as SceneContent | undefined)?.prose?.text?.trim())
-      .filter((t): t is string => !!t)
-      .join("\n\n");
-    out.push({ nodeId: `ch:${key}:body`, kind: "text", title: ch.title, proseText: prose });
+
+    let groupStart = 0;
+    let firstBeatPage = true;
+    for (let i = 1; i <= ch.sceneIds.length; i++) {
+      const sameBeat = i < ch.sceneIds.length &&
+        index.get(ch.sceneIds[i])?.parent_id === index.get(ch.sceneIds[groupStart])?.parent_id;
+      if (sameBeat) continue;
+      const groupIds = ch.sceneIds.slice(groupStart, i);
+      const prose = groupIds
+        .map((id) => (index.get(id)?.content as SceneContent | undefined)?.prose?.text?.trim())
+        .filter((t): t is string => !!t)
+        .join("\n\n***\n\n");
+      out.push({ nodeId: `ch:${key}:beat:${groupIds[0]}`, kind: "text", title: firstBeatPage ? ch.title : "", proseText: prose });
+      firstBeatPage = false;
+      groupStart = i;
+    }
   }
   return out;
 }

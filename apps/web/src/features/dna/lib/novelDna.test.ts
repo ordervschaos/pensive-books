@@ -51,19 +51,34 @@ describe("reading order + chapters", () => {
   });
 });
 
-describe("render projection (chapter → section + text page)", () => {
-  it("emits a section page and a text page (scenes' prose concatenated) per chapter", () => {
+describe("render projection (chapter → section + one text page per beat)", () => {
+  it("emits a section page per chapter and a text page per beat, scenes within a beat joined with a *** break", () => {
     const m = mk("act", { id: "m" });
-    const b = mk("beat", { id: "b", parent_id: "m" });
-    const s1 = mk("scene", { id: "s1", parent_id: "b", position: 0, content: { chapter_start: { title: "One" }, prose: { text: "Hello." } } });
-    const s2 = mk("scene", { id: "s2", parent_id: "b", position: 1, content: { prose: { text: "World." } } });
-    const s3 = mk("scene", { id: "s3", parent_id: "b", position: 2, content: { chapter_start: { title: "Two" }, prose: { text: "Again." } } });
-    const out = renderPages([m, b, s1, s2, s3]);
+    const b1 = mk("beat", { id: "b1", parent_id: "m" });
+    const b2 = mk("beat", { id: "b2", parent_id: "m" });
+    const s1 = mk("scene", { id: "s1", parent_id: "b1", position: 0, content: { chapter_start: { title: "One" }, prose: { text: "Hello." } } });
+    const s2 = mk("scene", { id: "s2", parent_id: "b1", position: 1, content: { prose: { text: "World." } } });
+    const s3 = mk("scene", { id: "s3", parent_id: "b2", position: 2, content: { chapter_start: { title: "Two" }, prose: { text: "Again." } } });
+    const out = renderPages([m, b1, b2, s1, s2, s3]);
     expect(out).toEqual([
       { nodeId: "ch:s1", kind: "section", title: "One", proseText: "" },
-      { nodeId: "ch:s1:body", kind: "text", title: "One", proseText: "Hello.\n\nWorld." },
+      { nodeId: "ch:s1:beat:s1", kind: "text", title: "One", proseText: "Hello.\n\n***\n\nWorld." },
       { nodeId: "ch:s3", kind: "section", title: "Two", proseText: "" },
-      { nodeId: "ch:s3:body", kind: "text", title: "Two", proseText: "Again." },
+      { nodeId: "ch:s3:beat:s3", kind: "text", title: "Two", proseText: "Again." },
+    ]);
+  });
+
+  it("gives each beat its own page even within a single chapter", () => {
+    const m = mk("act", { id: "m" });
+    const b1 = mk("beat", { id: "b1", parent_id: "m" });
+    const b2 = mk("beat", { id: "b2", parent_id: "m" });
+    const s1 = mk("scene", { id: "s1", parent_id: "b1", position: 0, content: { chapter_start: { title: "One" }, prose: { text: "Hello." } } });
+    const s2 = mk("scene", { id: "s2", parent_id: "b2", position: 1, content: { prose: { text: "World." } } });
+    const out = renderPages([m, b1, b2, s1, s2]);
+    expect(out).toEqual([
+      { nodeId: "ch:s1", kind: "section", title: "One", proseText: "" },
+      { nodeId: "ch:s1:beat:s1", kind: "text", title: "One", proseText: "Hello." },
+      { nodeId: "ch:s1:beat:s2", kind: "text", title: "", proseText: "World." },
     ]);
   });
 });
