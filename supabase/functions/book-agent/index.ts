@@ -45,28 +45,37 @@ const ACK_TIMEOUT_MS = 15_000; // fast chat acknowledgement; the real tool turn 
 
 // ── Context compaction ──
 // A long run's transcript accumulates every read_node/search_nodes result — 14 full scene reads is
-// ~170k chars (~42k tokens) re-sent on EVERY subsequent call. Observed on book 1229: once the prompt
+// ~200k chars (~50k tokens) re-sent on EVERY subsequent call. Observed on book 1229: once the prompt
 // crossed ~60k tokens, most MuleRouter calls blew the 140s timeout (uncached prefill + reasoning) and
 // the loop crawled at one successful turn per ~4 attempts. Once the transcript outgrows COMPACT_OVER,
-// stub the bulky tool_result bodies in all but the last KEEP_RECENT messages — the model's recent
-// working set stays intact, older reads become a one-line pointer it can re-read on demand (the live
-// tree digest is always in <book_state> anyway). Blocks are REPLACED, never removed, so tool_use ↔
-// tool_result pairing survives. Deterministic, so a retried link re-derives the identical transcript.
+// stub the bulky tool_result bodies in every tool-results message EXCEPT the newest BULKY one — the
+// model's current working set stays intact, older reads become a one-line pointer it can re-read on
+// demand (the live tree digest is always in <book_state> anyway). Keyed to the newest BULKY message,
+// not a trailing-message count and not just any tool_result: batched turns pack a whole read sweep
+// into ONE huge message, so a count-based window protects everything or nothing (the v1 bug — a count
+// of 6 protected the entire 7-message transcript); and the post-apply "✓ Applied" ACK is itself a tiny
+// tool_result message, so "newest tool message" flipped to the ack right after every apply and pruned
+// the read sweep the model still needed — it then re-read everything, fixed one thing, lost it again
+// (the v2 bug, caught live as a search/read/apply/re-read loop). Only a message actually CARRYING big
+// results claims protection. Blocks are REPLACED, never removed, so tool_use ↔ tool_result pairing
+// survives. Deterministic, so a retried link re-derives the identical transcript.
 const COMPACT_OVER = 120_000; // chars of transcript JSON (~30k tokens) before pruning kicks in
-const KEEP_RECENT = 6;        // trailing messages whose tool_results stay intact (~3 tool turns)
 const STUB_OVER = 700;        // only stub results bigger than this (small acks/errors aren't worth it)
 
 function compactTranscript(transcript: unknown[]): unknown[] {
   if (JSON.stringify(transcript).length <= COMPACT_OVER) return transcript;
-  const cut = Math.max(0, transcript.length - KEEP_RECENT);
+  // deno-lint-ignore no-explicit-any
+  const hasBulkyResults = (m: any) =>
+    m?.role === "user" && Array.isArray(m.content) &&
+    // deno-lint-ignore no-explicit-any
+    m.content.some((b: any) => b?.type === "tool_result" && typeof b.content === "string" && b.content.length > STUB_OVER && !b.content.includes("[PRUNED"));
+  const newestToolMsg = transcript.reduce<number>((acc, m, i) => (hasBulkyResults(m) ? i : acc), -1);
   let changed = false;
   const out = transcript.map((m, i) => {
-    if (i >= cut) return m;
-    const msg = m as { role?: string; content?: unknown };
-    if (msg?.role !== "user" || !Array.isArray(msg.content)) return m;
+    if (i >= newestToolMsg || !hasBulkyResults(m)) return m;
     let msgChanged = false;
     // deno-lint-ignore no-explicit-any
-    const content = (msg.content as any[]).map((b) => {
+    const content = ((m as { content: any[] }).content).map((b) => {
       if (b?.type !== "tool_result" || typeof b.content !== "string" || b.content.length <= STUB_OVER) return b;
       if (b.content.includes("[PRUNED")) return b; // already stubbed on a prior pass
       msgChanged = true;
@@ -74,7 +83,7 @@ function compactTranscript(transcript: unknown[]): unknown[] {
     });
     if (!msgChanged) return m;
     changed = true;
-    return { ...msg, content };
+    return { ...(m as Record<string, unknown>), content };
   });
   return changed ? out : transcript;
 }
@@ -104,7 +113,12 @@ type NodeOp =
   | { op: "add"; kind: string; parentId: string; content: Record<string, unknown> }
   | { op: "delete"; id: string }
   // Rebuild a level: delete the parent's existing non-locked `childKind` children (cascade), add `children` fresh.
-  | { op: "replace_children"; parentId: string; childKind: string; children: NewSubtree[] };
+  | { op: "replace_children"; parentId: string; childKind: string; children: NewSubtree[] }
+  // Surgical prose patch: replace the FIRST occurrence of `find` in a scene's content.prose.text. The
+  // whole-text `edit` alternative made prose fixes unbatchable (each edit re-sends ~2.6k tokens of prose,
+  // so 8k max_tokens fit ~2 scenes — observed: the agent fixed ONE echo per turn). find/replace is the
+  // Claude Code Edit-tool shape: a dozen echo fixes now fit in one small proposal.
+  | { op: "replace_text"; id: string; find: string; replace: string };
 
 // A reviewable change the agent proposes against the DNA tree; the author applies it (applyNodeOps)
 // through the existing book_nodes write path (docs/agent-rail.md). One layer now: the DNA tree.
@@ -1259,7 +1273,7 @@ const THREAD_DNA_TOOLS = [
   },
   {
     name: "propose_node_ops",
-    description: "Propose a concrete change to the DNA tree the author reviews before it's applied: edit / add / delete / replace_children nodes by their real ids. This records the proposal and ENDS your turn — narrate what you're changing and why just before calling it. Never touch a LOCKED node. To REBUILD a whole level (replace all acts, or all beats under an act), use replace_children — NOT a pile of `add` ops, which would duplicate what's already there.",
+    description: "Propose a concrete change to the DNA tree the author reviews before it's applied: edit / add / delete / replace_children / replace_text ops on nodes by their real ids. This records the proposal and ENDS your turn — narrate what you're changing and why just before calling it. Never touch a LOCKED node. To REBUILD a whole level (replace all acts, or all beats under an act), use replace_children — NOT a pile of `add` ops, which would duplicate what's already there. For SMALL wording fixes to a scene's EXISTING prose (an echoed phrase, an em-dash, one sentence), use replace_text — {op:'replace_text', id, find, replace} swaps the FIRST occurrence of `find` in that scene's prose. NEVER resend a whole prose text via `edit` for a small fix: replace_text ops are tiny, so DOZENS of prose fixes across many scenes fit in ONE proposal — batch them all. `find` must match the current prose exactly (copy it from a search_nodes snippet or read_node); include enough surrounding words to be unambiguous. PATCH AT THE SMALLEST SELF-CONTAINED UNIT — usually the whole clause or sentence containing the flaw, not the bare phrase — so the replacement reads grammatically in place and keeps the paragraph's rhythm; restructuring around a removed em-dash especially needs the full clause. If you haven't seen the sentence around the target (a snippet shows only ±60 chars), read_node the scene before patching.",
     input_schema: {
       type: "object",
       properties: {
@@ -1269,13 +1283,15 @@ const THREAD_DNA_TOOLS = [
           items: {
             type: "object",
             properties: {
-              op: { type: "string", enum: ["edit", "add", "delete", "replace_children"] },
-              id: { type: "string", description: "edit/delete: the existing node id." },
+              op: { type: "string", enum: ["edit", "add", "delete", "replace_children", "replace_text"] },
+              id: { type: "string", description: "edit/delete/replace_text: the existing node id (replace_text: a scene)." },
               kind: { type: "string", description: "add: the new node's kind (character|relationship|tentpole|world_fact|thread|game|act|beat|scene|voice_profile)." },
               parentId: { type: "string", description: "add / replace_children: the existing parent node's id (e.g. the pillar, whose act children are the acts)." },
               childKind: { type: "string", description: "replace_children: which child kind to rebuild (e.g. 'act' to replace all acts, 'beat' to replace an act's beats)." },
               content: { type: "object", description: "edit: the fields to merge. add: the new node's content. Use the exact field names from the schema given.", additionalProperties: true },
               children: { type: "array", description: "replace_children: the NEW children as a nested tree — each { content, children? }; nesting follows the ladder (act→beat→scene). Every existing non-locked child of childKind is deleted first, so the rebuild never duplicates.", items: { type: "object", additionalProperties: true } },
+              find: { type: "string", description: "replace_text: the exact text to find in the scene's prose (first occurrence is replaced). Must match the current text verbatim; include surrounding words for uniqueness." },
+              replace: { type: "string", description: "replace_text: the replacement text." },
             },
             required: ["op"],
           },
@@ -1363,7 +1379,7 @@ You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tent
 1. DISCUSS — answer, summarize, pressure-test. Reply in plain markdown prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id]. When a node has PENDING OPTIONS and the author asks which is strongest, just RECOMMEND one in prose (name its option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.
 2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. NEVER touch a LOCKED node. Don't propose unless asked — talk first.
 3. OFFER OPTIONS — when the author asks for alternatives/options, or to break a node out of its one obvious version, call propose_options with the node's [id] and 2–4 COMPLETE content objects, meaningfully different FROM EACH OTHER but each one HONORING the node's ancestors as fixed: a child elaborates the logline/premise above, it never rewrites it. Premise options keep the logline's protagonist/inciting/goal/obstacle/stakes fixed and vary the priced dramatic question plus internal shape movements; every question needs a cost and every shape needs an escalating want-vs-need choice. Never reshape an ancestor into a different story, never near-duplicates. The author picks one in the tree. Use this only for choose-among-N; a single revision is propose_node_ops.
-4. PROSE — BEFORE rendering a scene that has no sketch yet, or whose sketch is stale, call propose_expansion(nodeId = the scene, target = 'sketch') first — it's a cheap plan-level pass (what happens + how it's shown) that steers the render instead of hoping the expensive prose call gets it right; skip it only if the scene already carries a fresh one. To WRITE or REWRITE a scene's full prose, call propose_prose_render with the scene [id](s): you do NOT generate prose yourself (it's a long, browser-streamed render the author runs); you stage a request the author applies, and it streams in their browser. For SMALL wording fixes to EXISTING prose, use propose_node_ops to edit content.prose.text directly — but NEVER hand-write or replace a scene's FULL prose this way. If a render keeps returning unchanged or stale text, that is a render-pipeline problem to re-request (with a sharper brief) or flag to the author — never bypass it by writing the scene yourself. Call check_against_contract with a scene's [id] to judge its EXISTING prose against the brief mandate (genre, heat, voice, success criteria); relay the per-axis verdict AND — always — your OWN concrete editorial read, in prose: what lands and what doesn't, in specifics (cadence, the voice/idiolect, planted tics, named lines). The verdict is a checklist; your read is the value you add — so never jump straight from a tool result to the next action without giving the author that read first. A common request — "write the first scene and see if it meets the brief" — is propose_prose_render (the author applies it; prose streams in) then check_against_contract once the scene has prose.
+4. PROSE — BEFORE rendering a scene that has no sketch yet, or whose sketch is stale, call propose_expansion(nodeId = the scene, target = 'sketch') first — it's a cheap plan-level pass (what happens + how it's shown) that steers the render instead of hoping the expensive prose call gets it right; skip it only if the scene already carries a fresh one. To WRITE or REWRITE a scene's full prose, call propose_prose_render with the scene [id](s): you do NOT generate prose yourself (it's a long, browser-streamed render the author runs); you stage a request the author applies, and it streams in their browser. For SMALL wording fixes to EXISTING prose (an echoed phrase, an overused dash, one sentence), use propose_node_ops with replace_text ops — {op:'replace_text', id, find, replace}, first occurrence swapped; a search_nodes snippet usually gives you the exact find string WITHOUT reading the whole scene. Patch whole clauses/sentences, not bare phrases, so the result reads grammatically and keeps the paragraph's rhythm — and read the scene first if you haven't seen the sentence around the target. replace_text ops are tiny, so batch EVERY such fix across all scenes into ONE proposal. NEVER hand-write or replace a scene's FULL prose via edit. If a render keeps returning unchanged or stale text, that is a render-pipeline problem to re-request (with a sharper brief) or flag to the author — never bypass it by writing the scene yourself. Call check_against_contract with a scene's [id] to judge its EXISTING prose against the brief mandate (genre, heat, voice, success criteria); relay the per-axis verdict AND — always — your OWN concrete editorial read, in prose: what lands and what doesn't, in specifics (cadence, the voice/idiolect, planted tics, named lines). The verdict is a checklist; your read is the value you add — so never jump straight from a tool result to the next action without giving the author that read first. A common request — "write the first scene and see if it meets the brief" — is propose_prose_render (the author applies it; prose streams in) then check_against_contract once the scene has prose.
    - REBUILDS: to replace a whole level of the SPINE you author yourself — "rebuild the acts" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = act). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
 5. PREMISE, BEAT SHEET, SCENES & SKETCH — do NOT author these by hand. For the PREMISE: call propose_options with kind='premise' and parentId=<seed-node-id> (no nodeId) to mint the premise node and stage 2–4 candidates directly in the tree — the author picks one, skipping a separate apply step. For the BEAT SHEET: call propose_expansion(nodeId = the PILLAR, target = 'beatsheet') once acts exist. For SCENES: call propose_expansion(nodeId = a BEAT, target = 'scenes'). For a SCENE SKETCH before prose: call propose_expansion(nodeId = a SCENE, target = 'sketch'). The engine also compiles the brief's CONTRACT with propose_expansion(nodeId = the PILLAR, target = 'contract'). Any of these four passes can carry the author's own steering (an emphasis, a constraint, something to avoid) in propose_expansion's brief param — pass it whenever they gave you more than "generate it", the same way propose_prose_render does for prose. You still author the logline, pillar, cast, and acts yourself (propose_node_ops / propose_options). Prose is propose_prose_render (item 4).
 
@@ -1405,15 +1421,17 @@ async function proposeNodeOps(
   scope: Aspect[] | null,
   input: { summary?: string; ops?: unknown[] },
 ): Promise<{ ok: true; proposal: AgentProposal } | { ok: false; error: string }> {
-  const { data: rows } = await service.from("book_nodes").select("id, kind, authoring").eq("book_id", bookId);
-  const nodes = (rows ?? []) as { id: string; kind: string; authoring: { locked?: boolean } | null }[];
+  // content rides along for replace_text's find-string check; other ops don't read it.
+  const { data: rows } = await service.from("book_nodes").select("id, kind, authoring, content").eq("book_id", bookId);
+  const nodes = (rows ?? []) as { id: string; kind: string; authoring: { locked?: boolean } | null; content: Record<string, unknown> | null }[];
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const kinds = scopedKinds(scope); // null = all kinds allowed
   const allowed = (kind: string) => !kinds || kinds.has(kind);
 
   const ops: NodeOp[] = [];
+  const badFinds: string[] = []; // replace_text ops whose find string isn't in the live prose — name them so the model corrects
   for (const raw of Array.isArray(input.ops) ? input.ops : []) {
-    const o = raw as { op?: string; id?: string; kind?: string; childKind?: string; parentId?: string; content?: Record<string, unknown>; children?: unknown[] };
+    const o = raw as { op?: string; id?: string; kind?: string; childKind?: string; parentId?: string; content?: Record<string, unknown>; children?: unknown[]; find?: string; replace?: string };
     if (o.op === "edit" && o.id && byId.has(o.id) && !byId.get(o.id)!.authoring?.locked && allowed(byId.get(o.id)!.kind) && o.content) {
       ops.push({ op: "edit", id: o.id, content: o.content });
     } else if (o.op === "delete" && o.id && byId.has(o.id) && !byId.get(o.id)!.authoring?.locked && allowed(byId.get(o.id)!.kind)) {
@@ -1423,10 +1441,29 @@ async function proposeNodeOps(
     } else if (o.op === "replace_children" && o.parentId && byId.has(o.parentId) && !byId.get(o.parentId)!.authoring?.locked && o.childKind && ALL_NODE_KINDS.includes(o.childKind) && allowed(o.childKind) && Array.isArray(o.children) && o.children.length) {
       const children = sanitizeSubtree(o.children);
       if (children.length) ops.push({ op: "replace_children", parentId: o.parentId, childKind: o.childKind, children });
+    } else if (o.op === "replace_text" && o.id && typeof o.find === "string" && o.find.length && typeof o.replace === "string") {
+      const node = byId.get(o.id);
+      if (!node || node.authoring?.locked || node.kind !== "scene" || !allowed(node.kind)) {
+        badFinds.push(`[${o.id}] is not an editable scene`);
+        continue;
+      }
+      // Verify against the LIVE prose so a stale/typo'd find bounces back to the model NOW (with the scene
+      // named), instead of silently no-opping at apply time.
+      const prose = String(((node.content as { prose?: { text?: unknown } } | null)?.prose?.text ?? ""));
+      if (!prose.includes(o.find)) {
+        badFinds.push(`"${o.find.slice(0, 60)}" not found in scene [${o.id}]`);
+        continue;
+      }
+      ops.push({ op: "replace_text", id: o.id, find: o.find, replace: o.replace });
     }
   }
   if (ops.length === 0) {
-    return { ok: false, error: kinds ? `No valid ops — every op must target a non-locked node whose kind is in scope (${scope!.join(", ")}), or add a child of one.` : "No valid ops — reference real, non-locked node ids." };
+    const findNote = badFinds.length ? ` replace_text failures: ${badFinds.join("; ")}. The find string must match the CURRENT prose exactly — search_nodes shows the live text.` : "";
+    return { ok: false, error: (kinds ? `No valid ops — every op must target a non-locked node whose kind is in scope (${scope!.join(", ")}), or add a child of one.` : "No valid ops — reference real, non-locked node ids.") + findNote };
+  }
+  if (badFinds.length) {
+    // Some ops were fine but these weren't — fail the whole proposal so nothing half-lands silently.
+    return { ok: false, error: `Some replace_text ops don't match the live prose: ${badFinds.join("; ")}. Fix the find strings (they must match the CURRENT text exactly) and resend ALL the ops.` };
   }
   return { ok: true, proposal: { id: crypto.randomUUID(), layer: "dna", summary: String(input.summary ?? "Proposed change").trim() || "Proposed change", ops } };
 }

@@ -23,7 +23,10 @@ export type NodeOp =
   // Rebuild a whole level: delete the parent's existing (non-locked) children of `childKind` — cascading
   // their subtrees — then create `children` fresh. The replace semantics `add` lacks, so a "rebuild" never
   // duplicates the acts/beats it means to replace.
-  | { op: "replace_children"; parentId: string; childKind: NodeKind; children: NewSubtree[] };
+  | { op: "replace_children"; parentId: string; childKind: NodeKind; children: NewSubtree[] }
+  // Surgical prose patch (agent lint fixes): swap the FIRST occurrence of `find` in a scene's
+  // content.prose.text. Tiny where a whole-text edit is ~2.6k tokens, so dozens batch in one proposal.
+  | { op: "replace_text"; id: string; find: string; replace: string };
 export interface DnaProposal { summary: string; ops: NodeOp[] }
 
 const countSubtree = (subs?: NewSubtree[]): number => (subs ?? []).reduce((n, s) => n + 1 + countSubtree(s.children), 0);
@@ -143,6 +146,11 @@ function describeOp(op: Exclude<NodeOp, { op: "replace_children" }>, index: Map<
       const removed = blastRadius(op.id, nodes).count; // descendants that go with it
       return { verb: "delete", kind: node?.kind ?? "node", label: nodeLabel(node), fields: [], restales: removed || undefined };
     }
+    if (op.op === "replace_text") {
+      // One prose row: find → replace, so the author reads the exact swap (not a whole-text diff).
+      const node = index.get(op.id);
+      return { verb: "edit", kind: node?.kind ?? "scene", label: nodeLabel(node), fields: [{ key: "prose", old: op.find, next: op.replace }] };
+    }
     const fields = Object.entries(op.content).map(([key, val]): OpField => ({ key, next: renderValue(val) }));
     return { verb: "add", kind: op.kind, label: nodeLabel(undefined, op.kind), parentLabel: nodeLabel(index.get(op.parentId)), fields };
   }
@@ -193,6 +201,14 @@ export function validateOps(ops: NodeOp[], nodes: DnaNode[]): OpValidation {
       if (!node) reasons.push("target node no longer exists");
       else if (node.authoring.locked) reasons.push("target node is pinned (🔒) — can't change it");
       else if (op.op === "edit") msgs(node.kind, op.content, true);
+    } else if (op.op === "replace_text") {
+      const node = index.get(op.id);
+      const prose = String((node?.content as { prose?: { text?: unknown } } | undefined)?.prose?.text ?? "");
+      if (!node) reasons.push("target node no longer exists");
+      else if (node.authoring.locked) reasons.push("target node is pinned (🔒) — can't change it");
+      else if (node.kind !== "scene") reasons.push("replace_text only patches scene prose");
+      else if (!op.find) reasons.push("find string is empty");
+      else if (!prose.includes(op.find)) reasons.push(`"${op.find.slice(0, 60)}" not found in the scene's current prose`);
     } else if (op.op === "add") {
       if (!VALID_KINDS.has(op.kind as string)) reasons.push(`unknown kind "${op.kind}"`);
       else {
@@ -256,6 +272,19 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[], callId?: numbe
     if (op.op === "edit") {
       const node = index.get(op.id);
       if (node && !node.authoring.locked) await saveNode({ ...editContent(node, sanitizeContent(node.kind, op.content as Record<string, unknown>)), ...callStamp });
+    } else if (op.op === "replace_text") {
+      const node = index.get(op.id);
+      const text = String((node?.content as { prose?: { text?: unknown } } | undefined)?.prose?.text ?? "");
+      if (node && !node.authoring.locked && text.includes(op.find)) {
+        // First occurrence only; replacer-function form so `$` in the replacement stays literal prose.
+        const next = text.replace(op.find, () => op.replace);
+        const words = next.trim() ? next.trim().split(/\s+/).length : 0; // same count as dnaExpand's wordCount
+        const updated = { ...editContent(node, { prose: { text: next, words } } as Record<string, unknown>), ...callStamp };
+        await saveNode(updated);
+        // Re-index so a LATER replace_text on the SAME scene in this batch patches the updated text
+        // instead of resurrecting the pre-edit prose (batched lint fixes often hit one scene twice).
+        index.set(op.id, updated);
+      }
     } else if (op.op === "delete") {
       const node = index.get(op.id);
       if (node && !node.authoring.locked) await deleteNode(op.id);

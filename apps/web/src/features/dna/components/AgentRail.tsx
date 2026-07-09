@@ -655,6 +655,7 @@ function opLine(op: NodeOp): string {
   if (op.op === "add") { const h = opHandle((op as { content?: unknown }).content); return `add ${(op as { kind?: string }).kind ?? "node"}${h ? ` · ${h}` : ""}`; }
   if (op.op === "delete") return "remove a node";
   if (op.op === "replace_children") { const o = op as { childKind?: string; children?: unknown[] }; return `rebuild ${o.childKind ?? "children"} · ${o.children?.length ?? 0} new`; }
+  if (op.op === "replace_text") { const f = (op as { find?: string }).find ?? ""; return `patch prose · “${f.slice(0, 40)}${f.length > 40 ? "…" : ""}”`; }
   return "change";
 }
 
