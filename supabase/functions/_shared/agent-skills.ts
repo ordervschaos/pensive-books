@@ -61,13 +61,34 @@ Then ALWAYS give the author two layers:
     body: `To replace a whole level of the spine you author yourself ("rebuild the acts"): use ONE replace_children op — parentId = the level's parent (e.g. the pillar for acts), childKind = the level being rebuilt, children = the NEW nodes as a nested {content, children?} tree following the ladder (act→beat→scene). replace_children DELETES the existing non-locked children first, so the rebuild replaces rather than duplicates — never emit a pile of \`add\` ops for a rebuild. Reserve \`add\` for genuinely APPENDING a single node alongside what's there. Acts you write by hand; a whole beat sheet is the engine's job (propose_expansion, target 'beatsheet').`,
   },
   {
+    name: "premise-craft",
+    description: "authoring premise options — the five story elements, a priced dramatic question, an escalating internal shape",
+    triggers: [/\b(premise|dramatic\s+question|story\s+shape)\b/i],
+    body: `A premise is the book's one-or-two-sentence anchor: every later scene should be checkable against it ("is this still about that?"). It doubles as the elevator pitch. When you author premise OPTIONS yourself (propose_options, kind='premise'), work from craft, not vibes:
+
+FIRST extract the FIVE STORY ELEMENTS (Swain) from the brief + accepted logline:
+- CHARACTER — the lead plus ONE defining characteristic ("survivalist by necessity").
+- SITUATION — the NEW situation after the inciting incident (never the status quo).
+- OBJECTIVE — the external want once the story is moving (survival, justice, love, principle…).
+- OPPONENT — the conflict engine; the more formidable, the more the reader worries. Name the Big Bad, even when it's a person the lead loves or a system.
+- DISASTER — the hardest choice at the climax, usually forced by the opponent; the stakes live here.
+Sanity test: "When [CHARACTER], [SITUATION], all she wants is [OBJECTIVE]. But [OPPONENT] [forces DISASTER]." If a slot can't be filled from the brief/logline, you have a kernel, not a premise — tell the author which element is missing instead of papering over it.
+
+THEN map the elements into the premise content fields:
+- dramatic_question: ONE sentence carrying a PRICE — "Can she X without losing Y?", never a bare goal ("Will she X?"). Y comes from the DISASTER; use the brief's specific nouns, not abstractions; a reader could plausibly root for both answers; the final movement answers it definitively.
+- shape.movements (3–5): the protagonist's INTERNAL trajectory, not plot events. Each movement changes her relationship to the want and escalates the contradiction of the previous one (if two movements could swap order, merge them). Movement 1 states the want in concrete form; the last forces the want-vs-need choice, genuinely costly either way. The brief's most distinctive element must appear explicitly in at least one movement.
+- shape.name: 2–4 words naming the emotional trajectory (not the plot). shape.ending_feel: up / down / bittersweet — chosen deliberately, consistent with the brief's genre and tone.
+
+Options must differ on the PRICE and the internal arc — never on the logline's fixed protagonist/inciting/goal/obstacle/stakes (see options-craft). Conflict is the pulse: an option without a formidable opponent pressure in its question is a fat bore — cut or sharpen it.`,
+  },
+  {
     name: "options-craft",
     description: "offering 2–4 pickable alternatives for one node with propose_options",
     triggers: [/\b(options?|alternativ|versions?|variants?|choices|takes\s+on|candidates)\b/i],
     body: `propose_options stages 2–4 COMPLETE content objects on ONE node (exact field names from its schema — get_schema first if unsure); the author picks one in the tree. Use it only for choose-among-N; a single revision is propose_node_ops.
 - The options must be meaningfully different FROM EACH OTHER — never near-duplicates.
 - Every option HONORS the node's ancestors as FIXED: a child elaborates what's above it, it never rewrites it. Premise options keep the logline's protagonist / inciting incident / goal / obstacle / stakes fixed and vary only the priced dramatic question plus the internal shape movements — every question needs a cost, every shape an escalating want-vs-need choice. Never reshape an ancestor into a different book.
-- PREMISE SHORTCUT: when the premise node doesn't exist yet, pass kind='premise' + parentId=<seed id> (no nodeId) — mints the node and stages the candidates in one step.
+- PREMISE SHORTCUT: when the premise node doesn't exist yet, pass kind='premise' + parentId=<seed id> (no nodeId) — mints the node and stages the candidates in one step. For premise options, follow premise-craft (read_skill it if not injected).
 - When the author asks which pending option is strongest, RECOMMEND in prose (option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.`,
   },
 ];

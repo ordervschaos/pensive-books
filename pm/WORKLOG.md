@@ -17,6 +17,11 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-10 — premise-craft skill + objective-fallback skill matching `[ship]`
+- **What:** todo.md #1 — the agent's premise-options shortcut (propose_options kind='premise') authored premises with only the objective recipe's schema, no craft. Added a `premise-craft` playbook to agent-skills.ts distilling the author-supplied KB (Swain's five story elements: character/situation/objective/opponent/disaster; kernel-vs-premise test; formula sentence) aligned with dna-expand's own premise prompt (priced dramatic question, escalating internal movements, ending_feel) so both paths produce the same species of premise. Also: skill matching now falls back to the OBJECTIVE text when the ask matches nothing (generic "continue" on the premise rung gets the craft; a concrete ask never drags in the rung's skills), and read_skill's description derives its name list from the registry. Deployed.
+- **Files/commits:** supabase/functions/_shared/agent-skills.ts, supabase/functions/book-agent/index.ts.
+- **PM impact:** appended to the STATE "Agent instruction-following" row.
+
 ## 2026-07-10 — book-agent skills layer: core prompt slimmed, craft moves to playbooks `[ship]`
 - **What:** Built the skills design ratified today (doc_1783663022711.md): new `_shared/agent-skills.ts` registry (prose-patch, render-brief, editorial-read, rebuild-level, options-craft) with three delivery channels — colocation dedupe (mechanics stay only in tool descriptions), deterministic trigger-matched `<skill_briefs>` injection in the request-time tail, and a `read_skill` tool that rides parallel reads. SYSTEM_THREAD items 3–5 + Working efficiently collapsed to routing + invariants: 9,259 → ~6,300 chars (~32% cut); the 5.2k chars of craft now appear only on matching turns. Trigger matrix verified (incl. rename→prose-patch); deployed.
 - **Files/commits:** supabase/functions/_shared/agent-skills.ts (new), supabase/functions/book-agent/index.ts.

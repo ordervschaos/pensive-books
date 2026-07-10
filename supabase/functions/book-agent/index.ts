@@ -1237,7 +1237,7 @@ const SHARED_TOOLS = [
   },
   {
     name: "read_skill",
-    description: "Load one of the specialized playbooks listed in the system prompt's Skills index (prose-patch, render-brief, editorial-read, rebuild-level, options-craft) — the full technique for that job. Call it when your turn involves that job and its body is NOT already injected in the latest message's <skill_briefs>. It's a read: batch it in the SAME turn as your read_node/search_nodes calls.",
+    description: `Load one of the specialized playbooks listed in the system prompt's Skills index (${AGENT_SKILLS.map((s) => s.name).join(", ")}) — the full technique for that job. Call it when your turn involves that job and its body is NOT already injected in the latest message's <skill_briefs>. It's a read: batch it in the SAME turn as your read_node/search_nodes calls.`,
     input_schema: {
       type: "object",
       properties: { name: { type: "string", description: "The skill's name from the Skills index." } },
@@ -1480,7 +1480,7 @@ Each turn, the author's LATEST message — restated in the \`<task>\` block at t
 2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. NEVER touch a LOCKED node. Don't propose unless asked — talk first.
 3. OFFER OPTIONS — when the author asks for alternatives, call propose_options with the node's [id] and 2–4 COMPLETE content objects (skill: options-craft). Choose-among-N only; a single revision is propose_node_ops.
 4. PROSE — you never generate prose yourself. A scene's FULL prose (write or rewrite) = propose_prose_render, a browser-streamed render the author applies; sketch the scene first (propose_expansion, target 'sketch') when it has no fresh sketch, and curate the render brief from real reads (skill: render-brief). SMALL wording fixes to existing prose = propose_node_ops with replace_text ops (skill: prose-patch). Judging existing prose = check_against_contract plus your OWN concrete editorial read (skill: editorial-read). Rebuilding a whole spine level = ONE replace_children op, never a pile of adds (skill: rebuild-level). INVARIANTS: never hand-write or replace a scene's FULL prose via edit — a render that keeps returning stale text is a pipeline problem to re-request or flag, never bypass it by writing the scene yourself.
-5. ENGINE PASSES — never author these by hand: PREMISE = propose_options with kind='premise' + parentId=<seed id> (mints the node, stages 2–4 candidates); BEAT SHEET = propose_expansion(pillar, 'beatsheet') once acts exist; SCENES = propose_expansion(beat, 'scenes'); SKETCH = propose_expansion(scene, 'sketch'); CONTRACT = propose_expansion(pillar, 'contract'). Pass the author's steering in the \`brief\` param whenever they gave you more than "generate it". You still author the logline, pillar, cast, and acts yourself.
+5. ENGINE PASSES — never author these by hand: PREMISE = propose_options with kind='premise' + parentId=<seed id> (mints the node, stages 2–4 candidates; skills: premise-craft + options-craft); BEAT SHEET = propose_expansion(pillar, 'beatsheet') once acts exist; SCENES = propose_expansion(beat, 'scenes'); SKETCH = propose_expansion(scene, 'sketch'); CONTRACT = propose_expansion(pillar, 'contract'). Pass the author's steering in the \`brief\` param whenever they gave you more than "generate it". You still author the logline, pillar, cast, and acts yourself.
 
 ## Node kinds
 
@@ -1846,8 +1846,6 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}${num} “${nodeHandle(n.content)}”${proseNote}:\n${JSON.stringify(content)}`;
   }).join("\n\n");
 
-  // Skill briefs (the injection channel of agent-skills.ts): playbooks whose triggers match the ask.
-  const skillBriefs = matchSkills(authorAsk).map((s) => `### ${s.name}\n${s.body}`).join("\n\n");
 
   // LIVE re-derivation (docs/agent-improvement-plan.md P1.2): recompute the guided-flow objective and the
   // structural backstop from the CURRENT tree, so an auto run's resume — a pure status flip that never
@@ -1863,6 +1861,14 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     proposals: n.proposals ?? undefined, chosen: null,
   }));
   const liveObjective = currentObjective(liveNodes, { bookSlug: String(bookId) }) || objective;
+  // Skill briefs (the injection channel of agent-skills.ts): playbooks whose triggers match the ask.
+  // When the ask matches NOTHING (a generic "continue" / "what's next"), the objective IS the task
+  // (guided flow), so fall back to matching the objective's text — an objective-driven premise turn
+  // gets premise-craft without the author ever typing the word. Ask matches always win outright:
+  // a concrete ask must not drag in skills for a rung it's steering away from.
+  const askSkills = matchSkills(authorAsk);
+  const skillBriefs = (askSkills.length ? askSkills : matchSkills(liveObjective ?? ""))
+    .map((s) => `### ${s.name}\n${s.body}`).join("\n\n");
   // Only meaningful once structure exists — mirrors the client's gate (AgentRail), which sends undefined
   // otherwise. analysisText ignores its settings arg, so we pass {}. Lint thresholds are genre-tuned
   // from the brief (lintConfigForBrief) so the agent acts on the same strictness the genre calls for.
