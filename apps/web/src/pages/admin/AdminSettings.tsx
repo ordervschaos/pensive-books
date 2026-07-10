@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Shield, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-type ModelTier = "opus" | "sonnet" | "deepseek" | "deepseek-v4" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax" | "gpt" | "hermes";
+type ModelTier = "opus" | "sonnet" | "deepseek" | "deepseek-v4" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax" | "gpt" | "hermes" | "claude-local";
 
 const TIERS: { value: ModelTier; label: string; description: string; badge: string; badgeVariant: "default" | "secondary" | "outline" }[] = [
   {
@@ -85,6 +85,13 @@ const TIERS: { value: ModelTier; label: string; description: string; badge: stri
     label: "DeepSeek (legacy)",
     description: "Original DeepSeek via its own API (deepseek-chat, requires DEEPSEEK_API_KEY secret). Superseded by DeepSeek V4 — kept for comparison. Quality varies by task.",
     badge: "Budget",
+    badgeVariant: "outline",
+  },
+  {
+    value: "claude-local",
+    label: "Claude (local)",
+    description: "Routes to a claude -p shim on your laptop (scripts/claude-local-shim.mjs) instead of any API host — billed against your Claude Code subscription, not per-token. Dev-only: needs CLAUDE_LOCAL_URL set in supabase/functions/.env and the shim running (pnpm dev:claude-local-shim). Each call takes minutes; unusable in production (a deployed function can't reach your laptop, and fails loudly if selected there).",
+    badge: "Dev only",
     badgeVariant: "outline",
   },
 ];

@@ -17,6 +17,20 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-10 — claude-local selectable from /admin/settings `[ship]`
+- **What:** Added `"claude-local"` to `AdminSettings.tsx`'s `ModelTier` union + `TIERS` list (a
+  "Dev only" badge, description covers the shim/env prerequisite and the fail-loud prod behavior).
+  Not gated to the agent role only — tool-capable by default, so selectable for General/Prose/
+  Structure too. Closes the gap from the earlier claude-local bridge ship: the backend tier existed
+  (`_shared/model-config.ts`) but there was no UI control to actually pick it.
+- **Verified:** `apps/web` `tsc --build` clean. No live browser check — the only reachable Chrome
+  profile was already locked by another running session's tab, left undisturbed rather than killed.
+- **Files/commits:** `apps/web/src/pages/admin/AdminSettings.tsx`. Uncommitted as of this entry.
+- **PM impact:** none directly. Note: writing `ai_model_tier_agent=claude-local` from this page
+  writes to the **hosted** `admin_settings` (local dev points there, not local Postgres) — so
+  saving the setting itself isn't blocked by the local-DB-bootstrap gap noted in the prior entry;
+  only a local `supabase functions serve` run to *exercise* it would be.
+
 ## 2026-07-10 — MF4 live test of premise-craft + node-editing skills for every kind `[ship]`
 - **What:** (1) Live-tested premise-craft on MF4 (book 1237) via direct authenticated calls to the deployed book-agent: "Write the premise" → agent correctly surfaced the existing accepted premise instead of clobbering (Task discipline working); "Revisit the premise — offer fresh options, the question feels unpriced" → 4 options staged in ONE turn, all with PRICED dramatic questions, 5 escalating internal movements, want-vs-need finals, and the brief's mother-history element explicit (vs the old unpriced "Can love rooted in obligation ever grow…"). (2) Built the user's mid-session ask — editing craft for every node kind: 6 new skills (character-craft wound→lie→want-vs-need engine; world-craft operable rules/sensory locations; thread-craft promises/games/ledger; structure-craft but-therefore causality; scene-plan-craft value_shift/sketch; idea-voice-craft controlling idea/voice contract), each grounded in dna-schema's exact fields. Registry now 12 skills / ~16k body chars, injected only on matching turns. Fixed premise-craft's ending_feel enum (ambivalent is valid). Trigger matrix verified; deployed.
 - **Found en route:** app.pensive.me serves a STALE build (old "AI REVISER" rail; AgentRail-in-tree not deployed) — the web app needs a redeploy. Test-harness gotcha: `node -e script -- arg` puts args at argv[1], not argv[2].
