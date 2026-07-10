@@ -17,6 +17,30 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-10 — claude-local shim: per-call empty cwd; diagnosed two live-session incidents `[ship]`
+- **What (requested):** Switched the shim's `claude -p` spawn from one shared tmpdir (created once,
+  reused across every turn) to a fresh `mkdtempSync` directory per call, removed via `rmSync` once
+  that call settles (success/error/timeout all clean up). Even with `--tools ""`, a reused cwd still
+  gives Claude Code something to walk up from as ambient project context, and isn't guaranteed-empty
+  over a long shim uptime. Verified text and tool_use round trips both still correct, no leftover
+  directory after either.
+- **What (incident response, same session):** User hit two problems live. (1) "Applied automatically
+  without notice, no proposal" — traced via `ai_calls` to `fn: dna-expand, source: bridge, model:
+  claude-code-local` — a completely different, pre-existing system (eval-bridge.mjs via
+  `VITE_EVAL_BRIDGE_URL`), not book-agent or claude-local at all; not something this work touched.
+  (2) Agent UI stuck after clicking Stop on book "mp5" (book_id 1238) — this one WAS my fault: I'd
+  killed `supabase functions serve` after my last verification pass and never restarted it, so the
+  user's "Generate logline options for the seed." request hit a dead backend and orphaned the run
+  (same failure shape as the earlier CHAIN_SECRET incident, different cause). Reset the row, restarted
+  `functions serve`, confirmed both it and the shim healthy, and stopped restarting local servers
+  while the user is actively testing.
+- **Files/commits:** `scripts/claude-local-shim.mjs` (`ceceb54`).
+- **PM impact:** none new — reinforces the entries below. Real lesson: don't cycle local dev
+  infrastructure (`functions serve`, the shim) while a user has a live session against it: it looks
+  identical to the orphaned-run bug from the DB side, costs debugging time to distinguish from a real
+  regression.
+
+
 ## 2026-07-10 — claude-local bridge: closes wip, verified working end-to-end on real book-agent traffic `[ship]`
 - **What:** Closes the `[wip]` entry below. User drove a real "suggest logline" turn on book 1237 and
   it stalled ("thinking..." forever). Diagnosed via the local `functions serve` log: the isolate hung
