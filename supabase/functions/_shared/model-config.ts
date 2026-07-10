@@ -130,7 +130,18 @@ export const ROLE_TIER_KEYS: Record<ModelRole, string> = {
 
 // Pure: resolve the four role models from a (settings key → tier) map. An absent/unknown per-role override
 // falls back to the base tier's `high`, so an empty map yields every role = base high (behaviour-preserving).
-export function resolveRoleModels(tiers: Partial<Record<string, ModelTier>>): { agent: string; structure: string; prose: string; low: string } {
+//
+// `localBridgeUp` is the ONE non-admin_settings input: whether CLAUDE_LOCAL_URL is configured in THIS
+// worker's own env (never true when deployed — it's a laptop-only, gitignored secret). When true AND the
+// admin hasn't set an explicit agent override, the agent role defaults to claude-local instead of the base
+// tier's high. This is a default, not a mandate — an explicit ai_model_tier_agent (even in local dev, e.g.
+// to test hermes) still wins, so it can never silently override a deliberate choice. It also never touches
+// admin_settings itself, so prod's shared ai_model_tier_agent is unaffected regardless of what any single
+// developer's laptop is doing.
+export function resolveRoleModels(
+  tiers: Partial<Record<string, ModelTier>>,
+  localBridgeUp = false,
+): { agent: string; structure: string; prose: string; low: string } {
   const base = TIER_MODELS[(tiers.ai_model_tier as ModelTier) ?? "sonnet"] ?? TIER_MODELS.sonnet;
   const highOf = (t?: ModelTier) => (t && TIER_MODELS[t]?.high) || base.high;
   // The agent role drives a tool-use loop, so it can't run on a tool-incapable model (e.g. hermes). If the
@@ -139,8 +150,10 @@ export function resolveRoleModels(tiers: Partial<Record<string, ModelTier>>): { 
   // an admin who sets hermes globally for its prose still gets a working, in-family agent — no OpenRouter 404.
   const toolCapableAgent = (m: string) =>
     isToolCapable(m) ? m : isToolCapable(base.high) ? base.high : AGENT_FALLBACK_MODEL;
+  const agentOverride = tiers[ROLE_TIER_KEYS.agent];
+  const agentHigh = !agentOverride && localBridgeUp ? "claude-local" : highOf(agentOverride);
   return {
-    agent: toolCapableAgent(highOf(tiers[ROLE_TIER_KEYS.agent])),
+    agent: toolCapableAgent(agentHigh),
     structure: highOf(tiers[ROLE_TIER_KEYS.structure]),
     prose: highOf(tiers[ROLE_TIER_KEYS.prose]),
     low: base.low,
@@ -148,14 +161,15 @@ export function resolveRoleModels(tiers: Partial<Record<string, ModelTier>>): { 
 }
 
 export async function getRoleModels(): Promise<{ agent: string; structure: string; prose: string; low: string }> {
+  const localBridgeUp = !!Deno.env.get("CLAUDE_LOCAL_URL");
   try {
     const { data } = await serviceClient()
       .from("admin_settings")
       .select("key, value")
       .in("key", ["ai_model_tier", ...Object.values(ROLE_TIER_KEYS)]);
     const tiers = Object.fromEntries((data ?? []).map((r) => [r.key as string, r.value as ModelTier]));
-    return resolveRoleModels(tiers);
+    return resolveRoleModels(tiers, localBridgeUp);
   } catch {
-    return resolveRoleModels({});
+    return resolveRoleModels({}, localBridgeUp);
   }
 }
