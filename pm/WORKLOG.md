@@ -17,6 +17,11 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-10 — edit-as-a-system: craft + schema + position for every node edit `[ship]`
+- **What:** Live MF4 failure (premise repriced, shape left stale — coupled fields edited independently) ratified the owner's principle: every node edit needs CRAFT + SCHEMA + POSITION. Shipped all three legs: core-prompt EDIT AS A SYSTEM rule with named couplings (premise question↔shape, character wound→lie→want→need, scene goal→conflict→outcome→value_shift); `<mentioned>` hydration now carries the ancestor path, children-stale note, and the kind's schema (edit-ready without a read); read_node returns the ancestor path + children-stale framing. Coupling rules also added to premise-craft and scene-plan-craft bodies. Deployed.
+- **Files/commits:** supabase/functions/book-agent/index.ts, supabase/functions/_shared/agent-skills.ts.
+- **PM impact:** appended to STATE "Agent instruction-following" row.
+
 ## 2026-07-10 — claude-local selectable from /admin/settings `[ship]`
 - **What:** Added `"claude-local"` to `AdminSettings.tsx`'s `ModelTier` union + `TIERS` list (a
   "Dev only" badge, description covers the shim/env prerequisite and the fail-loud prod behavior).

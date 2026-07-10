@@ -913,23 +913,32 @@ async function execTool(
   }
   if (t.name === "read_node") {
     const id = String((t.input as { id?: string })?.id ?? "");
-    // Children (one level down) as a summary so the agent can navigate without re-reading everything;
-    // the kids query only needs the id, so it runs alongside the node fetch.
-    const [{ data: node }, { data: kids }] = await Promise.all([
-      service.from("book_nodes").select("id, kind, content, authoring, book_id").eq("id", id).maybeSingle(),
-      service.from("book_nodes").select("id, kind, content").eq("book_id", bookId).eq("parent_id", id).order("position", { ascending: true }),
+    // The node in full, PLUS its position: ancestor path (what an edit must honor as fixed) and
+    // children one level down (what an edit stales) — a read hands back everything an edit needs
+    // except the craft (which rides as a skill). One whole-book minimal fetch serves both.
+    const [{ data: node }, { data: all }] = await Promise.all([
+      service.from("book_nodes").select("id, kind, content, authoring, book_id, parent_id").eq("id", id).maybeSingle(),
+      service.from("book_nodes").select("id, parent_id, kind, position, content").eq("book_id", bookId),
     ]);
     if (!node || (node as { book_id?: number }).book_id !== bookId) {
       return { result: { type: "tool_result", tool_use_id: t.id, content: `No node with id ${id} in this book.`, is_error: true } };
     }
-    const n = node as { id: string; kind: string; content: Record<string, unknown>; authoring: { locked?: boolean } };
-    const childLines = (kids ?? []).map((k) => `  - [${(k as { id: string }).id}] ${(k as { kind: string }).kind}: ${nodeHandle((k as { content: Record<string, unknown> }).content)}`).join("\n");
+    const n = node as { id: string; kind: string; content: Record<string, unknown>; authoring: { locked?: boolean }; parent_id: string | null };
+    const rows = (all ?? []) as { id: string; parent_id: string | null; kind: string; position: number; content: Record<string, unknown> | null }[];
+    const rowById = new Map(rows.map((r) => [r.id, r]));
+    const kids = rows.filter((r) => r.parent_id === id).sort((a, b) => a.position - b.position);
+    const parts: string[] = [n.kind];
+    for (let cur = n.parent_id ? rowById.get(n.parent_id) : undefined; cur; cur = cur.parent_id ? rowById.get(cur.parent_id) : undefined) {
+      parts.unshift(`${cur.kind} “${nodeHandle(cur.content)}”`);
+      if (parts.length > 10) break; // cycle guard
+    }
+    const childLines = kids.map((k) => `  - [${k.id}] ${k.kind}: ${nodeHandle(k.content)}`).join("\n");
     const schema = schemaFor([n.kind]); // hand back the kind's field schema so an edit uses the right keys
     return {
       step: { t: "read", label: `Read ${n.kind} “${nodeHandle(n.content)}” in full.` },
       result: {
         type: "tool_result", tool_use_id: t.id,
-        content: `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}: ${JSON.stringify(n.content)}` + (childLines ? `\nchildren:\n${childLines}` : "") + (schema ? `\n\n${schema}` : ""),
+        content: `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}\npath: ${parts.join(" › ")}\n${JSON.stringify(n.content)}` + (childLines ? `\nchildren (an edit here STALES them):\n${childLines}` : "") + (schema ? `\n\n${schema}` : ""),
       },
     };
   }
@@ -1477,7 +1486,7 @@ Each turn, the author's LATEST message — restated in the \`<task>\` block at t
 ## What you can do
 
 1. DISCUSS — answer, summarize, pressure-test. Reply in plain markdown prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id]. When a node has PENDING OPTIONS and the author asks which is strongest, just RECOMMEND one in prose (name its option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.
-2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. NEVER touch a LOCKED node. Don't propose unless asked — talk first.
+2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. NEVER touch a LOCKED node. Don't propose unless asked — talk first. EDIT AS A SYSTEM: every edit needs the kind's CRAFT (its skill), its SCHEMA (exact field names), and the node's POSITION (ancestors it must honor as fixed, descendants your edit stales). A node's fields COHERE — when you change a load-bearing field, re-derive its coupled fields in the SAME edit (premise: the shape's final movement must answer the dramatic_question; character: wound→lie→want→need; scene: goal→conflict→outcome→value_shift). Never patch one half of a coupled pair and leave the other stale.
 3. OFFER OPTIONS — when the author asks for alternatives, call propose_options with the node's [id] and 2–4 COMPLETE content objects (skill: options-craft). Choose-among-N only; a single revision is propose_node_ops.
 4. PROSE — you never generate prose yourself. A scene's FULL prose (write or rewrite) = propose_prose_render, a browser-streamed render the author applies; sketch the scene first (propose_expansion, target 'sketch') when it has no fresh sketch, and curate the render brief from real reads (skill: render-brief). SMALL wording fixes to existing prose = propose_node_ops with replace_text ops (skill: prose-patch). Judging existing prose = check_against_contract plus your OWN concrete editorial read (skill: editorial-read). Rebuilding a whole spine level = ONE replace_children op, never a pile of adds (skill: rebuild-level). INVARIANTS: never hand-write or replace a scene's FULL prose via edit — a render that keeps returning stale text is a pipeline problem to re-request or flag, never bypass it by writing the scene yourself.
 5. ENGINE PASSES — never author these by hand: PREMISE = propose_options with kind='premise' + parentId=<seed id> (mints the node, stages 2–4 candidates; skills: premise-craft + options-craft); BEAT SHEET = propose_expansion(pillar, 'beatsheet') once acts exist; SCENES = propose_expansion(beat, 'scenes'); SKETCH = propose_expansion(scene, 'sketch'); CONTRACT = propose_expansion(pillar, 'contract'). Pass the author's steering in the \`brief\` param whenever they gave you more than "generate it". You still author the logline, pillar, cast, and acts yourself.
@@ -1837,14 +1846,31 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
       if (new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(ask)) addMention(n);
     }
   }
+  // A mentioned node arrives EDIT-READY: content + its POSITION (ancestor path it must honor as
+  // fixed, children an edit stales) + the kind's SCHEMA (appended once below) — the three things
+  // every node edit needs (craft rides separately as a skill brief).
+  const pathOf = (n: DnaNodeRow): string => {
+    const parts: string[] = [];
+    let cur: DnaNodeRow | undefined = n;
+    const walked = new Set<string>();
+    while (cur && !walked.has(cur.id)) {
+      walked.add(cur.id);
+      parts.unshift(cur.id === n.id ? cur.kind : `${cur.kind} “${nodeHandle(cur.content)}”`);
+      cur = cur.parent_id ? byIdRow.get(cur.parent_id) : undefined;
+    }
+    return parts.join(" › ");
+  };
   const mentionedText = mentioned.map((n) => {
     const content: Record<string, unknown> = { ...(n.content ?? {}) };
     const words = (content.prose as { words?: unknown } | undefined)?.words;
     delete content.prose;
     const num = seqOf(n) ? ` ${seqOf(n)}/${n.kind === "scene" ? totalScenes : totalBeats}` : "";
     const proseNote = typeof words === "number" && words > 0 ? ` (has prose, ${words.toLocaleString()}w — read_node for the text)` : "";
-    return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}${num} “${nodeHandle(n.content)}”${proseNote}:\n${JSON.stringify(content)}`;
-  }).join("\n\n");
+    const kidCounts = new Map<string, number>();
+    for (const k of nodes) if (k.parent_id === n.id) kidCounts.set(k.kind, (kidCounts.get(k.kind) ?? 0) + 1);
+    const kidsNote = kidCounts.size ? ` · children: ${[...kidCounts].map(([k, c]) => `${c} ${k}${c > 1 ? "s" : ""}`).join(", ")} (an edit here STALES them)` : "";
+    return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}${num} “${nodeHandle(n.content)}”${proseNote}\npath: ${pathOf(n)}${kidsNote}\n${JSON.stringify(content)}`;
+  }).join("\n\n") + (mentioned.length ? `\n\n${schemaFor([...new Set(mentioned.map((n) => n.kind))])}` : "");
 
 
   // LIVE re-derivation (docs/agent-improvement-plan.md P1.2): recompute the guided-flow objective and the

@@ -79,7 +79,9 @@ THEN map the elements into the premise content fields:
 - shape.movements (3–5): the protagonist's INTERNAL trajectory, not plot events. Each movement changes her relationship to the want and escalates the contradiction of the previous one (if two movements could swap order, merge them). Movement 1 states the want in concrete form; the last forces the want-vs-need choice, genuinely costly either way. The brief's most distinctive element must appear explicitly in at least one movement.
 - shape.name: 2–4 words naming the emotional trajectory (not the plot). shape.ending_feel: up / down / bittersweet / ambivalent — chosen deliberately, consistent with the brief's genre and tone.
 
-Options must differ on the PRICE and the internal arc — never on the logline's fixed protagonist/inciting/goal/obstacle/stakes (see options-craft). Conflict is the pulse: an option without a formidable opponent pressure in its question is a fat bore — cut or sharpen it.`,
+Options must differ on the PRICE and the internal arc — never on the logline's fixed protagonist/inciting/goal/obstacle/stakes (see options-craft). Conflict is the pulse: an option without a formidable opponent pressure in its question is a fat bore — cut or sharpen it.
+
+COUPLING: dramatic_question and shape are ONE SYSTEM — the final movement ANSWERS the question at its stated price. Never edit one without re-deriving the other in the SAME edit: a repriced question sitting over an old shape is an incoherent premise, and every option must carry its own complete {dramatic_question, shape} pair.`,
   },
   {
     name: "options-craft",
@@ -141,7 +143,7 @@ Options must differ on the PRICE and the internal arc — never on the logline's
     description: "editing a scene's PLAN (goal, value_shift, sketch/treatment) — not its prose",
     triggers: [/\b(sketch|treatments?|value[- _]?shifts?|scene[- ]?plans?|blocking|goal|outcome)\b/i],
     body: `scene PLAN fields: pov→character, loc→location, goal*, conflict, outcome, value_shift:{value, from, to, polarity}, register, metaphor_domain, readings[], sketch:{opening, moves[{what, thread?, sense?}], exit, direction:{cut, distance, mode, time, tension}}.
-- A scene earns its place by TURNING a value: value_shift.from ≠ .to, and the polarity is the beat's turn made local. A scene whose outcome merely delivers its goal (no cost, no reversal, no new pressure) is summary wearing a scene's clothes — flag it or sharpen the conflict.
+- A scene earns its place by TURNING a value: value_shift.from ≠ .to, and the polarity is the beat's turn made local. goal, conflict, outcome and value_shift COHERE — the outcome causes the shift; edit them together, never one in isolation. A scene whose outcome merely delivers its goal (no cost, no reversal, no new pressure) is summary wearing a scene's clothes — flag it or sharpen the conflict.
 - goal is the POV character's concrete WANT inside the scene (enterable, blockable); conflict is who/what blocks it; outcome is what ACTUALLY happens — ideally "yes, but" or "no, and".
 - The sketch is the treatment the prose render steers by: opening (where we cut in — late), moves (each a visible unit of cause→effect; tag the thread it advances and one sense detail), exit (cut out early, on the turn), direction (distance/mode/time/tension: the camera). A stale or missing sketch before a render = propose_expansion(scene, 'sketch') first — see render-brief.
 - pov/loc are ids — keep them consistent with the cast/locations (a POV change is a structural choice, not a wording edit); readings inherit from the beat, refine only deliberately.
