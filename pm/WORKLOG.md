@@ -17,6 +17,35 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-10 — claude-local admin dropdown; agent auto-defaults to claude-local locally; local Supabase fixed `[ship]`
+- **What:** Three related pieces, in order. (1) Added `"claude-local"` to `AdminSettings.tsx`'s
+  `ModelTier` dropdown (Dev-only badge) — closing the earlier gap where the backend tier existed but
+  had no UI control. (2) Realized flipping that shared `admin_settings` row is unsafe to test with —
+  confirmed live (user showed me the AiCalls table mid-session: real book-agent traffic running right
+  now) — so instead added a SERVER-SIDE auto-default in `_shared/model-config.ts`: when
+  `CLAUDE_LOCAL_URL` is set in the worker's own env (laptop-only, never present when deployed) and
+  there's no explicit `ai_model_tier_agent` override, the agent role defaults to `claude-local`. Never
+  writes `admin_settings`; an explicit override always wins. Considered and rejected gating this on
+  the client's `VITE_EVAL_BRIDGE_URL` instead — `book-agent` is invoked via
+  `supabase.functions.invoke`, which always hits the DEPLOYED function (`SUPABASE_URL` is hardcoded
+  hosted, no local override) and explicitly bypasses the eval-bridge mirror by design
+  (`agentThread.ts`'s own comment) — that gate would just break every agent call locally, not route
+  it anywhere reachable. (3) That surfaced the real blocker: `supabase start` had never worked from
+  empty (see the DECISIONS.md entry below) — fixed it, then re-verified the full agent-default chain
+  through the REAL local stack (not raw `docker run`): `supabase functions serve` → local Postgres →
+  `getRoleModels()` → `claude-local` → the shim → real `claude -p` → response back through the
+  gateway. All correct.
+- **Verified:** 4 new deno tests for the auto-default precedence (12 total in model-config.test.ts,
+  all passing); `check-edge-functions.sh` clean across all 19 fns; `apps/web` `tsc --build` clean;
+  live round trip through `supabase functions serve` with a throwaway verify function (deleted after).
+- **Files/commits:** `apps/web/src/pages/admin/AdminSettings.tsx` (`2eb66aa`), `_shared/model-config.ts`
+  + `.test.ts` (`9d2104b`), migration squash (this commit) — `supabase/migrations_archive/` (135 files,
+  git-mv'd), `supabase/migrations/20260710140000_baseline_schema_dump.sql` (new baseline).
+- **PM impact:** local Supabase bootstrap fix is a standing DECISIONS.md entry (see below) — the
+  remote-push caveat (`migration repair` needed before next `db push`) is load-bearing and NOT yet
+  acted on. Otherwise none; Now#1 (full-book build) still runs on the shared `deepseek-v4` config,
+  untouched by any of this.
+
 ## 2026-07-10 — edit-as-a-system: craft + schema + position for every node edit `[ship]`
 - **What:** Live MF4 failure (premise repriced, shape left stale — coupled fields edited independently) ratified the owner's principle: every node edit needs CRAFT + SCHEMA + POSITION. Shipped all three legs: core-prompt EDIT AS A SYSTEM rule with named couplings (premise question↔shape, character wound→lie→want→need, scene goal→conflict→outcome→value_shift); `<mentioned>` hydration now carries the ancestor path, children-stale note, and the kind's schema (edit-ready without a read); read_node returns the ancestor path + children-stale framing. Coupling rules also added to premise-craft and scene-plan-craft bodies. Deployed.
 - **Files/commits:** supabase/functions/book-agent/index.ts, supabase/functions/_shared/agent-skills.ts.

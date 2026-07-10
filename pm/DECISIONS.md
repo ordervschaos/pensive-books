@@ -6,6 +6,34 @@
 
 ## Log
 
+### 2026-07-10 — Squashed 135 migrations into one baseline dump; `supabase start` now bootstraps from empty
+`supabase start`/`db pull` had never worked from an empty database: the earliest migration
+(`20250127000000_create_page_chats.sql`) already assumed `public.pages` existed, but no migration in
+the 135-file chain ever created it (or most other core tables, or the `vector`/`pg_net` extensions
+they depend on). The base schema was set up directly on the hosted project — dashboard/manual SQL —
+before this repo adopted migration-file discipline, and was never captured. Every migration replayed
+fine on the REMOTE project (which already had the base tables) but could never replay on a fresh one,
+so local Docker DB parity has probably never existed here.
+
+**Fix:** `supabase db dump --linked --schema public` (schema-only, no data — pg_dump talks straight to
+Postgres, independent of migration replay, so it isn't blocked by the same gap it's fixing) captured
+the schema AS IT ACTUALLY EXISTS today. The 135 old files moved to `supabase/migrations_archive/` (git
+`mv`, history preserved, not deleted); the dump became the one new migration,
+`20260710140000_baseline_schema_dump.sql`, with `CREATE EXTENSION IF NOT EXISTS "vector"`/`"pg_net"`
+added at the top (needed for a `pages.embedding` column and `net.http_post` trigger calls — schema
+dumps don't capture extension activation, and no archived migration ever did either). Verified live:
+`supabase start` bootstraps clean, `supabase functions serve` serves all 19 functions against it, and
+a full request through the local gateway → edge fn → local Postgres → `callLLM` → the `claude-local`
+shim → real `claude -p` → response round-tripped correctly end to end.
+
+**Caveat, not yet acted on:** the remote project's own `supabase_migrations.schema_migrations` table
+still has all 135 old versions recorded as applied; this new baseline's version has never been pushed.
+Before the next `supabase db push`, someone must run
+`supabase migration repair 20260710140000 --status applied --linked` to mark it applied without
+executing it remotely (every object already exists there) — deliberately left undone here since it
+mutates the shared/production project's migration bookkeeping, not something to do silently as a side
+effect of a local dev-experience fix.
+
 ### 2026-07-10 — Provider is an explicit setting, not a naming convention; DeepSeek's own API satisfies the escape clause
 Shipped `ai_provider` (`auto|anthropic|openrouter|deepseek|mulerouter`) in `admin_settings`, read at
 the `callLLM` chokepoint. **Replaces** routing-by-model-id-shape (a `/` meant OpenRouter, a `deepseek`
