@@ -77,7 +77,7 @@ Sanity test: "When [CHARACTER], [SITUATION], all she wants is [OBJECTIVE]. But [
 THEN map the elements into the premise content fields:
 - dramatic_question: ONE sentence carrying a PRICE — "Can she X without losing Y?", never a bare goal ("Will she X?"). Y comes from the DISASTER; use the brief's specific nouns, not abstractions; a reader could plausibly root for both answers; the final movement answers it definitively.
 - shape.movements (3–5): the protagonist's INTERNAL trajectory, not plot events. Each movement changes her relationship to the want and escalates the contradiction of the previous one (if two movements could swap order, merge them). Movement 1 states the want in concrete form; the last forces the want-vs-need choice, genuinely costly either way. The brief's most distinctive element must appear explicitly in at least one movement.
-- shape.name: 2–4 words naming the emotional trajectory (not the plot). shape.ending_feel: up / down / bittersweet — chosen deliberately, consistent with the brief's genre and tone.
+- shape.name: 2–4 words naming the emotional trajectory (not the plot). shape.ending_feel: up / down / bittersweet / ambivalent — chosen deliberately, consistent with the brief's genre and tone.
 
 Options must differ on the PRICE and the internal arc — never on the logline's fixed protagonist/inciting/goal/obstacle/stakes (see options-craft). Conflict is the pulse: an option without a formidable opponent pressure in its question is a fat bore — cut or sharpen it.`,
   },
@@ -90,6 +90,72 @@ Options must differ on the PRICE and the internal arc — never on the logline's
 - Every option HONORS the node's ancestors as FIXED: a child elaborates what's above it, it never rewrites it. Premise options keep the logline's protagonist / inciting incident / goal / obstacle / stakes fixed and vary only the priced dramatic question plus the internal shape movements — every question needs a cost, every shape an escalating want-vs-need choice. Never reshape an ancestor into a different book.
 - PREMISE SHORTCUT: when the premise node doesn't exist yet, pass kind='premise' + parentId=<seed id> (no nodeId) — mints the node and stages the candidates in one step. For premise options, follow premise-craft (read_skill it if not injected).
 - When the author asks which pending option is strongest, RECOMMEND in prose (option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.`,
+  },
+  {
+    name: "character-craft",
+    description: "editing characters and relationships — the wound→lie→want-vs-need engine, idiolect, bond+charge",
+    triggers: [/\b(characters?|protagonist|antagonist|villain|hero(ine)?|love\s+interest|cast|relationships?|idiolect|backstory|wound|flaw|motivation)\b/i],
+    body: `Character fields (get_schema for exact keys): name*, role, want, need, wound, lie, truth, idiolect, tag.
+- The engine is CAUSAL, not a trait list: the WOUND (the past injury) taught them the LIE (the false belief that protects the wound); the LIE drives the WANT (the external goal they think will fix things); the NEED is the TRUTH they must accept instead. Edit these as one system — changing a wound without re-deriving lie/want/need leaves a broken chain. The final want-vs-need choice in the premise's last movement should be THIS character's chain firing.
+- want must be concrete and external (winnable/losable on the page); need is internal and usually its price.
+- idiolect makes them audible: 3–6 specific speech habits (favorite words, sentence length, what they never say, deflection moves) — the prose render and the echo lints both lean on it. Never generic ("speaks formally"); always samples ("answers questions with questions; never says 'sorry', says 'noted'").
+- role is load-bearing (protagonist|antagonist|ally|love_interest|minor) — lints and generation passes read it; a story with no antagonist-role pressure somewhere is a red flag to raise, not silently accept.
+- Relationships: a*/b* are character ids, bond* names the tie, charge is the live tension ACROSS it — the thing that can still move. A relationship with no chargeable friction is furniture; say so.
+- A rename is ONE edit op setting content.name (a DB trigger propagates it book-wide) — see prose-patch.`,
+  },
+  {
+    name: "world-craft",
+    description: "editing world_facts and locations — operable rules with mechanisms, sensory place profiles",
+    triggers: [/\b(world[- ]?building|world[_ ]?facts?|magic|locations?|setting|geograph|lore|rules?)\b/i],
+    body: `world_fact fields: name*, rule*, mechanism, category. location fields: name*, summary, sight, sound, smell, texture, mood.
+- A rule is only story-load-bearing if it can OPERATE: state it as a constraint with a visible MECHANISM (how it works, what it costs, how it's beaten) — beats cite rules via grounds_in, and the climax's win must be mechanically earned by a rule the reader already knows (never deus ex machina). A rule without a mechanism can't ground anything; fill mechanism or flag it.
+- Rules should CONSTRAIN protagonists, not empower them — cost and limit create plot; free power deletes it.
+- When editing a rule that beats already ground_in, check those beats still work under the new wording (search_nodes the rule's name) — a loosened rule silently un-earns a climax.
+- Locations are written for RE-USE by scene renders: the sensory fields (sight/sound/smell/texture) want specific, ownable details (one smell the reader will recognize on return), and mood is the emotional default a scene inherits or subverts. A location visited twice should feel like a return, not a re-description.
+- waived:true on either kind means "the reader never meets it" — only ever set with the author's explicit consent (it settles the obligation ledger).`,
+  },
+  {
+    name: "thread-craft",
+    description: "editing threads, games, tentpoles — promises and payoffs, win/lose contests, the obligation ledger",
+    triggers: [/\b(threads?|foreshadow|payoffs?|setups?|mystery|promises?|games?|contests?|stakes?|tentpoles?|set[- ]?pieces?|meters?|obligations?)\b/i],
+    body: `thread fields: name*, kind(mystery|foreshadow|setup_payoff|arc), promise*, payoff, owner. game fields: name*, players[]→character, win_condition*, lose_condition*, stake, governing_rules[]→world_fact. tentpole: summary*. meter: name*, kind, poles, scale, target[].
+- A thread is a PROMISE to the reader; the promise* field should read as what the reader is owed ("we will learn who sent the letter"), and payoff as how it's honored. Every open thread is DEBT in the obligation ledger — editing a payoff out of a scene un-pays the debt; check where it lands instead (beats carry threads[] with setup|advance|payoff roles; a payoff is paid ONCE, in the LAST scene that carries it).
+- kind matters: mystery withholds a fact, foreshadow plants one, setup_payoff plants an OBJECT/ability, arc tracks a change. Pick the one the reader experiences, not the one that sounds literary.
+- A game is a legible CONTEST: win_condition and lose_condition must be objectively checkable states, the stake is what changes hands, and governing_rules tie it to world_facts so the outcome is mechanically earned. Every game must eventually be resolved by exactly one beat (resolves, outcome won|lost) — the central game at the climax.
+- Tentpoles are promised set-pieces — each must be realized by exactly ONE beat (realizes). Meters plot the felt curve (comedy/heat/tension...); their target[] is the planned shape generation aims at — edit targets deliberately, not to flatter current readings.
+- waived:true (any of these) = deliberately unpaid/undecided/unplaced — a sequel hook or a cut, ONLY with the author's explicit consent; it settles the ledger.`,
+  },
+  {
+    name: "structure-craft",
+    description: "editing acts and beats — but/therefore causality, needs/establishes state keys, polarity",
+    triggers: [/\b(acts?|beats?|structure|midpoint|turning[- ]?points?|climax|pacing|causalit|beat[- ]?sheet)\b/i],
+    body: `act fields: title, goal*, turning_point, target_pct(0..1), value:{name, from, to, polarity}. beat fields: summary*, connector(therefore|but), polarity(up|down), threads[{ref, role}], grounds_in[], needs[], establishes[], realizes[], plays[], resolves[], readings[].
+- The spine's law is BUT/THEREFORE, never "and then": each beat's connector says WHY it follows — 'therefore' must be EARNED upstream (the beat's needs[] lists state keys some EARLIER beat establishes[]), 'but' reverses polarity or blocks an established state. Editing a beat's summary without updating its causal edges (needs/establishes) silently breaks the chain downstream — trace what consumed its establishes before deleting one (search_nodes the state key).
+- polarity should ALTERNATE more than it streaks — three same-polarity beats in a row is a sagging run (the lints flag it); fix by sharpening a turn, not by relabeling.
+- State keys are short snake_case handles ("ledger_settled", "rival_humiliated") — reuse existing keys exactly (a typo mints a phantom obligation); never "need" an ambient world-given, only something a beat produced.
+- Acts you author by hand: goal* is the act's dramatic engine, turning_point the door that locks behind the protagonist, value the act-level polarity swing, target_pct its share of the book.
+- Whole-level rebuilds are replace_children, and a full beat sheet is the ENGINE's job (propose_expansion 'beatsheet') — see rebuild-level. Hand-edit beats to FIX causality; don't hand-author the whole sheet.`,
+  },
+  {
+    name: "scene-plan-craft",
+    description: "editing a scene's PLAN (goal, value_shift, sketch/treatment) — not its prose",
+    triggers: [/\b(sketch|treatments?|value[- _]?shifts?|scene[- ]?plans?|blocking|goal|outcome)\b/i],
+    body: `scene PLAN fields: pov→character, loc→location, goal*, conflict, outcome, value_shift:{value, from, to, polarity}, register, metaphor_domain, readings[], sketch:{opening, moves[{what, thread?, sense?}], exit, direction:{cut, distance, mode, time, tension}}.
+- A scene earns its place by TURNING a value: value_shift.from ≠ .to, and the polarity is the beat's turn made local. A scene whose outcome merely delivers its goal (no cost, no reversal, no new pressure) is summary wearing a scene's clothes — flag it or sharpen the conflict.
+- goal is the POV character's concrete WANT inside the scene (enterable, blockable); conflict is who/what blocks it; outcome is what ACTUALLY happens — ideally "yes, but" or "no, and".
+- The sketch is the treatment the prose render steers by: opening (where we cut in — late), moves (each a visible unit of cause→effect; tag the thread it advances and one sense detail), exit (cut out early, on the turn), direction (distance/mode/time/tension: the camera). A stale or missing sketch before a render = propose_expansion(scene, 'sketch') first — see render-brief.
+- pov/loc are ids — keep them consistent with the cast/locations (a POV change is a structural choice, not a wording edit); readings inherit from the beat, refine only deliberately.
+- This skill is the scene's PLAN; the prose itself is render-brief (full render) or prose-patch (small fixes).`,
+  },
+  {
+    name: "idea-voice-craft",
+    description: "editing the pillar (controlling idea, ending) and voice_profile (pov, tense, style, constraints)",
+    triggers: [/\b(pillar|controlling[- ]?idea|theme|thematic|endings?|voice|pov|point[- ]?of[- ]?view|tense|prose\s+style)\b/i],
+    body: `pillar fields: controlling_idea*, ending. voice_profile fields: pov, tense, style*, constraints[], sample.
+- A controlling_idea is an ARGUMENT, not a topic: value + cause in one sentence ("Freedom is won when love stops being ownership"), provable or disprovable by the ending. "This book is about love and freedom" is a topic — reject it. The ending field states the concrete final image/outcome that LANDS the argument; idea and ending must agree (an up-idea with a down-ending is either irony on purpose or a bug — ask which).
+- Everything below the pillar argues it: when editing the controlling_idea, the beat sheet's climax and the premise's want-vs-need choice must still prove it — flag the mismatch rather than silently absorbing it.
+- voice_profile is a CONTRACT the prose render obeys, so write it operationally: style in concrete, imitable terms (sentence economy, image density, heat level of the narration); constraints[] as hard rules a lint could check ("no semicolons", "no interiority in action beats", "never name the emotion — show its symptom"); sample as 2–3 sentences of the voice actually doing it, in-world.
+- pov/tense changes are book-wide renovations: existing prose won't match — surface the re-render cost before proposing.`,
   },
 ];
 

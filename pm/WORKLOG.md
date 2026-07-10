@@ -17,6 +17,12 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-10 — MF4 live test of premise-craft + node-editing skills for every kind `[ship]`
+- **What:** (1) Live-tested premise-craft on MF4 (book 1237) via direct authenticated calls to the deployed book-agent: "Write the premise" → agent correctly surfaced the existing accepted premise instead of clobbering (Task discipline working); "Revisit the premise — offer fresh options, the question feels unpriced" → 4 options staged in ONE turn, all with PRICED dramatic questions, 5 escalating internal movements, want-vs-need finals, and the brief's mother-history element explicit (vs the old unpriced "Can love rooted in obligation ever grow…"). (2) Built the user's mid-session ask — editing craft for every node kind: 6 new skills (character-craft wound→lie→want-vs-need engine; world-craft operable rules/sensory locations; thread-craft promises/games/ledger; structure-craft but-therefore causality; scene-plan-craft value_shift/sketch; idea-voice-craft controlling idea/voice contract), each grounded in dna-schema's exact fields. Registry now 12 skills / ~16k body chars, injected only on matching turns. Fixed premise-craft's ending_feel enum (ambivalent is valid). Trigger matrix verified; deployed.
+- **Found en route:** app.pensive.me serves a STALE build (old "AI REVISER" rail; AgentRail-in-tree not deployed) — the web app needs a redeploy. Test-harness gotcha: `node -e script -- arg` puts args at argv[1], not argv[2].
+- **Files/commits:** supabase/functions/_shared/agent-skills.ts, supabase/functions/book-agent/index.ts.
+- **PM impact:** appended to STATE "Agent instruction-following" row; stale-prod-frontend flagged.
+
 ## 2026-07-10 — wrap: closing out the claude-local bridge session `[chore]`
 - **What:** Stop-hook re-fired after this session's real work was already committed and catalogued
   (the two `[ship]` entries directly below: bridge implementation, then live Docker-networking
