@@ -17,6 +17,28 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-10 — claude-local bridge: Docker networking path verified live `[ship]`
+- **What:** Closed the one open item from the claude-local bridge ship entry below — actually
+  proved the real `edge-runtime` Docker container can reach the laptop shim via
+  `host.docker.internal`, not just the code path in isolation. `supabase start` couldn't be used
+  for this (see below), so ran the real `public.ecr.aws/supabase/edge-runtime` image directly:
+  `docker run ... -e CLAUDE_LOCAL_URL=http://host.docker.internal:8788/v1/messages
+  --main-service <dir>`, main-service being a temporary local-only function (not committed) that
+  called the actual `callLLM()` from `_shared/llm.ts` with `model:"claude-local"`. Result: real
+  `claude -p` round trip through the container in ~3s, correct `end_turn` shape. Container + temp
+  function removed after the test; nothing product-facing left behind.
+- **Found, unrelated to this feature — pre-existing gap:** `supabase start` cannot bootstrap a
+  fresh local DB. No migration in `supabase/migrations/` (135 files) ever creates `public.pages` (or
+  presumably other core tables) — the migration history is incremental on top of a base schema that
+  was established directly on the hosted project and never captured as a migration. Confirms the
+  local Docker DB stack has probably never worked from empty for this repo; consistent with the web
+  app's dev config pointing straight at the hosted project. Not fixed (would mean `supabase db pull`
+  to synthesize a baseline migration, or hand-authoring one — out of scope here, flagged for a
+  separate task if local DB parity ever becomes load-bearing).
+- **PM impact:** none beyond closing the prior entry's "not yet run through Docker" gap. The
+  `supabase start` bootstrap gap is a new, separate, unscoped finding — not added to ROADMAP since
+  it's not blocking anything today (hosted-project dev flow works).
+
 ## 2026-07-10 — premise-craft skill + objective-fallback skill matching `[ship]`
 - **What:** todo.md #1 — the agent's premise-options shortcut (propose_options kind='premise') authored premises with only the objective recipe's schema, no craft. Added a `premise-craft` playbook to agent-skills.ts distilling the author-supplied KB (Swain's five story elements: character/situation/objective/opponent/disaster; kernel-vs-premise test; formula sentence) aligned with dna-expand's own premise prompt (priced dramatic question, escalating internal movements, ending_feel) so both paths produce the same species of premise. Also: skill matching now falls back to the OBJECTIVE text when the ask matches nothing (generic "continue" on the premise rung gets the craft; a concrete ask never drags in the rung's skills), and read_skill's description derives its name list from the registry. Deployed.
 - **Files/commits:** supabase/functions/_shared/agent-skills.ts, supabase/functions/book-agent/index.ts.
