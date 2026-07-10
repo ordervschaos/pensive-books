@@ -17,6 +17,31 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-10 — wip `[wip]` — book-agent can now reach claude-local through a real local run, restart needed to finish testing
+- **What:** User pointed at a live AiCalls row (book 1237, deployed, real deepseek-v4-pro traffic) and
+  asked for agent calls to route through claude-local. Confirmed book-agent always hits the DEPLOYED
+  function (hardcoded hosted SUPABASE_URL in client.ts) and is explicitly NOT covered by the
+  eval-bridge mirror — so the earlier CLAUDE_LOCAL_URL auto-default was inert for real usage. Fix
+  needed the local-Supabase infra from the prior entries plus one more piece: pointing a LOCALLY-served
+  book-agent at the HOSTED database/auth (not the empty local one), so it operates on real book data
+  while only its LLM calls move to claude-local. Hit a platform block along the way — Supabase reserves
+  the `SUPABASE_` env prefix, `--env-file` silently drops any attempt to set `SUPABASE_URL`/
+  `SERVICE_ROLE_KEY` — worked around with non-reserved `LOCAL_DEV_HOSTED_SUPABASE_*` names that
+  `_shared/task.ts`'s `serviceClient()`/new `userClient()` prefer when present (absent everywhere
+  else, so no-op by default). `book-agent/index.ts` now uses the shared `userClient()` instead of
+  inlining its own. Client side: `agentThread.ts`'s `invoke()` takes a new
+  `VITE_LOCAL_BOOK_AGENT_URL` escape hatch — raw fetch to the local function with the real session
+  token, bypassing `supabase.functions.invoke` (always resolves to deployed). Undefined by default.
+- **Verified so far:** a throwaway local function confirmed `serviceClient()` reaches real hosted book
+  1237 ("MF4") through the override, not the empty local DB. All edge fns + `apps/web` typecheck
+  clean, 24 deno tests pass. NOT yet verified: a real book-agent turn through the actual browser UI —
+  needs a `vite` restart to pick up `VITE_LOCAL_BOOK_AGENT_URL` (set in `apps/web/.env.local`),
+  deliberately not done by me since the running dev server on :8080 might be the user's own session.
+- **Files/commits:** `_shared/task.ts`, `book-agent/index.ts`, `agentThread.ts` (`507449f`);
+  `supabase/functions/.env` + `apps/web/.env.local` (both gitignored, not committed).
+- **PM impact:** none yet — `[wip]` until the browser round-trip is confirmed. Local Supabase
+  infrastructure (prior entries) is what unblocked this.
+
 ## 2026-07-10 — craft-kb: one canonical craft copy for both write paths `[ship]`
 - **What:** Extracted the duplicated story craft into `_shared/craft-kb.ts` (pure string consts, dependency-free): PREMISE_CRAFT (shape+question rules), CAUSALITY_CRAFT (needs/establishes but-therefore law), POLARITY_CRAFT (oscillation), SCENE_DIRECTION_CRAFT (cut/distance/mode/time/tension grammar). dna-expand's premise/beatsheet/sketch prompts interpolate them; the agent's premise-craft/structure-craft/scene-plan-craft skill bodies embed the SAME consts (verified byte-identical inclusion). Engine wording canonical. Bonus drift fix caught by the merge: engine's premise pass now allows ending_feel 'ambivalent' (schema always did; prompt+validator didn't). Confirmed client dnaExpand.ts holds no prompts (engine prompts live only in the edge fn), so this really is ONE copy. Both fns deployed.
 - **Files/commits:** supabase/functions/_shared/craft-kb.ts (new), _shared/agent-skills.ts, dna-expand/index.ts.
