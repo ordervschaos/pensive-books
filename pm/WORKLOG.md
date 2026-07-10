@@ -17,6 +17,16 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-10 — book-agent skills layer: core prompt slimmed, craft moves to playbooks `[ship]`
+- **What:** Built the skills design ratified today (doc_1783663022711.md): new `_shared/agent-skills.ts` registry (prose-patch, render-brief, editorial-read, rebuild-level, options-craft) with three delivery channels — colocation dedupe (mechanics stay only in tool descriptions), deterministic trigger-matched `<skill_briefs>` injection in the request-time tail, and a `read_skill` tool that rides parallel reads. SYSTEM_THREAD items 3–5 + Working efficiently collapsed to routing + invariants: 9,259 → ~6,300 chars (~32% cut); the 5.2k chars of craft now appear only on matching turns. Trigger matrix verified (incl. rename→prose-patch); deployed.
+- **Files/commits:** supabase/functions/_shared/agent-skills.ts (new), supabase/functions/book-agent/index.ts.
+- **PM impact:** STATE row "Agent instruction-following" updated (skills layer appended).
+
+## 2026-07-10 — Design: book-agent skills (situational instructions out of core prompt) `[wip]`
+- **What:** Measured SYSTEM_THREAD bloat (item 4 PROSE = 32% of the prompt; replace_text craft duplicated in propose_node_ops's description) and designed a Claude-Code-style skills layer: (1) colocation dedupe (mechanics live only in tool descriptions), (2) `_shared/agent-skills.ts` registry with deterministic per-turn injection (same pattern as `<mentioned>` hydration), (3) `read_skill` fallback tool riding parallel reads. Core keeps invariants + one-line routing; technique moves out. Awaiting the author's pick before building.
+- **Files/commits:** doc_1783663022711.md (design only; no code changes).
+- **PM impact:** none yet — design awaiting ratification.
+
 ## 2026-07-10 — claude-local bridge: implemented + verified against a real `claude -p` call `[ship]`
 - **What:** Built the design from the entry below. A `claude-local` sentinel model id (new
   `ModelTier` in `model-config.ts`) is checked in `callLLM` BEFORE `resolveRoute` — it's a model

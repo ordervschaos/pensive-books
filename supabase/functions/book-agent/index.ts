@@ -29,6 +29,9 @@ import { currentObjective, nextDraftTarget } from "../_shared/dna-journey.ts";
 // The content schema the agent must conform to — GENERATED from the web app's NODE_SCHEMA (single source of
 // truth), kept in sync by apps/web/.../dnaSchema.artifact.test.ts. Never hand-edit; edit NODE_SCHEMA + regen.
 import dnaSchema from "../_shared/dna-schema.json" with { type: "json" };
+// The agent's specialized playbooks (progressive disclosure, doc_1783663022711.md): a one-line index
+// rides in the system prompt, trigger-matched bodies inject per turn, read_skill covers missed triggers.
+import { AGENT_SKILLS, matchSkills, SKILLS_INDEX } from "../_shared/agent-skills.ts";
 import { serviceClient } from "../_shared/task.ts";
 import { reinvoke, isChainCall } from "../_shared/self-chain.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
@@ -930,6 +933,17 @@ async function execTool(
       },
     };
   }
+  if (t.name === "read_skill") {
+    const name = String((t.input as { name?: string })?.name ?? "").trim();
+    const skill = AGENT_SKILLS.find((s) => s.name === name);
+    if (!skill) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: `No skill named "${name}". Available: ${AGENT_SKILLS.map((s) => s.name).join(", ")}.`, is_error: true } };
+    }
+    return {
+      step: { t: "read", label: `Loaded the ${name} playbook.` },
+      result: { type: "tool_result", tool_use_id: t.id, content: `<skill name="${skill.name}">\n${skill.body}\n</skill>` },
+    };
+  }
   if (t.name === "get_schema") {
     const kinds = (Array.isArray((t.input as { kinds?: unknown })?.kinds) ? (t.input as { kinds: unknown[] }).kinds : [])
       .filter((k): k is string => typeof k === "string");
@@ -1221,6 +1235,15 @@ const SHARED_TOOLS = [
       required: ["report"],
     },
   },
+  {
+    name: "read_skill",
+    description: "Load one of the specialized playbooks listed in the system prompt's Skills index (prose-patch, render-brief, editorial-read, rebuild-level, options-craft) — the full technique for that job. Call it when your turn involves that job and its body is NOT already injected in the latest message's <skill_briefs>. It's a read: batch it in the SAME turn as your read_node/search_nodes calls.",
+    input_schema: {
+      type: "object",
+      properties: { name: { type: "string", description: "The skill's name from the Skills index." } },
+      required: ["name"],
+    },
+  },
 ];
 
 // ── Thread mode = the DNA omni-rail (docs/agent-rail.md) ──────────────────────
@@ -1455,14 +1478,18 @@ Each turn, the author's LATEST message — restated in the \`<task>\` block at t
 
 1. DISCUSS — answer, summarize, pressure-test. Reply in plain markdown prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id]. When a node has PENDING OPTIONS and the author asks which is strongest, just RECOMMEND one in prose (name its option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.
 2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. NEVER touch a LOCKED node. Don't propose unless asked — talk first.
-3. OFFER OPTIONS — when the author asks for alternatives/options, or to break a node out of its one obvious version, call propose_options with the node's [id] and 2–4 COMPLETE content objects, meaningfully different FROM EACH OTHER but each one HONORING the node's ancestors as fixed: a child elaborates the logline/premise above, it never rewrites it. Premise options keep the logline's protagonist/inciting/goal/obstacle/stakes fixed and vary the priced dramatic question plus internal shape movements; every question needs a cost and every shape needs an escalating want-vs-need choice. Never reshape an ancestor into a different story, never near-duplicates. The author picks one in the tree. Use this only for choose-among-N; a single revision is propose_node_ops.
-4. PROSE — BEFORE rendering a scene that has no sketch yet, or whose sketch is stale, call propose_expansion(nodeId = the scene, target = 'sketch') first — it's a cheap plan-level pass (what happens + how it's shown) that steers the render instead of hoping the expensive prose call gets it right; skip it only if the scene already carries a fresh one. To WRITE or REWRITE a scene's full prose, call propose_prose_render with the scene [id](s): you do NOT generate prose yourself (it's a long, browser-streamed render the author runs); you stage a request the author applies, and it streams in their browser. For SMALL wording fixes to EXISTING prose (an echoed phrase, an overused dash, one sentence), use propose_node_ops with replace_text ops — {op:'replace_text', id, find, replace}, first occurrence swapped; a search_nodes snippet usually gives you the exact find string WITHOUT reading the whole scene. Patch whole clauses/sentences, not bare phrases, so the result reads grammatically and keeps the paragraph's rhythm — and read the scene first if you haven't seen the sentence around the target. replace_text ops are tiny, so batch every fix you've ALREADY read into ONE proposal — but don't go read every implicated scene first to build a complete inventory before proposing anything: for a lint that hits many scattered scenes (echoed phrases across a dozen+ scenes), read a handful, propose fixes for those (aim for ~6-8 ops), then continue with the next handful next turn. Gathering everything up front outgrows the context window and causes a read/re-read loop that never converges. NEVER hand-write or replace a scene's FULL prose via edit. If a render keeps returning unchanged or stale text, that is a render-pipeline problem to re-request (with a sharper brief) or flag to the author — never bypass it by writing the scene yourself. Call check_against_contract with a scene's [id] to judge its EXISTING prose against the brief mandate (genre, heat, voice, success criteria); relay the per-axis verdict AND — always — your OWN concrete editorial read, in prose: what lands and what doesn't, in specifics (cadence, the voice/idiolect, planted tics, named lines). The verdict is a checklist; your read is the value you add — so never jump straight from a tool result to the next action without giving the author that read first. A common request — "write the first scene and see if it meets the brief" — is propose_prose_render (the author applies it; prose streams in) then check_against_contract once the scene has prose.
-   - REBUILDS: to replace a whole level of the SPINE you author yourself — "rebuild the acts" — use ONE replace_children op (parentId = the level's parent, e.g. the pillar for acts; childKind = act). replace_children DELETES the existing children first, so the rebuild replaces rather than duplicates. Reserve the add op for genuinely APPENDING a single node alongside what's there.
-5. PREMISE, BEAT SHEET, SCENES & SKETCH — do NOT author these by hand. For the PREMISE: call propose_options with kind='premise' and parentId=<seed-node-id> (no nodeId) to mint the premise node and stage 2–4 candidates directly in the tree — the author picks one, skipping a separate apply step. For the BEAT SHEET: call propose_expansion(nodeId = the PILLAR, target = 'beatsheet') once acts exist. For SCENES: call propose_expansion(nodeId = a BEAT, target = 'scenes'). For a SCENE SKETCH before prose: call propose_expansion(nodeId = a SCENE, target = 'sketch'). The engine also compiles the brief's CONTRACT with propose_expansion(nodeId = the PILLAR, target = 'contract'). Any of these four passes can carry the author's own steering (an emphasis, a constraint, something to avoid) in propose_expansion's brief param — pass it whenever they gave you more than "generate it", the same way propose_prose_render does for prose. You still author the logline, pillar, cast, and acts yourself (propose_node_ops / propose_options). Prose is propose_prose_render (item 4).
+3. OFFER OPTIONS — when the author asks for alternatives, call propose_options with the node's [id] and 2–4 COMPLETE content objects (skill: options-craft). Choose-among-N only; a single revision is propose_node_ops.
+4. PROSE — you never generate prose yourself. A scene's FULL prose (write or rewrite) = propose_prose_render, a browser-streamed render the author applies; sketch the scene first (propose_expansion, target 'sketch') when it has no fresh sketch, and curate the render brief from real reads (skill: render-brief). SMALL wording fixes to existing prose = propose_node_ops with replace_text ops (skill: prose-patch). Judging existing prose = check_against_contract plus your OWN concrete editorial read (skill: editorial-read). Rebuilding a whole spine level = ONE replace_children op, never a pile of adds (skill: rebuild-level). INVARIANTS: never hand-write or replace a scene's FULL prose via edit — a render that keeps returning stale text is a pipeline problem to re-request or flag, never bypass it by writing the scene yourself.
+5. ENGINE PASSES — never author these by hand: PREMISE = propose_options with kind='premise' + parentId=<seed id> (mints the node, stages 2–4 candidates); BEAT SHEET = propose_expansion(pillar, 'beatsheet') once acts exist; SCENES = propose_expansion(beat, 'scenes'); SKETCH = propose_expansion(scene, 'sketch'); CONTRACT = propose_expansion(pillar, 'contract'). Pass the author's steering in the \`brief\` param whenever they gave you more than "generate it". You still author the logline, pillar, cast, and acts yourself.
 
 ## Node kinds
 
 seed, premise, pillar; foundations — character, relationship, world_fact, location, thread, game, tentpole, meter, voice_profile; structure — act, beat, scene. Before you WRITE a node's content (add / edit / replace_children), get the kind's EXACT field names with get_schema (read_node also returns them) — wrong keys silently orphan data.
+
+## Skills
+
+Specialized playbooks exist for the jobs below. When the ask matches one, its body is usually pre-injected in the latest message's \`<skill_briefs>\` block — follow it. If your turn involves one of these jobs and its body is NOT injected, call read_skill with its name (it's a read — batch it with your other reads in the same turn):
+${SKILLS_INDEX}
 
 ## Guided flow
 
@@ -1470,7 +1497,7 @@ When a \`<current_objective>\` block is given, that's the one step to lead the a
 
 ## Working efficiently
 
-Your read tools run in PARALLEL: when you need several nodes, issue ALL the read_node / search_nodes / get_schema calls in the SAME turn — never read one node, wait, then read the next, unless a read genuinely depends on another read's result. Likewise, batch INDEPENDENT edits — different nodes, none needing another applied first (e.g. fixing several flagged phrases across different scenes) — into ONE propose_node_ops call: its \`ops\` is an array. Split work across turns only when a later step depends on seeing an earlier one's result. Cap a single proposal at roughly 6-8 ops. For a lint pass with many scattered hits (echoed phrases, em-dashes, etc. across a dozen+ scenes), don't read every implicated scene first to build a complete inventory before proposing anything — read and fix a handful, propose that batch, then continue with the next handful next turn. Trying to gather everything up front outgrows the context window (older reads get pruned once the transcript compacts) and causes a read/re-read loop that never converges.
+Your read tools run in PARALLEL: issue ALL the read_node / search_nodes / get_schema / read_skill calls a turn needs in the SAME turn — never serially, unless a read genuinely depends on another read's result. Batch INDEPENDENT edits into ONE propose_node_ops call (\`ops\` is an array; cap ~6-8 ops). For many scattered fixes, work in handfuls per turn — read a few, propose their fixes, continue next turn — never sweep-read everything first to build a complete inventory (it outgrows the context window and never converges).
 
 ## Style
 
@@ -1819,6 +1846,9 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}${num} “${nodeHandle(n.content)}”${proseNote}:\n${JSON.stringify(content)}`;
   }).join("\n\n");
 
+  // Skill briefs (the injection channel of agent-skills.ts): playbooks whose triggers match the ask.
+  const skillBriefs = matchSkills(authorAsk).map((s) => `### ${s.name}\n${s.body}`).join("\n\n");
+
   // LIVE re-derivation (docs/agent-improvement-plan.md P1.2): recompute the guided-flow objective and the
   // structural backstop from the CURRENT tree, so an auto run's resume — a pure status flip that never
   // refreshes the message-time snapshot — no longer keeps pointing at "TARGET NODE: scene 14" after scene 14
@@ -1871,6 +1901,10 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     // Intent hydration (above): the message's named targets, pre-read. Sits beside <focus> — same shape,
     // derived from the ask instead of a manual attach.
     mentionedText ? `<mentioned note="nodes the author's latest message references — full plan content inlined (prose omitted; read_node for prose) so you can act on the ask directly">\n${mentionedText}\n</mentioned>` : "",
+    // Skill briefs (agent-skills.ts): the playbooks whose triggers match the ask, pre-injected so the
+    // matched job arrives with its full technique — no read_skill round-trip. Deterministic (regex on
+    // the ask), so a retried link re-derives the identical prompt; read_skill covers missed triggers.
+    skillBriefs ? `<skill_briefs note="playbooks matched to the author's ask — follow these when doing that job">\n${skillBriefs}\n</skill_briefs>` : "",
     `<dna_tree${kinds ? ` scope="${[...kinds].join(", ")}"` : ""}>\nEdit/add/delete nodes by their real ids below. LOCKED nodes are immutable.${kinds ? " Out-of-scope nodes show as <hidden>." : ""} Beat and scene lines show their reading-order number (e.g. \`beat 3/41\`, \`scene 14/80\`); when you refer to a beat or scene by number, use THAT number — never guess it or reuse the objective's target number for a different node.\n\n${tree || "(no nodes yet)"}\n</dna_tree>`,
   ].filter(Boolean);
 
