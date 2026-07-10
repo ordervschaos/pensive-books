@@ -28,7 +28,7 @@
 
 ## 2026-07-10 — book-agent follows the ask: task anchor + intent hydration `[ship]`
 - **What:** Fixed the two instruction-following failures ("render a scene → fixes lints instead"; "replies with the ack of the next pending task") by applying context-engineering gold standard: explicit instruction hierarchy (`## Task discipline`), de-imperativized ambient blocks (lint imperative now auto-mode-only; objective note subordinated), a `<task>` anchor re-stating the ask AFTER `<book_state>` (recency fix), deterministic `<mentioned>` intent hydration (scene/beat numbers, node ids, entity names → full plan inlined, prose omitted), and the eager ack only sees the objective on generic messages. Deployed.
-- **Files/commits:** supabase/functions/book-agent/index.ts (4652761); doc_1783661932622.md.
+- **Files/commits:** supabase/functions/book-agent/index.ts (67dc7cf); doc_1783661932622.md.
 - **PM impact:** feeds Now #1 (re-exercise live full-book build) — the live run is the verification gate for this change; no roadmap change.
 
 ## 2026-07-10 — Shipped the 1-op rename fix for book-agent; deployed `[ship]`
