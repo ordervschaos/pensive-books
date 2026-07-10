@@ -17,6 +17,9 @@
 // Triggers are matched against the author's standing ask (latestAuthorAsk) — deterministic, so a
 // retried chain link re-derives the identical prompt (the resume invariant).
 
+// The shared craft cores (ONE copy, also interpolated into dna-expand's generation prompts).
+import { CAUSALITY_CRAFT, POLARITY_CRAFT, PREMISE_CRAFT, SCENE_DIRECTION_CRAFT } from "./craft-kb.ts";
+
 export interface AgentSkill {
   name: string;
   description: string; // one line for the system prompt's <skills> index
@@ -74,10 +77,11 @@ FIRST extract the FIVE STORY ELEMENTS (Swain) from the brief + accepted logline:
 - DISASTER — the hardest choice at the climax, usually forced by the opponent; the stakes live here.
 Sanity test: "When [CHARACTER], [SITUATION], all she wants is [OBJECTIVE]. But [OPPONENT] [forces DISASTER]." If a slot can't be filled from the brief/logline, you have a kernel, not a premise — tell the author which element is missing instead of papering over it.
 
-THEN map the elements into the premise content fields:
-- dramatic_question: ONE sentence carrying a PRICE — "Can she X without losing Y?", never a bare goal ("Will she X?"). Y comes from the DISASTER; use the brief's specific nouns, not abstractions; a reader could plausibly root for both answers; the final movement answers it definitively.
-- shape.movements (3–5): the protagonist's INTERNAL trajectory, not plot events. Each movement changes her relationship to the want and escalates the contradiction of the previous one (if two movements could swap order, merge them). Movement 1 states the want in concrete form; the last forces the want-vs-need choice, genuinely costly either way. The brief's most distinctive element must appear explicitly in at least one movement.
-- shape.name: 2–4 words naming the emotional trajectory (not the plot). shape.ending_feel: up / down / bittersweet / ambivalent — chosen deliberately, consistent with the brief's genre and tone.
+THEN build each option from the canonical craft (the SAME rules the generation engine runs on):
+
+${PREMISE_CRAFT}
+
+The question's price (the "without losing Y") comes from the DISASTER element you extracted.
 
 Options must differ on the PRICE and the internal arc — never on the logline's fixed protagonist/inciting/goal/obstacle/stakes (see options-craft). Conflict is the pulse: an option without a formidable opponent pressure in its question is a fat bore — cut or sharpen it.
 
@@ -132,9 +136,9 @@ COUPLING: dramatic_question and shape are ONE SYSTEM — the final movement ANSW
     description: "editing acts and beats — but/therefore causality, needs/establishes state keys, polarity",
     triggers: [/\b(acts?|beats?|structure|midpoint|turning[- ]?points?|climax|pacing|causalit|beat[- ]?sheet)\b/i],
     body: `act fields: title, goal*, turning_point, target_pct(0..1), value:{name, from, to, polarity}. beat fields: summary*, connector(therefore|but), polarity(up|down), threads[{ref, role}], grounds_in[], needs[], establishes[], realizes[], plays[], resolves[], readings[].
-- The spine's law is BUT/THEREFORE, never "and then": each beat's connector says WHY it follows — 'therefore' must be EARNED upstream (the beat's needs[] lists state keys some EARLIER beat establishes[]), 'but' reverses polarity or blocks an established state. Editing a beat's summary without updating its causal edges (needs/establishes) silently breaks the chain downstream — trace what consumed its establishes before deleting one (search_nodes the state key).
-- polarity should ALTERNATE more than it streaks — three same-polarity beats in a row is a sagging run (the lints flag it); fix by sharpening a turn, not by relabeling.
-- State keys are short snake_case handles ("ledger_settled", "rival_humiliated") — reuse existing keys exactly (a typo mints a phantom obligation); never "need" an ambient world-given, only something a beat produced.
+- The spine's causal law (canonical — the same rule the beat-sheet engine generates under): ${CAUSALITY_CRAFT}
+- When EDITING: a beat's summary and its causal edges cohere — changing what happens without updating needs/establishes silently breaks the chain downstream. Trace what consumed an establishes key before deleting it (search_nodes the state key), and reuse existing keys exactly (a typo mints a phantom obligation).
+- ${POLARITY_CRAFT} A sagging run (3+ same-polarity beats) is fixed by sharpening a turn, not relabeling.
 - Acts you author by hand: goal* is the act's dramatic engine, turning_point the door that locks behind the protagonist, value the act-level polarity swing, target_pct its share of the book.
 - Whole-level rebuilds are replace_children, and a full beat sheet is the ENGINE's job (propose_expansion 'beatsheet') — see rebuild-level. Hand-edit beats to FIX causality; don't hand-author the whole sheet.`,
   },
@@ -145,7 +149,9 @@ COUPLING: dramatic_question and shape are ONE SYSTEM — the final movement ANSW
     body: `scene PLAN fields: pov→character, loc→location, goal*, conflict, outcome, value_shift:{value, from, to, polarity}, register, metaphor_domain, readings[], sketch:{opening, moves[{what, thread?, sense?}], exit, direction:{cut, distance, mode, time, tension}}.
 - A scene earns its place by TURNING a value: value_shift.from ≠ .to, and the polarity is the beat's turn made local. goal, conflict, outcome and value_shift COHERE — the outcome causes the shift; edit them together, never one in isolation. A scene whose outcome merely delivers its goal (no cost, no reversal, no new pressure) is summary wearing a scene's clothes — flag it or sharpen the conflict.
 - goal is the POV character's concrete WANT inside the scene (enterable, blockable); conflict is who/what blocks it; outcome is what ACTUALLY happens — ideally "yes, but" or "no, and".
-- The sketch is the treatment the prose render steers by: opening (where we cut in — late), moves (each a visible unit of cause→effect; tag the thread it advances and one sense detail), exit (cut out early, on the turn), direction (distance/mode/time/tension: the camera). A stale or missing sketch before a render = propose_expansion(scene, 'sketch') first — see render-brief.
+- The sketch is the treatment the prose render steers by: opening (how we enter — differently from how the previous page ended), moves (each a visible unit of cause→effect; tag the thread it advances and one sense detail), exit, and direction — the camera, in the canonical grammar:
+${SCENE_DIRECTION_CRAFT}
+A stale or missing sketch before a render = propose_expansion(scene, 'sketch') first — see render-brief. A payoff/tentpole/value-turn moment must never sit in 'summary' mode or 'far' distance — a promise merely reported is a promise the reader won't feel delivered.
 - pov/loc are ids — keep them consistent with the cast/locations (a POV change is a structural choice, not a wording edit); readings inherit from the beat, refine only deliberately.
 - This skill is the scene's PLAN; the prose itself is render-brief (full render) or prose-patch (small fixes).`,
   },

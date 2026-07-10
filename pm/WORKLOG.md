@@ -17,6 +17,21 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-10 — craft-kb: one canonical craft copy for both write paths `[ship]`
+- **What:** Extracted the duplicated story craft into `_shared/craft-kb.ts` (pure string consts, dependency-free): PREMISE_CRAFT (shape+question rules), CAUSALITY_CRAFT (needs/establishes but-therefore law), POLARITY_CRAFT (oscillation), SCENE_DIRECTION_CRAFT (cut/distance/mode/time/tension grammar). dna-expand's premise/beatsheet/sketch prompts interpolate them; the agent's premise-craft/structure-craft/scene-plan-craft skill bodies embed the SAME consts (verified byte-identical inclusion). Engine wording canonical. Bonus drift fix caught by the merge: engine's premise pass now allows ending_feel 'ambivalent' (schema always did; prompt+validator didn't). Confirmed client dnaExpand.ts holds no prompts (engine prompts live only in the edge fn), so this really is ONE copy. Both fns deployed.
+- **Files/commits:** supabase/functions/_shared/craft-kb.ts (new), _shared/agent-skills.ts, dna-expand/index.ts.
+- **PM impact:** appended to STATE row; closes the drift risk flagged in the 2026-07-10 skills entry.
+
+## 2026-07-10 — fix "clear all" deleting the wrong node `[chore]`
+- **What:** the "clear all" discard level (added earlier today, still uncommitted) deleted `pillarOf(nodes)` — but per `PARENT_KIND` the real root is `seed` (parent_id null) → `premise` → `pillar` → everything else. Deleting pillar left seed/premise behind, so on an early-stage book (no story content yet) the button visibly did nothing. Fixed to delete `nodes.find(n => n.parent_id === null)` instead — the true, guaranteed-unique root.
+- **Files/commits:** `apps/web/src/features/dna/components/tree/modals.tsx` (uncommitted).
+- **PM impact:** none — bugfix to the same unshipped change as the entry below.
+
+## 2026-07-10 — "clear all" option in DNA tree studio `[chore]`
+- **What:** added a "clear all nodes" entry to the tree's "⋯ More" overflow menu (next to History/JSON/Fork), so an author can wipe a book's whole DNA tree and start fresh. Extended the existing `DiscardStoryModal`'s level union with `"everything"` instead of a new component; deletes the single root `pillar` node (cascade takes the rest) after snapshotting a restore checkpoint to History.
+- **Files/commits:** `apps/web/src/features/dna/components/tree/modals.tsx`, `apps/web/src/features/dna/pages/DnaTreePage.tsx` (uncommitted).
+- **PM impact:** none — small additive UI affordance, no STATE/ROADMAP change.
+
 ## 2026-07-10 — claude-local admin dropdown; agent auto-defaults to claude-local locally; local Supabase fixed `[ship]`
 - **What:** Three related pieces, in order. (1) Added `"claude-local"` to `AdminSettings.tsx`'s
   `ModelTier` dropdown (Dev-only badge) — closing the earlier gap where the backend tier existed but

@@ -12,6 +12,9 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { getRoleModels, getActiveProvider, DIGEST_MODEL } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
+// Shared craft KB — the ONE copy of the distilled story craft both write paths use (the agent's
+// skill bodies embed the same consts), so engine and agent can't drift apart.
+import { CAUSALITY_CRAFT, POLARITY_CRAFT, PREMISE_CRAFT, SCENE_DIRECTION_CRAFT } from "../_shared/craft-kb.ts";
 // The shared engine's beat-native lints, run over the just-generated beat sheet so a silently-degraded sheet
 // gets one bounded repair turn instead of shipping the damage (docs/agent-improvement-plan.md P2.1).
 import { canonicalizeKey, entityRegistryBlock, ledgerAt, ledgerText, validate, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneLedger } from "../_shared/novel-dna.ts";
@@ -669,27 +672,13 @@ Honor the MANDATE (genre/tone) and any LOCKED ancestors. Do NOT invent a title. 
       const logline = String((node.content as { logline?: unknown })?.logline ?? "").trim();
       if (node.kind !== "seed") return json({ error: "'premise' expands from the seed/logline node" }, 400);
       if (!logline) return json({ error: "Generate or accept a logline before deriving the premise." }, 400);
+      // Shape + question rules come from the shared craft KB (craft-kb.ts) — the SAME copy the
+      // agent's premise-craft skill embeds, so the two write paths can't drift apart.
       const system = `You are a story architect. Given a BRIEF (the constant origin) and a LOGLINE (protagonist · inciting incident · goal · obstacle · stakes), derive a PREMISE consisting of a SHAPE and a DRAMATIC_QUESTION.
 
 Produce:
 
-SHAPE
-- name: a 2-4 word label for the emotional trajectory (not the plot)
-- movements: 3-5 beats tracing the protagonist's INTERNAL trajectory.
-  Rules:
-  * Each movement must change the protagonist's relationship to their want — never merely advance events.
-  * Each movement must escalate or complicate the contradiction set up by the previous one. If two movements could be swapped without loss, merge or rewrite them.
-  * Movement 1 establishes the want in concrete form.
-  * The final movement forces a choice between the stated want and an emerged need — the choice must be genuinely costly either way.
-  * The most original element of the brief must appear explicitly in at least one movement, not just be implied.
-- ending_feel: up / down / bittersweet — choose deliberately, and it must be consistent with the genre and tone in the brief.
-
-DRAMATIC_QUESTION
-One sentence, phrased so that:
-  * it is definitively answered by the final movement,
-  * it contains a price ("Can she X without losing Y?"), never just a goal ("Will she X?"),
-  * a reader could plausibly root for both answers,
-  * it uses the brief's specific nouns, not generic abstractions.
+${PREMISE_CRAFT}
 
 Constraints:
 - Stay inside the genre, tone, and heat level of the brief.
@@ -709,14 +698,14 @@ Score each criterion 0-5:
 Revise internally until the verdict would be ACCEPT (>=32/40, no criterion below 3). Do not output the scores.
 
 Output JSON ONLY, no prose, no fences:
-{ "children": [ { "dramatic_question": "<DRAMATIC_QUESTION sentence>", "shape": { "name": "<2-4 word emotional trajectory>", "movements": ["<movement 1>", "<movement 2>", "<movement 3>", "..."], "ending_feel": "up|down|bittersweet" } } ] }`;
+{ "children": [ { "dramatic_question": "<DRAMATIC_QUESTION sentence>", "shape": { "name": "<2-4 word emotional trajectory>", "movements": ["<movement 1>", "<movement 2>", "<movement 3>", "..."], "ending_feel": "up|down|bittersweet|ambivalent" } } ] }`;
       const data = await callLLM(apiKey, { model, max_tokens: 1800, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `BRIEF:\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}\n\nLOGLINE:\n${logline}\n\nDerive the premise. JSON only.` }] }, meta, { signal: req.signal });
       const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
       const first = Array.isArray(parsed.children) ? parsed.children[0] : parsed;
       const shape = first?.shape ?? {};
       const movements = (Array.isArray(shape.movements) ? shape.movements : []).map((m: unknown) => String(m ?? "").trim()).filter(Boolean).slice(0, 5);
-      const ending = shape.ending_feel === "up" || shape.ending_feel === "down" || shape.ending_feel === "bittersweet" ? shape.ending_feel : "bittersweet";
+      const ending = ["up", "down", "bittersweet", "ambivalent"].includes(shape.ending_feel) ? shape.ending_feel : "bittersweet";
       const dramaticQuestion = String(first?.dramatic_question ?? first?.DRAMATIC_QUESTION ?? "").trim();
       if (!dramaticQuestion || movements.length < 3) return json({ error: "Premise generation returned an incomplete premise — try again." }, 502);
       return json({ childKind: "premise", childLevel: 1, children: [{
@@ -738,11 +727,7 @@ Output JSON ONLY, no prose, no fences:
 Two parts:
 1. MOVES (3–7): what happens, in order — beats of ACTION, never dialogue lines or prose. Each move may optionally reference a thread id it works (from THREADS/ENTRY STATE above) and a sensory detail picked from the scene's location palette (SETTING above).
 2. DIRECTION — how this page is SHOWN:
-   - cut.in / cut.out: where the page enters/leaves the event (arrive late, leave early — never start "the moment before" or linger past the turn).
-   - distance: far | mid | close | deep (psychic distance — how close the narration sits to the POV mind).
-   - mode: dialogue | action | interior | description | summary (the dominant texture).
-   - time: real | compressed | stretched (scene-time vs story-time).
-   - tension: suspense | mystery | irony (what the reader knows vs the character).
+${SCENE_DIRECTION_CRAFT}
 
 Rules:
 - "opening" must differ from how the PREVIOUS page ended (different place/time/register — see PREVIOUS PAGE/STORY SO FAR above if present). Never resume literally where the last page left off.
@@ -848,9 +833,9 @@ CRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md
 - FIRST design the THREAD REGISTRY: 3–6 open loops (a promise set up early, paid off later) this book runs on — mysteries, foreshadowed reveals, setup→payoff arcs. Give each a short NAME, a "promise" (what's opened), and a "payoff" (how it closes). Then schedule them across the beats below. Emit them in a top-level "threads" array.${arcCast.length ? `
 - ALSO mint each of these characters' ARC thread (they carry a declared lie): ${arcCast.map((c) => cName(c)).join(", ")}. One per character — kind "arc", "character" = their name, promise = the LIE as it will be DRAMATIZED early (shown in action, not stated), payoff = the moment the TRUTH is accepted or fatally refused. Schedule each arc across the beats like any other thread (setup early, advance through the middle, pay off at that character's turn).` : ""}` : ""}
 - 2 to 4 beats per act; each beat links to the prior with "therefore" or "but" (escalating causality).
-- Set each beat's PLANNED polarity (up = ends better, down = ends worse). The act's value shift is the MACRO trend; you MUST still OSCILLATE within it — never more than ~3 beats of the same polarity in a row. Place deliberate relief/hope-spots inside down-acts and setbacks inside up-acts.
+- ${POLARITY_CRAFT}
 - Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats that develop it in between. Reference threads BY NAME.
-- CAUSE every turn: give each beat "needs" (state keys it DEPENDS ON, each one EARNED by an EARLIER beat — never an ambient world/premise given) and "establishes" (state keys it PRODUCES). Keys are short snake_case handles (e.g. "ledger_settled", "rival_humiliated", "peculium_revealed"). Every "therefore" beat MUST "need" at least one state an earlier beat "establishes" — that upstream dependency is what makes the turn CAUSED, not "and then". A "but" beat must either reverse the polarity or block/consume an established state.${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}${statePreconds.length ? `\n- ESTABLISH every STATE PRECONDITION: each game's win SPENDS resources/states (listed above). For each, an EARLIER beat must establish it (list its key in that beat's "establishes") BEFORE the beat that resolves the game — you cannot spend a resource the story never acquired (no "she had enough all along"). Make the establishing a real turn.` : ""}
+- ${CAUSALITY_CRAFT}${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}${statePreconds.length ? `\n- ESTABLISH every STATE PRECONDITION: each game's win SPENDS resources/states (listed above). For each, an EARLIER beat must establish it (list its key in that beat's "establishes") BEFORE the beat that resolves the game — you cannot spend a resource the story never acquired (no "she had enough all along"). Make the establishing a real turn.` : ""}
 Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": "...", "payoff": "...", "kind": "mystery"|"foreshadow"|"setup_payoff"|"arc"${arcCast.length ? `, "character": "<cast name — arc threads only>"` : ""} } ], ` : ""}"beats": [ { "act": <1..${acts.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}, "needs": [ "<state key earned upstream>" ], "establishes": [ "<state key this beat produces>" ] } ] }`;
       // Browser-streamed path: hand back the assembled request; the client streams it via /api/stream-prose,
       // then calls back with phase "finalize" (mirrors the prose `prepare` split, todo/dna-streaming-proxy.md).
