@@ -17,6 +17,33 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-10 — claude-local bridge: closes wip, verified working end-to-end on real book-agent traffic `[ship]`
+- **What:** Closes the `[wip]` entry below. User drove a real "suggest logline" turn on book 1237 and
+  it stalled ("thinking..." forever). Diagnosed via the local `functions serve` log: the isolate hung
+  3+ minutes then got force-killed. Root cause was actually TWO stacked bugs, found by reproducing
+  directly against the shim: (1) the shim's earlier cwd-isolation fix (tmpdir, no `--bare`) only
+  stopped PROJECT-level `.claude/settings.json` hooks — the user's GLOBAL `~/.claude/CLAUDE.md` (a
+  personal PM /wrap ritual) is loaded regardless of cwd and was contaminating every call: a fiction
+  logline request came back narrating the user's own coding session and uncommitted files. Fixed with
+  `--system-prompt`, which REPLACES Claude Code's default system prompt outright (verified: still
+  works on subscription auth, no `ANTHROPIC_API_KEY` needed) — not
+  `--exclude-dynamic-system-prompt-sections`, which only relocates those sections for cache reuse, the
+  model still sees them. (2) `CHAIN_SECRET` was unset locally, so `self-chain.ts`'s continuation POST
+  always 401'd silently — every local run died after one hop with nothing able to revive it (no local
+  watchdog). Set a local-only value (self-consistent; doesn't need to match the deployed secret).
+- **Verified live, real system, no mocks:** reset the orphaned run row, retried "suggest logline" on
+  book 1237 through the actual browser UI (chrome-devtools-mcp) — real book-agent → local edge runtime
+  → real hosted DB/auth → claude-local shim → real `claude -p` (23.4s) → correctly returned `tool_use`
+  (`propose_options`, not hand-written text — matching book-agent's own design, not a shortcut) → 3 real
+  on-brief logline options staged and visible in the tree → run settled `status=idle, turns=1,
+  error=null`. No leaked context, no stall, no manual intervention needed on the second attempt.
+- **Files/commits:** `scripts/claude-local-shim.mjs` (`5b6e387`); `supabase/functions/.env`
+  (`CHAIN_SECRET`, gitignored, not committed).
+- **PM impact:** the claude-local bridge (all three prior entries: shim, admin dropdown, local-Supabase
+  infra, hosted-data routing) is now a genuinely working, end-to-end-verified dev feature, not just
+  individually-tested pieces.
+
+
 ## 2026-07-10 — Agent-as-guide: journey-aware greeting + teach-as-you-go persona `[ship]`
 - **What:** The AgentRail's empty state is now a scripted, journey-aware guide greeting — orients the ladder (idea→foundations→structure→scenes→prose), teaches the current rung's concept (STEP_TEACH), and switches to ideation stance when the brief has no idea (needsIdea → "Find the story idea" nudge + IDEA_MESSAGE). The book-agent system prompt gained a "Teach as you go" section (define each craft term on first use, 1–2 sentences of what/why per rung, pitch idea directions when the seed is blank). Chose scripted-greet + click-to-accept over auto-firing an AI turn on page open (cost/latency/double-fire).
 - **Files/commits:** apps/web/src/features/dna/components/AgentRail.tsx, pages/DnaTreePage.tsx (brief prop), supabase/functions/book-agent/index.ts (deployed). Uncommitted on feat/ai-provider-switch. Design notes: doc_1783664950001.md.
