@@ -26,7 +26,7 @@
 //   CLAUDE_LOCAL_SHIM_FLAGS       default "--bare --dangerously-skip-permissions" (space-separated, like eval-bridge)
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -35,27 +35,27 @@ const MODEL = process.env.CLAUDE_LOCAL_SHIM_MODEL || null;
 const TIMEOUT_MS = Number(process.env.CLAUDE_LOCAL_SHIM_TIMEOUT_MS ?? 20 * 60 * 1000);
 const CLAUDE_FLAGS = (process.env.CLAUDE_LOCAL_SHIM_FLAGS || "--dangerously-skip-permissions").split(" ").filter(Boolean);
 
-// Spawn from a NEUTRAL directory, not this repo — `--tools ""` means the child never needs filesystem
-// access, so there's no reason to run it inside the project. This alone stops PROJECT-level
-// `.claude/settings.json` hooks (this repo's PM worklog Stop-hook) from firing, since those only
-// resolve from inside the project directory.
+// Spawn from a FRESH, EMPTY directory PER CALL (not a shared one reused across turns, and not this
+// repo) — `--tools ""` means the child never needs filesystem access, so there's no reason to run it
+// inside a real project, and every reason not to: a non-empty/reused cwd gives Claude Code something
+// to walk up from and pick up as ambient project context (nearby .git, package.json, stray files from a
+// prior call) it has no business seeing for a one-shot completion. mkdtempSync/rmSync per call in
+// runClaudeLocal() below; nothing here at module load time.
 //
-// It does NOT stop the GLOBAL `~/.claude/CLAUDE.md` / `~/.claude/settings.json` — those are user-level,
-// loaded regardless of cwd. Verified live 2026-07-10 (second incident): a book-agent "suggest logline"
-// call came back as Claude Code narrating MY OWN coding session — "the uncommitted changes... aren't
-// mine to catalogue; doing a /wrap on someone else's in-flight work would misattribute it" — because the
-// user's global CLAUDE.md (a PM /wrap ritual + auto-memory + "document your work" instructions) was
-// still part of the default system prompt Claude Code assembles, contaminating book-agent's persona.
-// `--bare` suppresses that too, but forces ANTHROPIC_API_KEY-only auth (no OAuth/keychain) — defeating
-// the whole point of this bridge (subscription billing, not per-token spend).
+// This does NOT stop the GLOBAL `~/.claude/CLAUDE.md` / `~/.claude/settings.json` — those are user-level,
+// loaded regardless of cwd, empty or not. Verified live 2026-07-10 (second incident): a book-agent
+// "suggest logline" call came back as Claude Code narrating MY OWN coding session — "the uncommitted
+// changes... aren't mine to catalogue; doing a /wrap on someone else's in-flight work would misattribute
+// it" — because the user's global CLAUDE.md (a PM /wrap ritual + auto-memory + "document your work"
+// instructions) was still part of the default system prompt Claude Code assembles, contaminating
+// book-agent's persona. `--bare` suppresses that too, but forces ANTHROPIC_API_KEY-only auth (no
+// OAuth/keychain) — defeating the whole point of this bridge (subscription billing, not per-token spend).
 //
 // Fix: `--system-prompt` REPLACES Claude Code's default system prompt outright, rather than appending
 // to it — verified live: with it, "shim works." came back clean, no leaked git-status/memory/PM content,
 // still on subscription auth (no ANTHROPIC_API_KEY in the shell). So the actual system text (book-agent's
 // persona + the tool envelope instructions) goes through `--system-prompt`, and only the conversation
 // transcript goes through `-p` — see buildSystemPrompt/buildUserPrompt below.
-const spawnCwd = join(tmpdir(), "claude-local-shim-cwd");
-mkdirSync(spawnCwd, { recursive: true });
 
 // `system` may be a plain string or an array of { type:'text', text } blocks (with cache_control) —
 // mirrors systemText() in _shared/llm.ts. Duplicated because this process can't import Deno TS.
@@ -187,6 +187,18 @@ function toAnthropicResponse(raw, requestedModel) {
 // then SIGKILL escalation on timeout. `--tools ""` is load-bearing — it forces a single completion
 // instead of a multi-minute repo-roaming agentic run.
 function runClaudeLocal(systemPrompt, userPrompt) {
+  // Fresh, empty cwd for THIS call only — mkdtemp guarantees a unique, just-created directory (no
+  // leftovers from a prior turn), and it's removed once this call settles either way. Never inside the
+  // repo, so `claude` walking up from cwd finds no .git/package.json/CLAUDE.md to treat as ambient
+  // project context — it should see only --system-prompt and -p, nothing it "discovered".
+  const spawnCwd = mkdtempSync(join(tmpdir(), "claude-local-shim-"));
+  const cleanup = () => {
+    try {
+      rmSync(spawnCwd, { recursive: true, force: true });
+    } catch (e) {
+      console.warn(`✗ failed to remove ${spawnCwd}:`, e.message);
+    }
+  };
   return new Promise((resolve, reject) => {
     const args = [
       "-p", userPrompt,
@@ -206,6 +218,7 @@ function runClaudeLocal(systemPrompt, userPrompt) {
           console.warn(`✗ claude -p exceeded ${TIMEOUT_MS / 1000}s — killing`);
           child.kill("SIGTERM");
           setTimeout(() => child.kill("SIGKILL"), 2000).unref?.();
+          cleanup();
           reject(new Error(`claude -p exceeded ${TIMEOUT_MS / 1000}s`));
         }, TIMEOUT_MS)
       : null;
@@ -217,12 +230,14 @@ function runClaudeLocal(systemPrompt, userPrompt) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      cleanup();
       reject(new Error(`failed to spawn claude: ${e.message}`));
     });
     child.on("close", (code) => {
       if (settled) return; // already timed out or errored
       settled = true;
       clearTimeout(timer);
+      cleanup();
       if (code !== 0) return reject(new Error(`claude exited ${code}: ${stderr.slice(-500)}`));
       resolve(stdout.trim());
     });
