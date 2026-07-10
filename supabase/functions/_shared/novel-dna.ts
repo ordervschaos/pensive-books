@@ -380,7 +380,7 @@ export function backlinkIndex(nodes: DnaNode[]): Map<string, DnaNode[]> {
 // Fields that are OUTPUTS of generation/the read, never plan INPUTS — stripped before any input-set hash so
 // writing them (e.g. a meter read onto a beat, a fact ledger onto a scene) never spuriously stales the nodes
 // that hash this content. Mirrors how the prose hash already excludes prose.
-const OUTPUT_FIELDS = ["prose", "observed_readings", "observed_establishes", "continuity_flags", "confusion_flags", "observed_value_carrier", "observed_fingerprint", "observed_shape_fit", "observed_shape_hash", "observed_craft", "observed_craft_hash"] as const;
+export const OUTPUT_FIELDS = ["prose", "observed_readings", "observed_establishes", "continuity_flags", "confusion_flags", "observed_value_carrier", "observed_fingerprint", "observed_shape_fit", "observed_shape_hash", "observed_craft", "observed_craft_hash"] as const;
 function planOf(content: NodeContent | null | undefined): NodeContent | null {
   if (!content) return null;
   const out: Record<string, unknown> = { ...(content as Record<string, unknown>) };
