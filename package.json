@@ -16,6 +16,7 @@
     "dev:web": "corepack pnpm --filter @pensive/web dev",
     "dev:marketing": "corepack pnpm --filter @pensive/marketing dev",
     "dev:bridge": "node scripts/eval-bridge.mjs",
+    "dev:claude-local-shim": "node scripts/claude-local-shim.mjs",
     "dev:all": "trap 'kill 0' EXIT; node scripts/eval-bridge.mjs & corepack pnpm --parallel --filter @pensive/web --filter @pensive/marketing dev",
     "build": "corepack pnpm -r --if-present build",
     "build:web": "corepack pnpm --filter @pensive/web build",

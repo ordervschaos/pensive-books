@@ -17,6 +17,42 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-10 — claude-local bridge: implemented + verified against a real `claude -p` call `[ship]`
+- **What:** Built the design from the entry below. A `claude-local` sentinel model id (new
+  `ModelTier` in `model-config.ts`) is checked in `callLLM` BEFORE `resolveRoute` — it's a model
+  choice (opt into the dev-only bridge), not a host preference among many, so it bypasses the
+  Provider capability matrix entirely rather than being folded into it. When active it forwards the
+  unchanged Anthropic-shaped request to `CLAUDE_LOCAL_URL` (fail-loud if unset) and expects the same
+  shape back. New file `scripts/claude-local-shim.mjs` (~230 lines): flattens system+messages into
+  one transcript, appends a tool-JSON-envelope instruction (`{"tool":...}` / `{"text":...}`,
+  malformed → falls back to plain text), spawns `claude -p ... --tools ""` per eval-bridge's proven
+  recipe, parses the reply back into Anthropic `tool_use`/`text` content blocks.
+- **Gotcha found + fixed:** the child inherits THIS repo's `.claude/settings.json` if spawned with
+  cwd inside it — the PM worklog Stop-hook fired on every one-shot completion and replaced the
+  actual reply with meta-commentary about uncommitted changes (reproduced live: got a `/wrap` nudge
+  instead of "shim works"). `--bare` suppresses hooks but also forces `ANTHROPIC_API_KEY`-only auth
+  (no OAuth/keychain), which defeats the bridge's whole point (subscription billing). Fix: spawn
+  from a neutral OS-tmpdir cwd instead — `--tools ""` means the child never needs repo filesystem
+  access anyway, so there's no reason to run it inside the project. User/plugin-level hooks still
+  apply regardless of cwd (observed one firing harmlessly; the model correctly ignored the injected
+  instructions as untrusted tool output) — a known, surfaced limitation, not a blocker.
+- **Verified:** real `claude -p` round trips through the running shim (curl) for all three shapes —
+  plain text, a fresh tool call, and a tool_result fed back into a follow-up turn — all correct
+  content/stop_reason, 3.6-4.9s each. Then re-verified through the actual modified `callLLM()` (not
+  just the shim's HTTP contract): success path returns the right text, and the unset-`CLAUDE_LOCAL_URL`
+  fail-loud guard throws as designed. `model-config.test.ts` gained a case pinning that
+  `ai_model_tier_agent=claude-local` routes only the agent role there (20 deno tests total, both
+  typechecks clean). `supabase/functions/.env` (gitignored) now carries `CLAUDE_LOCAL_URL` for
+  `supabase functions serve`; `pnpm dev:claude-local-shim` starts the shim.
+- **Not done:** an actual `supabase functions serve` run through Docker's `host.docker.internal`
+  (Docker wasn't running locally) and a live multi-turn book-agent session on the bridge — both are
+  the user's call given `claude -p` runs 2-21min/turn.
+- **Files:** `_shared/llm.ts`, `_shared/model-config.ts` (+`.test.ts`), `scripts/claude-local-shim.mjs`
+  (new), `package.json` (`dev:claude-local-shim`), `..._ai_calls_provider.sql` (comment only),
+  `supabase/functions/.env` (new, gitignored). Design: `doc_1783662297825.md` (entry below).
+- **PM impact:** none directly (feeds Now#1 only if the agent role gets flipped to this tier for a
+  cheap/fast local run — currently `ai_model_tier_agent` is unset, i.e. base tier).
+
 ## 2026-07-10 — `ai_provider` switch: host chosen independently of model `[ship]`
 - **What:** Promoted provider routing from an implicit naming convention (slash → OpenRouter,
   `deepseek*` → DeepSeek, env-gated MuleRouter takeover) to an explicit `ai_provider` admin setting

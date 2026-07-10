@@ -9,4 +9,4 @@
 alter table public.ai_calls add column if not exists provider text;
 
 comment on column public.ai_calls.provider is
-  'Host that served the call (anthropic | openrouter | deepseek | mulerouter), as resolved by resolveRoute from the model id and the ai_provider admin setting. Null for rows logged before 2026-07-10.';
+  'Host that served the call (anthropic | openrouter | deepseek | mulerouter | claude-local), as resolved by resolveRoute from the model id and the ai_provider admin setting. claude-local is a fixed dev-only destination (the claude -p shim), not part of that resolution. Null for rows logged before 2026-07-10.';

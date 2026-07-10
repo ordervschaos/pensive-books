@@ -19,6 +19,12 @@ import { getActiveProvider, type Provider, type ProviderPref } from "./model-con
 
 export type { Provider, ProviderPref };
 
+// The `claude-local` sentinel model id is a fourth dialect that bypasses resolveRoute entirely — it's a
+// deliberate model CHOICE (opt into the dev-only claude -p bridge), not a preference among hosts that can
+// all serve the same model, so it doesn't belong in the Provider/wireModelFor capability matrix. Widening
+// only the logged type keeps that matrix's Record<Provider, ...> tables untouched. See claude-local-shim.mjs.
+type LoggedProvider = Provider | "claude-local";
+
 const PROVIDER_URL: Record<Provider, string> = {
   anthropic: "https://api.anthropic.com/v1/messages",
   deepseek: "https://api.deepseek.com/v1/chat/completions",
@@ -137,15 +143,23 @@ export async function callLLM(
 ): Promise<any> {
   const started = Date.now();
   const model = body.model as string ?? "";
+  const isLocal = model === "claude-local";
+  // Fail loud before doing anything else — an unset env var is a config error, not a call error, so it
+  // shouldn't produce a logged 'running' row for a call that never happens.
+  if (isLocal && !Deno.env.get("CLAUDE_LOCAL_URL")) {
+    throw new Error("claude-local tier active but CLAUDE_LOCAL_URL unset");
+  }
   // Resolve the host BEFORE logging, so the 'running' row already says where the tokens are being spent —
-  // the whole point of the ai_provider switch is being able to see it took effect.
-  const route = resolveRoute(model, await activeProvider(), (env) => !!Deno.env.get(env));
-  const key = Deno.env.get(route.keyEnv) ?? apiKey;
-  const isAnthropic = route.provider === "anthropic";
+  // the whole point of the ai_provider switch is being able to see it took effect. claude-local skips this
+  // entirely: it's a fixed destination, not a preference resolved against admin_settings.
+  const route = isLocal ? null : resolveRoute(model, await activeProvider(), (env) => !!Deno.env.get(env));
+  const provider: LoggedProvider = isLocal ? "claude-local" : route!.provider;
+  const isAnthropic = provider === "anthropic";
+  const key = isLocal ? "" : (Deno.env.get(route!.keyEnv) ?? apiKey);
   // Insert a 'running' row BEFORE the call so it's visible in /admin while in flight. Awaited
   // (we need the id to close it out) but best-effort — a null id just means we fall back to a
   // single insert at the end, the pre-existing behavior.
-  const logId = await logStart(body, meta, route.provider);
+  const logId = await logStart(body, meta, provider);
   if (logId != null) meta.loggedCallId = logId; // hand the row id back so callers can link to it
 
   let raw = "";
@@ -153,23 +167,28 @@ export async function callLLM(
   let data: any = null;
   let errMsg: string | null = null;
   try {
-    // Anthropic speaks the request shape callers already build; every other host is OpenAI-compatible and
-    // needs the conversion plus its own wire model id (bare, for MuleRouter and DeepSeek).
-    const res = await fetch(route.url, {
+    // Anthropic and the local shim both speak the request shape callers already build unchanged; every
+    // other host is OpenAI-compatible and needs the conversion plus its own wire model id (bare, for
+    // MuleRouter and DeepSeek).
+    const passthrough = isAnthropic || isLocal;
+    const url = isLocal ? Deno.env.get("CLAUDE_LOCAL_URL")! : route!.url;
+    const res = await fetch(url, {
       method: "POST",
       signal: opts?.signal,
       headers: isAnthropic
         ? { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" }
+        : isLocal
+        ? { "content-type": "application/json" }
         : { "Authorization": `Bearer ${key}`, "content-type": "application/json" },
       body: JSON.stringify(
-        isAnthropic ? body : { ...anthropicToOpenAI(body, route.provider as OpenAITarget), model: route.model },
+        passthrough ? body : { ...anthropicToOpenAI(body, route!.provider as OpenAITarget), model: route!.model },
       ),
     });
     raw = await res.text();
-    if (!res.ok) errMsg = `${route.provider} API ${res.status}: ${raw.slice(0, 500)}`;
+    if (!res.ok) errMsg = `${provider} API ${res.status}: ${raw.slice(0, 500)}`;
     else {
       const parsed = JSON.parse(raw);
-      data = isAnthropic ? parsed : openAIToAnthropic(parsed);
+      data = passthrough ? parsed : openAIToAnthropic(parsed);
     }
   } catch (e) {
     errMsg = String((e as Error)?.message ?? e);
@@ -178,7 +197,7 @@ export async function callLLM(
 
   // Await the terminal log so the status flip lands before the worker exits.
   // logEnd has its own try/catch and never throws, so this is safe.
-  await logEnd(logId, body, data, meta, latencyMs, errMsg, route.provider);
+  await logEnd(logId, body, data, meta, latencyMs, errMsg, provider);
 
   if (errMsg) throw new Error(errMsg);
   return data;
@@ -356,7 +375,7 @@ function systemText(system: unknown): string | null {
 
 // Insert the 'running' row (prompt context known up front). Returns the row id, or null if the
 // insert failed — callers fall back to a single terminal insert so logging never blocks a call.
-async function logStart(body: Record<string, unknown>, meta: CallMeta, provider: Provider): Promise<number | null> {
+async function logStart(body: Record<string, unknown>, meta: CallMeta, provider: LoggedProvider): Promise<number | null> {
   try {
     const { data, error } = await serviceClient().from("ai_calls").insert({
       book_id: meta.bookId ?? null,
@@ -391,7 +410,7 @@ async function logEnd(
   meta: CallMeta,
   latencyMs: number,
   errMsg: string | null,
-  provider: Provider,
+  provider: LoggedProvider,
 ): Promise<void> {
   const terminal = {
     output: data ? textFromLLM(data) : null,

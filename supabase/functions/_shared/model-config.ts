@@ -6,7 +6,7 @@
 // All expensive edge functions call getActiveModels() instead of hardcoding MODEL.
 import { serviceClient } from "./task.ts";
 
-export type ModelTier = "opus" | "sonnet" | "deepseek" | "deepseek-v4" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax" | "gpt" | "hermes";
+export type ModelTier = "opus" | "sonnet" | "deepseek" | "deepseek-v4" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax" | "gpt" | "hermes" | "claude-local";
 
 // WHICH HOST runs the call, chosen independently of WHICH MODEL runs it (the tier above). Several of our
 // models are served by more than one provider — deepseek-v4-pro is reachable via OpenRouter, MuleRouter, and
@@ -76,6 +76,12 @@ const TIER_MODELS: Record<ModelTier, { high: string; low: string }> = {
   // for the explicit-mandate books. NOTE: this tier governs ALL high-tier generation (beats/outline JSON
   // too) — hermes is a creative generalist, so watch structural-JSON passes if you flip it on globally.
   hermes:      { high: "nousresearch/hermes-3-llama-3.1-405b", low: "qwen/qwen3-8b" },
+  // Sentinel, not a real model id: `high` routes through the "claude-local" branch in llm.ts, which
+  // forwards the unchanged Anthropic-shaped request to a `claude -p` shim on the developer's laptop
+  // (scripts/claude-local-shim.mjs) instead of any API host — subscription-billed, not per-token.
+  // Dev-only: `claude -p` runs 2-21min/call, far past the ~150s hosted-worker ceiling, and a deployed
+  // function can't reach a laptop at all. See doc_1783662297825.md.
+  "claude-local": { high: "claude-local", low: DEFAULT_LOW_MODEL },
 };
 
 // Models with NO OpenRouter endpoint that supports tool use. The agent loop (book-agent) ALWAYS sends

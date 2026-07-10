@@ -57,3 +57,13 @@ Deno.test("a per-role override wins over the base even when the base is set", ()
   assertEquals(r.agent, "claude-sonnet-4-6");
   assertEquals(r.structure, "claude-opus-4-8");
 });
+
+Deno.test("ai_model_tier_agent=claude-local sends only the agent role to the local claude -p bridge", () => {
+  // "claude-local" is a sentinel, not a real model id — llm.ts routes it to CLAUDE_LOCAL_URL. It isn't in
+  // TOOL_INCAPABLE_MODELS, so the agent-role tool fence (see the hermes tests above) must pass it through
+  // unchanged rather than falling back to the base tier's high.
+  const r = resolveRoleModels({ ai_model_tier: "sonnet", ai_model_tier_agent: "claude-local" });
+  assertEquals(r.agent, "claude-local");
+  assertEquals(r.structure, "claude-sonnet-4-6"); // unaffected — only the agent role rides the bridge
+  assertEquals(r.prose, "claude-sonnet-4-6");
+});
