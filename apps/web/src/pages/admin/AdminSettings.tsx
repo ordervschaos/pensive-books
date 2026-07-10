@@ -89,7 +89,40 @@ const TIERS: { value: ModelTier; label: string; description: string; badge: stri
   },
 ];
 
+// WHICH HOST runs a call, chosen independently of WHICH MODEL runs it. Mirrors _shared/llm.ts's resolveRoute:
+// a preference applies only where that provider can actually serve the selected model — otherwise the call
+// falls back to the model's native host. So this switch never strands a model; it just moves the spend.
+type ProviderPref = "auto" | "anthropic" | "openrouter" | "deepseek" | "mulerouter";
+const PROVIDERS: { value: ProviderPref; label: string; description: string }[] = [
+  {
+    value: "auto",
+    label: "Automatic (by model)",
+    description: "Infer the host from the model id: Claude → Anthropic, deepseek-* → DeepSeek, everything else → MuleRouter when its key is set, else OpenRouter. The historical behaviour.",
+  },
+  {
+    value: "deepseek",
+    label: "DeepSeek",
+    description: "DeepSeek's own API. Serves the DeepSeek V4 tier only (v4-pro / v4-flash) — other tiers fall back to their native host. The one cheap host that honours a reasoning bound, so agent-loop latency is controllable. Requires DEEPSEEK_API_KEY.",
+  },
+  {
+    value: "openrouter",
+    label: "OpenRouter",
+    description: "Serves every `vendor/model` tier (Qwen, GPT, Kimi, GLM, MiniMax, Hermes, DeepSeek V4). Claude tiers still go to Anthropic. Requires OPENROUTER_API_KEY.",
+  },
+  {
+    value: "mulerouter",
+    label: "MuleRouter",
+    description: "Cheaper mirror of a subset of the OpenRouter catalogue. Tiers it doesn't carry (Qwen 3 Max, Qwen 3 8B, Kimi, GLM, MiniMax) fall back to OpenRouter. Requires MULE_ROUTER_API_KEY.",
+  },
+  {
+    value: "anthropic",
+    label: "Anthropic",
+    description: "Only serves the Claude tiers (Opus, Sonnet) — every other tier falls back to its native host, since our non-Claude ids have no Anthropic form. Requires ANTHROPIC_API_KEY.",
+  },
+];
+
 const ADMIN_SETTINGS = "admin_settings";
+const PROVIDER_KEY = "ai_provider";
 
 // Capability matrix (mirrors _shared/model-config TOOL_INCAPABLE_MODELS). The agent role drives a native
 // tool-use loop, so a tier with no tool-use endpoint (hermes on OpenRouter) is INVALID for it and is
@@ -122,6 +155,8 @@ export default function AdminSettings() {
   const [saved, setSaved] = useState<ModelTier>("opus");
   const [roles, setRoles] = useState<RoleTiers>(EMPTY_ROLES);
   const [savedRoles, setSavedRoles] = useState<RoleTiers>(EMPTY_ROLES);
+  const [provider, setProvider] = useState<ProviderPref>("auto");
+  const [savedProvider, setSavedProvider] = useState<ProviderPref>("auto");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
@@ -130,12 +165,14 @@ export default function AdminSettings() {
     (supabase as any)
       .from(ADMIN_SETTINGS)
       .select("key, value")
-      .in("key", ["ai_model_tier", ...Object.values(ROLE_KEYS)])
+      .in("key", ["ai_model_tier", PROVIDER_KEY, ...Object.values(ROLE_KEYS)])
       .then(({ data, error }: { data: { key: string; value: string }[] | null; error: unknown }) => {
         if (!error && data) {
           const map = new Map(data.map((r) => [r.key, r.value]));
           const t = (map.get("ai_model_tier") as ModelTier) ?? "opus";
           setTier(t); setSaved(t);
+          const p = (map.get(PROVIDER_KEY) as ProviderPref) ?? "auto";
+          setProvider(p); setSavedProvider(p);
           const r: RoleTiers = {
             prose: (map.get(ROLE_KEYS.prose) as ModelTier | "") ?? "",
             structure: (map.get(ROLE_KEYS.structure) as ModelTier | "") ?? "",
@@ -148,13 +185,14 @@ export default function AdminSettings() {
   }, []);
 
   const rolesDirty = (Object.keys(ROLE_KEYS) as RoleKey[]).some((k) => roles[k] !== savedRoles[k]);
-  const dirty = tier !== saved || rolesDirty;
+  const dirty = tier !== saved || provider !== savedProvider || rolesDirty;
 
   async function save() {
     setSaving(true);
     const now = new Date().toISOString();
     const rows = [
       { key: "ai_model_tier", value: tier, updated_at: now },
+      { key: PROVIDER_KEY, value: provider, updated_at: now },
       ...(Object.keys(ROLE_KEYS) as RoleKey[]).map((role) => ({ key: ROLE_KEYS[role], value: roles[role], updated_at: now })),
     ];
     const { error } = await (supabase as any).from(ADMIN_SETTINGS).upsert(rows, { onConflict: "key" });
@@ -162,8 +200,8 @@ export default function AdminSettings() {
     if (error) {
       toast({ title: "Save failed", description: error.message, variant: "destructive" });
     } else {
-      setSaved(tier); setSavedRoles(roles);
-      toast({ title: "Saved", description: `AI model tier set to ${tier}.` });
+      setSaved(tier); setSavedRoles(roles); setSavedProvider(provider);
+      toast({ title: "Saved", description: `Model tier ${tier}, provider ${provider}.` });
     }
   }
 
@@ -181,6 +219,34 @@ export default function AdminSettings() {
         <Shield className="h-5 w-5 text-amber-600" />
         <h1 className="text-xl font-semibold">Settings</h1>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Provider</CardTitle>
+          <CardDescription>
+            Which host runs the calls. Independent of the model choice below — several models are served by more
+            than one provider, so this is a spend/latency switch. A provider that can’t serve the selected model
+            falls back to that model’s native host, so switching never breaks generation.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <Label className="text-sm">Route calls through</Label>
+            <select
+              className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-sm"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as ProviderPref)}
+            >
+              {PROVIDERS.map((p) => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+          <p className="text-sm text-muted-foreground border-t pt-4">
+            {PROVIDERS.find((p) => p.value === provider)?.description}
+          </p>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

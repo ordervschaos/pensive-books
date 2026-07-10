@@ -6,6 +6,32 @@
 
 ## Log
 
+### 2026-07-10 — Provider is an explicit setting, not a naming convention; DeepSeek's own API satisfies the escape clause
+Shipped `ai_provider` (`auto|anthropic|openrouter|deepseek|mulerouter`) in `admin_settings`, read at
+the `callLLM` chokepoint. **Replaces** routing-by-model-id-shape (a `/` meant OpenRouter, a `deepseek`
+prefix meant DeepSeek) plus an env-gated MuleRouter takeover that fired whenever `MULE_ROUTER_API_KEY`
+existed — routing policy smeared across a string prefix and the presence of a secret, unchangeable
+without editing code or deleting a key.
+
+Design call: the setting is a **preference with fallback, not a mandate**. `wireModelFor(provider, model)`
+is a capability matrix; a host that can't serve a model is skipped and the model falls back to its native
+host. This is load-bearing, not politeness: `DIGEST_MODEL` and `IMAGE_PROMPT_MODEL` are pinned to
+`qwen/qwen3-235b-a22b` regardless of tier, so a *mandating* switch set to `deepseek` would 404 the
+continuity digest on every page render. `auto` reproduces the old order exactly → no behaviour migration.
+
+**This amends the entry directly below.** That decision parked the agent role on Anthropic "until either
+a router forwards a thinking bound or agent calls move off-worker." Probing `api.deepseek.com` directly
+(deepseek-v4-flash, `max_tokens: 3000`): `reasoning_effort: "low"` cut reasoning 860 → 406 tokens, and
+reasoning **counts inside `max_tokens`** (`finish_reason: "length"` at exactly 3000). Both bounds Anthropic
+gives us. DeepSeek's direct API is therefore the first *cheap* host with a boundable agent loop — the escape
+clause is satisfied, and `reasoningParamsFor(…, "deepseek")` now emits `reasoning_effort`. Not yet exercised
+on a live full-book build; that's Now#1's job. Active config: `ai_provider=deepseek`, `ai_model_tier=deepseek-v4`.
+
+Also logged `ai_calls.provider`: `model` records what the caller *asked for*, and the same id is servable by
+three hosts, so without the column the switch is unfalsifiable — the first green e2e test proved nothing.
+A spend switch you can't observe isn't a spend switch. Incidental finding: `deepseek-chat` no longer names a
+model — it is a silent alias for `deepseek-v4-flash`.
+
 ### 2026-07-09 — Amendment: qwen3.7-plus reasoning is unboundable via routers; fix verified on Anthropic path
 Follow-up to the same-day timeout decision below. Both fixes deployed; live result: **17
 post-deploy book-agent turns, 0 timeouts** (was ~37% error rate) with `max_tokens: 5000` on the

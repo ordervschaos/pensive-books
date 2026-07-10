@@ -22,7 +22,7 @@ const AI_CALL_EVALS: string = "ai_call_evals";
 // context + completion (tens of KB–MBs each). Fetching them for 200 rows on every poll was burning GBs
 // of DB egress, so the list pulls metadata only and the detail panel fetches the heavy fields on demand.
 const AI_CALL_LIST_COLUMNS =
-  "id, created_at, book_id, user_id, task_table, task_id, fn, source, status, model, node_id, operation, input_tokens, output_tokens, latency_ms, stop_reason, error";
+  "id, created_at, book_id, user_id, task_table, task_id, fn, source, status, model, provider, node_id, operation, input_tokens, output_tokens, latency_ms, stop_reason, error";
 const AI_CALL_HEAVY_COLUMNS = "system, input, output, artifacts";
 
 interface AiCall {
@@ -36,6 +36,8 @@ interface AiCall {
   source: string;
   status: string;
   model: string | null;
+  // Which host served the call — the model id alone can't say (see ai_calls.provider). Null on old rows.
+  provider: string | null;
   node_id: string | null;
   operation: string | null;
   system: string | null;
@@ -274,6 +276,7 @@ export default function AiCalls() {
               <TableHead>book / node</TableHead>
               <TableHead>source</TableHead>
               <TableHead>model</TableHead>
+              <TableHead>provider</TableHead>
               <TableHead className="text-right">tokens</TableHead>
               <TableHead className="text-right">latency</TableHead>
               <TableHead>who</TableHead>
@@ -306,6 +309,7 @@ export default function AiCalls() {
                   </TableCell>
                   <TableCell><Badge variant={c.source === "bridge" ? "outline" : "secondary"} className="text-xs">{c.source}</Badge></TableCell>
                   <TableCell className="text-muted-foreground text-xs">{c.model}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs">{c.provider ?? "—"}</TableCell>
                   <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
                     {c.input_tokens != null || c.output_tokens != null ? `${c.input_tokens ?? "?"}/${c.output_tokens ?? "?"}` : "—"}
                   </TableCell>
@@ -355,7 +359,7 @@ export default function AiCalls() {
               );
             })}
             {visible.length === 0 && (
-              <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No AI calls yet — run something AI in the app.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={12} className="text-center text-muted-foreground py-8">No AI calls yet — run something AI in the app.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>

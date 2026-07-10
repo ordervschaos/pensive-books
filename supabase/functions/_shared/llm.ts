@@ -15,16 +15,25 @@
 // each caller keeps its own text/JSON extraction (data.content…). Throws on a non-2xx like before.
 // Logging is best-effort: a logging failure must never break the AI call.
 import { serviceClient } from "./task.ts";
+import { getActiveProvider, type Provider, type ProviderPref } from "./model-config.ts";
 
-const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions";
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MULEROUTER_URL = "https://api.mulerouter.ai/vendors/openai/v1/chat/completions";
+export type { Provider, ProviderPref };
+
+const PROVIDER_URL: Record<Provider, string> = {
+  anthropic: "https://api.anthropic.com/v1/messages",
+  deepseek: "https://api.deepseek.com/v1/chat/completions",
+  openrouter: "https://openrouter.ai/api/v1/chat/completions",
+  mulerouter: "https://api.mulerouter.ai/vendors/openai/v1/chat/completions",
+};
+const PROVIDER_KEY_ENV: Record<Provider, string> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+  mulerouter: "MULE_ROUTER_API_KEY",
+};
 
 // MuleRouter (mulerouter.ai) serves a SUBSET of the OpenRouter catalogue under BARE ids (no vendor
 // prefix) at an OpenAI-compatible endpoint — tool calling verified on qwen3.7-plus (2026-07-09).
-// When MULE_ROUTER_API_KEY is set in the edge env, a slashed id whose bare suffix appears below routes
-// to MuleRouter instead of OpenRouter (a spend/failover switch — unset the secret to flip back).
 // Ids with NO MuleRouter equivalent (qwen3-235b-a22b, qwen3-8b, kimi-k2.7, glm-5.2, minimax-m3…)
 // stay on OpenRouter. List from GET /vendors/openai/v1/models, 2026-07-09 — refresh when tiers change.
 const MULEROUTER_MODELS = new Set([
@@ -34,12 +43,68 @@ const MULEROUTER_MODELS = new Set([
   "qwen3-vl-plus", "qwen3.5-flash", "qwen3.5-omni-flash", "qwen3.5-omni-plus", "qwen3.5-plus",
   "qwen3.6-flash", "qwen3.6-max-preview", "qwen3.6-plus", "qwen3.7-max", "qwen3.7-plus",
 ]);
-// The bare MuleRouter id for an OpenRouter-style `vendor/model` id, or null when MuleRouter can't serve it.
-export function muleRouterModelFor(model: string): string | null {
-  const slash = model.indexOf("/");
-  if (slash < 0) return null;
-  const bare = model.slice(slash + 1);
-  return MULEROUTER_MODELS.has(bare) ? bare : null;
+// DeepSeek's OWN API (api.deepseek.com) serves these bare ids — GET /models, 2026-07-10. The v4 pair is the
+// same model OpenRouter exposes as `deepseek/deepseek-v4-*`; deepseek-chat/-reasoner are legacy aliases that
+// still resolve (chat → v4-flash). Same OpenAI wire shape, tool use verified.
+const DEEPSEEK_MODELS = new Set(["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"]);
+
+const bareId = (model: string) => model.slice(model.indexOf("/") + 1);
+
+// The id `provider` would accept for `model`, or null when it can't serve it at all. This is the capability
+// half of routing: a preference for a provider that returns null here is simply skipped.
+export function wireModelFor(provider: Provider, model: string): string | null {
+  switch (provider) {
+    // Bare, non-deepseek ids are our Anthropic models (claude-*); OpenRouter would need an `anthropic/` prefix.
+    case "anthropic": return !model.includes("/") && !model.startsWith("deepseek") ? model : null;
+    case "openrouter": return model.includes("/") ? model : null;
+    case "mulerouter": return MULEROUTER_MODELS.has(bareId(model)) ? bareId(model) : null;
+    case "deepseek": return DEEPSEEK_MODELS.has(bareId(model)) ? bareId(model) : null;
+  }
+}
+
+// The host order to try when nobody expressed a preference — i.e. exactly the historical behaviour:
+// a slash means the OpenRouter namespace (MuleRouter first when its key is set), a bare `deepseek-*` id
+// means DeepSeek's own API, anything else is Anthropic. Preserved verbatim so `auto` is a no-op upgrade.
+function autoOrder(model: string): Provider[] {
+  if (model.includes("/")) return ["mulerouter", "openrouter"];
+  if (model.startsWith("deepseek")) return ["deepseek"];
+  return ["anthropic"];
+}
+
+export interface Route { provider: Provider; url: string; model: string; keyEnv: string }
+
+// Resolve (model, preference) → the host that will actually run the call. A preference wins only where the
+// provider can serve the model AND its key is present; otherwise we fall back through the model's native
+// order. That fallback is the whole point: flipping the switch to "deepseek" must not break the pinned
+// OpenRouter digest model or an Anthropic tier — those keep working on their own hosts.
+// Pure: `hasKey` is injected so this is testable without env. The last-resort return produces a request
+// that fails with the provider's own auth error, which is what an unset key did before this function existed.
+export function resolveRoute(model: string, pref: ProviderPref, hasKey: (env: string) => boolean): Route {
+  const order = autoOrder(model);
+  const candidates: Provider[] = pref === "auto" ? order : [pref, ...order];
+  const route = (p: Provider, wire: string): Route => ({ provider: p, url: PROVIDER_URL[p], model: wire, keyEnv: PROVIDER_KEY_ENV[p] });
+  for (const p of candidates) {
+    const wire = wireModelFor(p, model);
+    if (wire && hasKey(PROVIDER_KEY_ENV[p])) return route(p, wire);
+  }
+  for (const p of candidates) {
+    const wire = wireModelFor(p, model);
+    if (wire) return route(p, wire);
+  }
+  return route("anthropic", model);
+}
+
+// The provider preference is one row in admin_settings, read once per worker rather than per call: an edge
+// worker is short-lived, and callLLM already pays two DB round-trips (logStart/logEnd) it can't avoid.
+// The TTL bounds how long a long-lived worker can keep serving a stale switch after an admin flips it.
+const PROVIDER_TTL_MS = 60_000;
+let providerCache: { at: number; pref: Promise<ProviderPref> } | null = null;
+function activeProvider(): Promise<ProviderPref> {
+  const now = Date.now();
+  if (!providerCache || now - providerCache.at > PROVIDER_TTL_MS) {
+    providerCache = { at: now, pref: getActiveProvider() };
+  }
+  return providerCache.pref;
 }
 
 export interface CallMeta {
@@ -71,67 +136,40 @@ export async function callLLM(
   // deno-lint-ignore no-explicit-any
 ): Promise<any> {
   const started = Date.now();
+  const model = body.model as string ?? "";
+  // Resolve the host BEFORE logging, so the 'running' row already says where the tokens are being spent —
+  // the whole point of the ai_provider switch is being able to see it took effect.
+  const route = resolveRoute(model, await activeProvider(), (env) => !!Deno.env.get(env));
+  const key = Deno.env.get(route.keyEnv) ?? apiKey;
+  const isAnthropic = route.provider === "anthropic";
   // Insert a 'running' row BEFORE the call so it's visible in /admin while in flight. Awaited
   // (we need the id to close it out) but best-effort — a null id just means we fall back to a
   // single insert at the end, the pre-existing behavior.
-  const logId = await logStart(body, meta);
+  const logId = await logStart(body, meta, route.provider);
   if (logId != null) meta.loggedCallId = logId; // hand the row id back so callers can link to it
-  const model = body.model as string ?? "";
-  // A slash is the OpenRouter namespace marker and must win: DeepSeek's DIRECT API only accepts bare ids
-  // (deepseek-chat), and rejects an OpenRouter id like "deepseek/deepseek-v4-pro". So route slashed ids to
-  // OpenRouter even when they start with "deepseek"; only bare deepseek-* ids go to the direct DeepSeek API.
-  const isOpenRouter = model.includes("/");
-  const isDeepSeek = !isOpenRouter && model.startsWith("deepseek");
-  // MuleRouter takeover: same OpenAI shape, bare model id, different host + key. Only when the
-  // secret is set AND this model has a MuleRouter equivalent; otherwise OpenRouter as before.
-  const muleKey = Deno.env.get("MULE_ROUTER_API_KEY");
-  const muleModel = isOpenRouter && muleKey ? muleRouterModelFor(model) : null;
 
   let raw = "";
   // deno-lint-ignore no-explicit-any
   let data: any = null;
   let errMsg: string | null = null;
   try {
-    let res: Response;
-    if (isDeepSeek) {
-      const deepseekKey = Deno.env.get("DEEPSEEK_API_KEY") ?? apiKey;
-      res = await fetch(DEEPSEEK_URL, {
-        method: "POST",
-        signal: opts?.signal,
-        headers: {
-          "Authorization": `Bearer ${deepseekKey}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify(anthropicToOpenAI(body, "deepseek")),
-      });
-    } else if (isOpenRouter) {
-      const openRouterKey = Deno.env.get("OPENROUTER_API_KEY") ?? apiKey;
-      res = await fetch(muleModel ? MULEROUTER_URL : OPENROUTER_URL, {
-        method: "POST",
-        signal: opts?.signal,
-        headers: {
-          "Authorization": `Bearer ${muleModel ? muleKey : openRouterKey}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify(muleModel ? { ...anthropicToOpenAI(body, "mulerouter"), model: muleModel } : anthropicToOpenAI(body, "openrouter")),
-      });
-    } else {
-      res = await fetch(ANTHROPIC_URL, {
-        method: "POST",
-        signal: opts?.signal,
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-    }
+    // Anthropic speaks the request shape callers already build; every other host is OpenAI-compatible and
+    // needs the conversion plus its own wire model id (bare, for MuleRouter and DeepSeek).
+    const res = await fetch(route.url, {
+      method: "POST",
+      signal: opts?.signal,
+      headers: isAnthropic
+        ? { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" }
+        : { "Authorization": `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify(
+        isAnthropic ? body : { ...anthropicToOpenAI(body, route.provider as OpenAITarget), model: route.model },
+      ),
+    });
     raw = await res.text();
-    if (!res.ok) errMsg = `${isDeepSeek ? "DeepSeek" : muleModel ? "MuleRouter" : isOpenRouter ? "OpenRouter" : "Claude"} API ${res.status}: ${raw.slice(0, 500)}`;
+    if (!res.ok) errMsg = `${route.provider} API ${res.status}: ${raw.slice(0, 500)}`;
     else {
       const parsed = JSON.parse(raw);
-      data = (isDeepSeek || isOpenRouter) ? openAIToAnthropic(parsed) : parsed;
+      data = isAnthropic ? parsed : openAIToAnthropic(parsed);
     }
   } catch (e) {
     errMsg = String((e as Error)?.message ?? e);
@@ -140,7 +178,7 @@ export async function callLLM(
 
   // Await the terminal log so the status flip lands before the worker exits.
   // logEnd has its own try/catch and never throws, so this is safe.
-  await logEnd(logId, body, data, meta, latencyMs, errMsg);
+  await logEnd(logId, body, data, meta, latencyMs, errMsg, route.provider);
 
   if (errMsg) throw new Error(errMsg);
   return data;
@@ -163,7 +201,7 @@ export function textFromLLM(data: any): string {
 // thinking blocks. `output_config.effort` is NOT dropped — it maps to the target's reasoning
 // bound (see reasoningParamsFor); silently dropping it let qwen reason unbounded and was the
 // root cause of the 2026-07-09 book-agent 140s-timeout streaks (doc_1783599238000.md).
-type OpenAITarget = "deepseek" | "openrouter" | "mulerouter";
+type OpenAITarget = Exclude<Provider, "anthropic">;
 
 // Reasoning tokens are the latency budget: decode runs ~55 tok/s, and an edge worker call must
 // fit a ~140s timer, so an unbounded chain-of-thought (observed: 25k chars on a hard prompt) is
@@ -182,6 +220,12 @@ type OpenAITarget = "deepseek" | "openrouter" | "mulerouter";
 // then a qwen agent tier structurally risks 140s timeouts on hard-reasoning turns — the working
 // bound is max_tokens on Anthropic tiers (thinking counts inside it), i.e. keep the agent role
 // on an Anthropic model, or move the call off-worker like prose (docs/agent-runtime-architecture.md).
+//
+// ✅ Exception, verified 2026-07-10 (deepseek-v4-flash, direct api.deepseek.com, max_tokens 3000):
+// `reasoning_effort` IS honored — "low" cut reasoning 860 → 406 tokens — AND reasoning counts inside
+// max_tokens (finish_reason "length" at exactly 3000). So DeepSeek's own API is the FIRST cheap host in
+// this stack where the agent loop's latency is genuinely boundable, both ways Anthropic bounds it. That's
+// the ai_provider="deepseek" switch's main argument over routing the same model through OpenRouter.
 const EFFORT_THINKING_BUDGET: Record<string, number> = { low: 1000, medium: 2500, high: 4000 };
 
 function reasoningParamsFor(body: Record<string, unknown>, target: OpenAITarget): Record<string, unknown> {
@@ -195,8 +239,9 @@ function reasoningParamsFor(body: Record<string, unknown>, target: OpenAITarget)
       // DashScope-native name; currently swallowed by the facade (see above) but the right field.
       return { thinking_budget: EFFORT_THINKING_BUDGET[effort] };
     case "deepseek":
-      // deepseek-chat doesn't think; deepseek-reasoner has no budget knob. Send nothing.
-      return {};
+      // The OpenAI-native name, and the one host that actually applies it (see above). Effort is a level
+      // here, not a token count — the token bound is max_tokens, which DeepSeek already charges thinking to.
+      return { reasoning_effort: effort };
   }
 }
 
@@ -311,7 +356,7 @@ function systemText(system: unknown): string | null {
 
 // Insert the 'running' row (prompt context known up front). Returns the row id, or null if the
 // insert failed — callers fall back to a single terminal insert so logging never blocks a call.
-async function logStart(body: Record<string, unknown>, meta: CallMeta): Promise<number | null> {
+async function logStart(body: Record<string, unknown>, meta: CallMeta, provider: Provider): Promise<number | null> {
   try {
     const { data, error } = await serviceClient().from("ai_calls").insert({
       book_id: meta.bookId ?? null,
@@ -323,6 +368,7 @@ async function logStart(body: Record<string, unknown>, meta: CallMeta): Promise<
       node_id: meta.nodeId ?? null,
       operation: meta.operation ?? null,
       model: (body.model as string) ?? null,
+      provider,
       system: systemText(body.system),
       input: body.messages ?? null,
       artifacts: meta.artifacts ?? null,
@@ -345,6 +391,7 @@ async function logEnd(
   meta: CallMeta,
   latencyMs: number,
   errMsg: string | null,
+  provider: Provider,
 ): Promise<void> {
   const terminal = {
     output: data ? textFromLLM(data) : null,
@@ -372,6 +419,7 @@ async function logEnd(
       node_id: meta.nodeId ?? null,
       operation: meta.operation ?? null,
       model: (body.model as string) ?? null,
+      provider,
       system: systemText(body.system),
       input: body.messages ?? null,
       artifacts: meta.artifacts ?? null,

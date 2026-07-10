@@ -9,14 +9,29 @@
 // (api/stream-prose.ts) and the dev Vite middleware (vite.config.ts) — never by the client bundle. A caller
 // must present a valid Supabase JWT (same gate the bridge uses) so a random site can't spend the key.
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const MULEROUTER_URL = "https://api.mulerouter.ai/vendors/openai/v1/chat/completions";
+// Provider routing — twin of resolveRoute in supabase/functions/_shared/llm.ts (keep in sync). The tables
+// can't be imported across the Deno/Node boundary, so they are duplicated; the SSE shapes differ per host
+// anyway (Anthropic's typed frames vs the OpenAI `data:`/[DONE] framing), which is what this file adds.
+// The admin's `ai_provider` preference reaches us as `body.provider`: dna-expand resolved the model AND read
+// the setting in `prepare` mode, and dnaExpand.ts forwards the whole prepared payload verbatim.
+type Provider = "anthropic" | "openrouter" | "deepseek" | "mulerouter";
+type ProviderPref = "auto" | Provider;
 
-// MuleRouter takeover — twin of the mapping in supabase/functions/_shared/llm.ts (keep in sync):
-// serves a SUBSET of the OpenRouter catalogue under BARE ids at an OpenAI-compatible endpoint (same SSE
-// shape, incl. delta.reasoning frames). When MULE_ROUTER_API_KEY is set, slashed ids with an equivalent
-// below stream from MuleRouter instead of OpenRouter; the rest stay put. Unset the env to flip back.
+const PROVIDER_URL: Record<Provider, string> = {
+  anthropic: "https://api.anthropic.com/v1/messages",
+  deepseek: "https://api.deepseek.com/v1/chat/completions",
+  openrouter: "https://openrouter.ai/api/v1/chat/completions",
+  mulerouter: "https://api.mulerouter.ai/vendors/openai/v1/chat/completions",
+};
+const PROVIDER_KEY_ENV: Record<Provider, string> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+  mulerouter: "MULE_ROUTER_API_KEY",
+};
+
+// MuleRouter serves a SUBSET of the OpenRouter catalogue under BARE ids at an OpenAI-compatible endpoint
+// (same SSE shape, incl. delta.reasoning frames). DeepSeek's own API serves the v4 pair, also bare.
 const MULEROUTER_MODELS = new Set([
   "deepseek-v4-flash", "deepseek-v4-pro", "glm-5.1", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano",
   "gpt-5.5", "grok-4", "grok-4-20-non-reasoning", "grok-code-fast-1", "kimi-k2.6", "qwen-flash",
@@ -24,11 +39,39 @@ const MULEROUTER_MODELS = new Set([
   "qwen3-vl-plus", "qwen3.5-flash", "qwen3.5-omni-flash", "qwen3.5-omni-plus", "qwen3.5-plus",
   "qwen3.6-flash", "qwen3.6-max-preview", "qwen3.6-plus", "qwen3.7-max", "qwen3.7-plus",
 ]);
-function muleRouterModelFor(model: string): string | null {
-  const slash = model.indexOf("/");
-  if (slash < 0) return null;
-  const bare = model.slice(slash + 1);
-  return MULEROUTER_MODELS.has(bare) ? bare : null;
+const DEEPSEEK_MODELS = new Set(["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"]);
+
+const bareId = (model: string) => model.slice(model.indexOf("/") + 1);
+
+function wireModelFor(provider: Provider, model: string): string | null {
+  switch (provider) {
+    case "anthropic": return !model.includes("/") && !model.startsWith("deepseek") ? model : null;
+    case "openrouter": return model.includes("/") ? model : null;
+    case "mulerouter": return MULEROUTER_MODELS.has(bareId(model)) ? bareId(model) : null;
+    case "deepseek": return DEEPSEEK_MODELS.has(bareId(model)) ? bareId(model) : null;
+  }
+}
+
+function autoOrder(model: string): Provider[] {
+  if (model.includes("/")) return ["mulerouter", "openrouter"];
+  if (model.startsWith("deepseek")) return ["deepseek"];
+  return ["anthropic"];
+}
+
+interface Route { provider: Provider; url: string; model: string; key: string }
+
+// A preference wins only where the provider can serve the model AND its key is present; otherwise fall back
+// through the model's native order, so flipping the switch never strands a model on a host that can't run it.
+function resolveRoute(model: string, pref: ProviderPref): Route {
+  const order = autoOrder(model);
+  const candidates: Provider[] = pref === "auto" ? order : [pref, ...order];
+  const keyOf = (p: Provider) => process.env[PROVIDER_KEY_ENV[p]] ?? "";
+  for (const p of candidates) {
+    const wire = wireModelFor(p, model);
+    if (wire && keyOf(p)) return { provider: p, url: PROVIDER_URL[p], model: wire, key: keyOf(p) };
+  }
+  const p = candidates.find((c) => wireModelFor(c, model)) ?? "anthropic";
+  throw new ProxyError(500, `${PROVIDER_KEY_ENV[p]} not configured (needed to run ${model})`);
 }
 
 // Heartbeat byte emitted during a reasoning model's thinking phase (see the reasoning branch below). NUL
@@ -41,6 +84,9 @@ export interface PrepareReq {
   userContent: string;
   model: string;
   max_tokens?: number;
+  // The admin's `ai_provider` setting, resolved and forwarded by dna-expand's `prepare` mode. Absent on
+  // older payloads → "auto", i.e. infer the host from the model id exactly as this proxy always has.
+  provider?: ProviderPref;
 }
 
 export class ProxyError extends Error {
@@ -71,7 +117,7 @@ async function verifyJwt(authToken: string): Promise<string> {
 // fetch so a multi-minute stream is visible in /admin WHILE in flight, not only after it finishes — the
 // single-terminal-insert version left /admin showing nothing for the entire generation. Best-effort; a
 // failed start insert just means logStreamEnd falls back to one terminal insert, same as the edge chokepoint.
-async function logStreamStart(body: PrepareReq, userId: string): Promise<number | null> {
+async function logStreamStart(body: PrepareReq, userId: string, provider: Provider): Promise<number | null> {
   try {
     const url = supabaseUrl();
     const service = process.env.SERVICE_ROLE_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -83,6 +129,7 @@ async function logStreamStart(body: PrepareReq, userId: string): Promise<number 
         fn: "dna-expand-stream",
         source: "stream-proxy",
         model: body.model,
+        provider,
         user_id: userId || null,
         system: body.system,
         // Store as messages array so contextText() in AiCalls.tsx can render it the same way edge calls do.
@@ -102,7 +149,7 @@ async function logStreamStart(body: PrepareReq, userId: string): Promise<number 
 // response has no discrete `usage` object to read exactly, the same precision already accepted before this split.
 async function logStreamEnd(logId: number | null, row: {
   model: string; userId: string; latencyMs: number; inputChars: number; outputChars: number; errMsg: string | null;
-  system?: string; userContent?: string; output?: string;
+  system?: string; userContent?: string; output?: string; provider?: Provider;
 }): Promise<void> {
   const terminal = {
     output: row.output ?? null,
@@ -131,6 +178,7 @@ async function logStreamEnd(logId: number | null, row: {
         fn: "dna-expand-stream",
         source: "stream-proxy",
         model: row.model,
+        provider: row.provider ?? null,
         user_id: row.userId || null,
         system: row.system ?? null,
         input: row.userContent != null ? [{ role: "user", content: row.userContent }] : null,
@@ -154,28 +202,28 @@ export async function* streamProse(body: PrepareReq, authToken: string, onLogId?
   let chars = 0;
   let output = "";
   let errMsg: string | null = null;
+  let route: Route | null = null;
   try {
     if (!authToken) throw new ProxyError(401, "missing Authorization token");
     if (!body?.system || !body?.userContent || !body?.model) throw new ProxyError(400, "system, userContent and model are required");
     userId = await verifyJwt(authToken);
     inputChars = body.system.length + body.userContent.length;
-    logId = await logStreamStart(body, userId);
+
+    // Anthropic SSE is a different shape from everyone else's (typed frames, no [DONE]), so the two wire
+    // formats get their own branches. `route` decides which host runs the model; the OpenAI-compatible
+    // hosts (OpenRouter / MuleRouter / DeepSeek) then share one parser. Resolved before the 'running' row is
+    // written so that row names the host serving it, matching the edge chokepoint's ordering.
+    route = resolveRoute(body.model, body.provider ?? "auto");
+    logId = await logStreamStart(body, userId, route.provider);
     onLogId?.(logId);
 
-    // Provider routing mirrors _shared/llm.ts: a bare model id (no "/", not deepseek) is an Anthropic model
-    // and must go to Anthropic — NOT OpenRouter, which only knows prefixed ids (anthropic/…) and 400s on
-    // "claude-opus-4-8". This lets prose render on Opus while slash/deepseek ids keep streaming from
-    // OpenRouter. Anthropic SSE is a different shape (typed frames, no [DONE]), parsed in its own branch.
-    const model = body.model;
-    if (!model.startsWith("deepseek") && !model.includes("/")) {
-      const anthropicKey = process.env.ANTHROPIC_API_KEY;
-      if (!anthropicKey) throw new ProxyError(500, "ANTHROPIC_API_KEY not configured");
-      const res = await fetch(ANTHROPIC_URL, {
+    if (route.provider === "anthropic") {
+      const res = await fetch(route.url, {
         method: "POST",
-        headers: { "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        headers: { "x-api-key": route.key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
         // No thinking config: prose wants text only, and Opus streams it directly with no thinking phase.
         body: JSON.stringify({
-          model,
+          model: route.model,
           max_tokens: body.max_tokens ?? 8000,
           stream: true,
           system: body.system,
@@ -225,17 +273,11 @@ export async function* streamProse(body: PrepareReq, authToken: string, onLogId?
       return;
     }
 
-    const muleKey = process.env.MULE_ROUTER_API_KEY;
-    const muleModel = muleKey ? muleRouterModelFor(model) : null;
-    const key = muleModel ? muleKey : process.env.OPENROUTER_API_KEY;
-    if (!key) throw new ProxyError(500, "OPENROUTER_API_KEY not configured");
-    const provider = muleModel ? "MuleRouter" : "OpenRouter";
-
-    const res = await fetch(muleModel ? MULEROUTER_URL : OPENROUTER_URL, {
+    const res = await fetch(route.url, {
       method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+      headers: { Authorization: `Bearer ${route.key}`, "content-type": "application/json" },
       body: JSON.stringify({
-        model: muleModel ?? body.model,
+        model: route.model,
         max_tokens: body.max_tokens ?? 8000,
         stream: true,
         messages: [
@@ -246,7 +288,7 @@ export async function* streamProse(body: PrepareReq, authToken: string, onLogId?
     });
     if (!res.ok || !res.body) {
       const t = await res.text().catch(() => "");
-      throw new ProxyError(502, `${provider} ${res.status}: ${t.slice(0, 300)}`);
+      throw new ProxyError(502, `${route.provider} ${res.status}: ${t.slice(0, 300)}`);
     }
 
     // OpenAI/OpenRouter SSE: newline-delimited `data: {json}` frames, terminal `data: [DONE]`; `:`-comment
@@ -288,6 +330,6 @@ export async function* streamProse(body: PrepareReq, authToken: string, onLogId?
     errMsg = e instanceof Error ? e.message : String(e);
     throw e;
   } finally {
-    void logStreamEnd(logId, { model: body?.model ?? "", userId, latencyMs: Date.now() - started, inputChars, outputChars: chars, errMsg, system: body?.system, userContent: body?.userContent, output: output || undefined });
+    void logStreamEnd(logId, { model: body?.model ?? "", provider: route?.provider, userId, latencyMs: Date.now() - started, inputChars, outputChars: chars, errMsg, system: body?.system, userContent: body?.userContent, output: output || undefined });
   }
 }

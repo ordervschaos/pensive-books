@@ -10,7 +10,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
-import { getRoleModels, DIGEST_MODEL } from "../_shared/model-config.ts";
+import { getRoleModels, getActiveProvider, DIGEST_MODEL } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 // The shared engine's beat-native lints, run over the just-generated beat sheet so a silently-degraded sheet
 // gets one bounded repair turn instead of shipping the damage (docs/agent-improvement-plan.md P2.1).
@@ -778,7 +778,9 @@ CRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md
 - NEGATION-DEFINITION: the "it wasn't X, it was Y" pattern at most once per scene.`;
       const userContent = `${ctx}\n\nWrite this scene's prose.`;
       // Browser-streamed path: hand back the assembled request; the client streams it via /api/stream-prose.
-      if (prepare) return json({ prepared: { system, userContent, model, max_tokens: 8000 } });
+      // `provider` carries the admin's ai_provider setting to the proxy, which has no admin_settings read of
+      // its own — this worker is the authority on both which model and which host runs the call.
+      if (prepare) return json({ prepared: { system, userContent, model, max_tokens: 8000, provider: await getActiveProvider() } });
       const data = await callLLM(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: userContent }] }, meta, { signal: req.signal });
       return json({ prose: textFromLLM(data).trim(), callId: meta.loggedCallId ?? null });
@@ -853,7 +855,7 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
       // Browser-streamed path: hand back the assembled request; the client streams it via /api/stream-prose,
       // then calls back with phase "finalize" (mirrors the prose `prepare` split, todo/dna-streaming-proxy.md).
       if (phase === "prepare") {
-        return json({ prepared: { system, userContent: `${beatCtx}\n\nWrite the whole beat sheet. JSON only.`, model, max_tokens: 8000 } });
+        return json({ prepared: { system, userContent: `${beatCtx}\n\nWrite the whole beat sheet. JSON only.`, model, max_tokens: 8000, provider: await getActiveProvider() } });
       }
       if (phase !== "finalize") return json({ error: "beatsheet requires phase 'prepare' or 'finalize'" }, 400);
       if (!rawText) return json({ error: "finalize requires rawText" }, 400);

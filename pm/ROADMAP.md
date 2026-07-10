@@ -1,7 +1,7 @@
 # ROADMAP — now / next / later
 
 > Ranked by one rule (NORTH_STAR §9): **what most moves read-through depth, generation ease, or
-> intuitiveness.** Snapshot date: **2026-07-09**. Now ≤ 2 items — WIP limit, finish before pulling.
+> intuitiveness.** Snapshot date: **2026-07-10**. Now ≤ 2 items — WIP limit, finish before pulling.
 
 ## 🔵 Now
 
@@ -12,6 +12,11 @@
    *Extended bar (2026-07-09 `/pm`):* also record **read-round-trip counts per turn** from
    `ai_calls` (alongside the existing cache-read ≫ input check) — this is the evidence gate for
    the "deterministic context hydration" Later item (`doc_1783594573553.md`).
+   *Enabler (2026-07-10):* the `ai_provider` switch is live and set to **deepseek** / tier
+   `deepseek-v4`. DeepSeek's direct API is the first cheap host that honours `reasoning_effort` and
+   counts reasoning inside `max_tokens`, so the agent loop no longer has to sit on Anthropic to be
+   timeout-safe (amends the 2026-07-09 decision). Run the build on this config; `ai_calls.provider`
+   now records which host served each call, so cost-per-book is finally attributable.
 2. **Monetization rails v1 (GTM R1).** Stripe checkout + webhook → entitlement model → feature
    gating at existing chokepoints + pricing page on the SSG marketing site. First rung of the
    monetize-ASAP ladder (GTM.md); sells the *mature* pillar, so it doesn't wait on M1. Owner
@@ -74,7 +79,15 @@ R1/R2 graduated, moved to STATE.md.
 - Thread tracking UI (backbone shipped)
 - Meters vertical-fit cascade
 - Timeline UI + promote-to-thread
-- Scene ledger P3 consumers (`ledgerAt` wiring)
+- **Close the Ledger→generation feedback loop.** Today continuity has two disconnected open
+  loops: *prevention* (prose_digest rolling recap, entry-state/threads block, disclosure-budget —
+  all automatic, plan-forward, live in `dna-expand`) and *detection* (manual "Build continuity
+  ledger" `read-facts` scan → `ledgerAt`'s `.facts`/`continuity_flags` → `traceDiff` → trace-gaps
+  panel / send-to-editor — human/editor-agent surfaces only). Confirmed 2026-07-09: even after
+  running the scan, its output never reaches `dna-expand`'s prompt — nothing stops scene N+1 from
+  repeating a contradiction the Ledger already flagged in scene N. Closing the loop = feeding
+  flagged facts forward into the next scene's generation context. Supersedes/absorbs the old
+  "Scene ledger P3 consumers (`ledgerAt` wiring)" line — same code, now correctly scoped.
 - Incremental digest bridge twin (only if bridge path becomes load-bearing again)
 - Scene images via MuleRouter (pending URL/model)
 - **Deterministic context hydration** — extend the focus-tray path (`attachedIds → focusNodes`,

@@ -8,6 +8,30 @@ import { serviceClient } from "./task.ts";
 
 export type ModelTier = "opus" | "sonnet" | "deepseek" | "deepseek-v4" | "qwen" | "qwen-plus" | "kimi" | "glm" | "minimax" | "gpt" | "hermes";
 
+// WHICH HOST runs the call, chosen independently of WHICH MODEL runs it (the tier above). Several of our
+// models are served by more than one provider — deepseek-v4-pro is reachable via OpenRouter, MuleRouter, and
+// DeepSeek's own API — so the provider is a spend/latency switch, not a model choice. "auto" keeps the
+// historical behaviour (infer the host from the model id; MuleRouter takes over when its key is set).
+// A preference the chosen provider CANNOT serve falls back to the model's native host — see resolveRoute
+// in llm.ts, which owns the actual table. Set from /admin/settings.
+export type Provider = "anthropic" | "openrouter" | "deepseek" | "mulerouter";
+export type ProviderPref = "auto" | Provider;
+const PROVIDER_PREFS: ProviderPref[] = ["auto", "anthropic", "openrouter", "deepseek", "mulerouter"];
+
+export async function getActiveProvider(): Promise<ProviderPref> {
+  try {
+    const { data } = await serviceClient()
+      .from("admin_settings")
+      .select("value")
+      .eq("key", "ai_provider")
+      .single();
+    const pref = data?.value as ProviderPref;
+    return PROVIDER_PREFS.includes(pref) ? pref : "auto";
+  } catch {
+    return "auto";
+  }
+}
+
 // The cheap/fast model for incidental passes (summaries, character-state extraction). Exported so
 // callers that default a `low` model don't re-hardcode the string and drift from this file.
 export const DEFAULT_LOW_MODEL = "claude-haiku-4-5-20251001";
@@ -32,9 +56,14 @@ export const DIGEST_MODEL = "qwen/qwen3-235b-a22b";
 const TIER_MODELS: Record<ModelTier, { high: string; low: string }> = {
   opus:        { high: "claude-opus-4-8",           low: DEFAULT_LOW_MODEL },
   sonnet:      { high: "claude-sonnet-4-6",         low: DEFAULT_LOW_MODEL },
+  // `deepseek-chat` is now only a legacy ALIAS on DeepSeek's own API — it resolves to deepseek-v4-flash
+  // (verified against GET api.deepseek.com/models, 2026-07-10). Prefer the deepseek-v4 tier.
   deepseek:    { high: "deepseek-chat",             low: "deepseek-chat" },
-  // DeepSeek V4 via OpenRouter (not the direct `deepseek-chat` API): 1M ctx, tool-use capable, and cheap —
-  // pro high (~$0.44/$0.87 per M), flash low (~$0.14/$0.28 per M). Routes through OPENROUTER_API_KEY.
+  // DeepSeek V4: 1M ctx, tool-use capable, cheap — pro high (~$0.44/$0.87 per M), flash low (~$0.14/$0.28).
+  // Named with the OpenRouter prefix, but every provider can serve it: `ai_provider` picks the host, and
+  // DeepSeek's own API takes the same ids bare. Uniquely among our OpenAI-compatible hosts, DeepSeek honors
+  // `reasoning_effort` AND counts reasoning inside max_tokens — so it's the one cheap tier whose agent-loop
+  // latency is actually boundable (see EFFORT_THINKING_BUDGET's warning in llm.ts).
   "deepseek-v4": { high: "deepseek/deepseek-v4-pro", low: "deepseek/deepseek-v4-flash" },
   qwen:        { high: "qwen/qwen3-235b-a22b",      low: "qwen/qwen3-8b" },
   "qwen-plus": { high: "qwen/qwen3.7-plus",         low: "qwen/qwen3-8b" },

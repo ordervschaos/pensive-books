@@ -18,7 +18,9 @@ function chapterTitleFromBeat(beat: DnaNode): string {
 }
 
 interface BeatSheetEntry { act: number; content: BeatContent }
-interface PreparedProse { system: string; userContent: string; model: string; max_tokens: number }
+// Assembled by dna-expand's `prepare` mode and POSTed to /api/stream-prose verbatim. `provider` is the
+// admin's ai_provider setting, resolved server-side — the proxy honours it rather than re-reading settings.
+interface PreparedProse { system: string; userContent: string; model: string; max_tokens: number; provider?: string }
 // A thread the beat sheet MINTED because none was pre-declared (docs/dna-structure-analysis.md Finding 1) —
 // id assigned server-side so the beats reference it; the client persists it under the pillar.
 interface MintedThread { id: string; content: NodeContent }

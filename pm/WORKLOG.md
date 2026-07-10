@@ -17,6 +17,35 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-10 — `ai_provider` switch: host chosen independently of model `[ship]`
+- **What:** Promoted provider routing from an implicit naming convention (slash → OpenRouter,
+  `deepseek*` → DeepSeek, env-gated MuleRouter takeover) to an explicit `ai_provider` admin setting
+  (`auto|anthropic|openrouter|deepseek|mulerouter`) over a pure `resolveRoute` + capability matrix in
+  the `callLLM` chokepoint. It's a **preference with fallback**, not a mandate — a host that can't
+  serve a model (the pinned `qwen` digest/image models, any Claude tier) falls back to that model's
+  native host, so flipping the switch can never strand generation. `auto` reproduces the old order
+  exactly, so the default is a behaviour no-op. Live now: `ai_provider=deepseek`, `ai_model_tier=deepseek-v4`.
+  Two things fell out: (1) **`ai_calls.provider`** — the first e2e test passed and I still couldn't
+  tell which of three hosts served it, because `model` logs what was *asked for*; a spend switch you
+  can't observe isn't a spend switch. (2) **DeepSeek's own API honors `reasoning_effort` and counts
+  reasoning inside `max_tokens`** (probed: 860→406 tokens at effort=low) — the only cheap host where
+  agent-loop latency is boundable, which is the real argument for it over OpenRouter and bears on the
+  Now#1 full-book build. Also found: `deepseek-chat` is now a silent alias for `deepseek-v4-flash`.
+- **Files:** `_shared/llm.ts` (+`llm.test.ts`, 12 cases pinning the fallback invariant),
+  `_shared/model-config.ts`, `dna-expand/index.ts` (ships `provider` in the `prepare` payload),
+  `api/_proseProxy.ts` (streaming twin of the table), `admin/AdminSettings.tsx`, `admin/AiCalls.tsx`,
+  `migrations/20260710130000_ai_calls_provider.sql`. Design: `doc_1783663800000.md` (untracked, as
+  with the other `doc_*.md`). Committed `0480e0a` on branch `feat/ai-provider-switch`, unmerged —
+  but the migration is **already pushed** and all 10 edge fns **already deployed**, so prod runs this
+  code regardless of the branch's fate. Reverting means redeploying from `main`; the additive
+  `ai_calls.provider` column is harmless either way.
+- **Verified:** live differential — provider held at `deepseek`, tier varied: `deepseek/deepseek-v4-pro`
+  → deepseek, `qwen/qwen3-235b-a22b` → openrouter (fallback), `claude-opus-4-8` → anthropic (fallback).
+  19 deno tests, both typechecks, `vite build` clean. Migration pushed; 10 edge fns redeployed.
+- **PM impact:** unblocks Now#1 (cheap tier with a bounded agent loop). Noted in ROADMAP.
+  Pre-existing posture flagged, not changed: every edge fn runs gateway `verify_jwt=false` and
+  authenticates internally, though `config.toml` only declares it for three.
+
 ## 2026-07-10 — claude-local bridge design: `claude -p` as an agent backend `[wip]`
 - **What:** Designed the minimum-code path to run the book-agent's model calls on local
   `claude -p` without mirroring the edge fn: a `claude-local` sentinel model id routed by the
