@@ -25,6 +25,7 @@ import { useChatScroll } from "@/components/book/shared/useChatScroll";
 import { useAutoAccept } from "@/features/dna/hooks/useAutoAccept";
 import { ActionLink, Eyebrow, Panel, RunError } from "@/components/book/shared/studioUi";
 import { snapshotTree } from "@/features/dna/lib/treeVersions";
+import { briefIdea, type Brief } from "@/lib/brief";
 
 // What the "next step" nudge SAYS when clicked, keyed by dnaJourney's STEP_RECIPE substep — so the chat
 // bubble names the actual action instead of a one-size-fits-all "let's work on the next step" that read as
@@ -42,8 +43,32 @@ const NEXT_STEP_MESSAGE: Record<string, string> = {
   prose: "Write the next scene.",
 };
 
-export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [], onDetach, onClose }: {
+// The guide's teaching line for each journey substep — what the concept IS and why the book needs it,
+// in plain words. Shown in the rail's empty state (the greeting) so a first-time author learns the craft
+// term for the rung they're on before the agent even speaks. Keyed by dnaJourney's STEP_RECIPE substep,
+// like NEXT_STEP_MESSAGE above. The agent itself carries the same duty in its system prompt ("Teach as
+// you go" in book-agent) — this is the zero-cost, zero-latency copy of that stance.
+const STEP_TEACH: Record<string, string> = {
+  seed: "First rung: the logline — your whole story in one sentence: who wants what, what stands in the way, and what's at stake. It's the cheapest place to fix a story; one sentence is easy to change, 80,000 words are not.",
+  premise: "Next: the premise — your logline turned into a question with a price (“Can she win X without losing Y?”). Every act, beat, and scene below exists to make that question harder before it's answered.",
+  pillar: "Next: the pillar — what your story argues is true (its controlling idea) plus the ending that proves it. Pin it now and everything generated below bends toward the same point instead of wandering.",
+  contract: "Next: the contract — your genre's promises, compiled: the obligatory scenes readers expect, target tension curves, and voice bounds. It's how the book keeps the promises the brief made.",
+  cast: "Next: the cast — the people the question gets tested on. Each carries a want (what they chase), a need (what they actually require), a wound (why), and a lie the wound taught them. Conflict is these colliding.",
+  acts: "Next: the acts — the story's largest movements, each with a goal and a turning point that makes going back impossible. They're the load-bearing walls; beats and scenes hang off them.",
+  beats: "Next: the beats — the causal chain of events, each linked by “therefore” or “but”, never “and then”. This is where the story stops being a list and becomes a machine where each event forces the next.",
+  scenes: "Next: scenes — the smallest unit that turns. Someone enters wanting something and leaves with the value changed: win, lose, or twist. Flat scenes are where readers put books down.",
+  prose: "Now the words. Each scene renders into prose one at a time, in the book's voice, honoring everything upstream — the beat's plan, the threads it must pay, the previous page. You review each page as it lands.",
+  promises: "Last rung: the promise ledger — every open loop the book set up (foreshadowing, contests, obligatory scenes) that hasn't paid off. A story feels finished when every promise is paid on the page or deliberately waived.",
+};
+
+// The seed step, but with NO idea in the brief yet — the rung before the first rung. The greeting and the
+// nudge both switch to ideation: the agent's job is to find the spark with the author, not demand one.
+const IDEA_TEACH = "Everything downstream is derived from the idea, so we start by finding one worth deriving from — a character in trouble, a place with rules, a feeling you want the reader to leave with. Any spark works.";
+const IDEA_MESSAGE = "I don't have a story idea yet. Ask me one or two quick questions if that helps, then pitch 3–4 distinct story ideas that fit my brief — each as one vivid sentence. We'll pick one and shape it into a logline.";
+
+export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedIds = [], onDetach, onClose }: {
   bookId: number; nodes: DnaNode[]; settings: BookSettings; bookSlug?: string; // bookSlug feeds the reader URL into the final render/publish hand-off
+  brief?: Brief | null; // the books.brief — lets the greeting tell "no idea yet" (ideate) from "idea set, no logline" (teach the logline)
   attachedIds?: string[]; onDetach?: (id: string) => void; // slice 2 — the context tray (anchors); omitted = no tray
   onClose?: () => void; // folds the rail's own close affordance into its header row instead of a floating sibling
 }) {
@@ -68,6 +93,9 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
   // The substep key behind that headline (e.g. "seed", "beats") — so the nudge's chat message can name the
   // actual action instead of the generic "let's work on the next step" that used to ride under every headline.
   const objectiveKey = useMemo(() => currentObjectiveKey(nodes), [nodes]);
+  // The rung BEFORE the first rung: on the seed step with no idea in the brief, the guide's job is
+  // ideation, not loglines — the greeting and the nudge below both switch stance on this flag.
+  const needsIdea = objectiveKey === "seed" && !briefIdea(brief)?.trim();
   // When the objective is the draft step, the concrete scene it targets — so the "next step" nudge can NAME
   // which scene ("Write 'Bram's door'") instead of a bare ordinal, and can't diverge from what the agent
   // does: we only surface it when the live objective actually points at this scene's id (same source of
@@ -376,10 +404,25 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
       {/* Conversation */}
       <div className="relative mt-3 min-h-0 flex-1">
         <div ref={scrollRef} className="h-full space-y-3.5 overflow-y-auto pr-1">
+          {/* The guide's greeting — the agent speaks first. Journey-aware and scripted (zero cost, zero
+              latency): orient, teach the current rung's concept, and let the next-step card below carry
+              the offer. On a fresh brief this is the "explain what a logline is" moment; on an emptied
+              chat mid-journey it re-teaches wherever the book actually is. */}
           {steps.length === 0 && !optimistic && (
-            <p className="pv-serif text-[12.5px] italic leading-[1.5] text-[hsl(var(--pv-text-faint))]">
-              Talk to the editor's agent about the whole book — ask a question, get a summary, pressure-test the story. It reads the actual pages before it answers.
-            </p>
+            <div className="space-y-2.5">
+              <p className="pv-serif text-[13.5px] leading-[1.6] text-[hsl(var(--pv-text-muted))]">
+                {objectiveHeadline
+                  ? (needsIdea
+                    ? <>Welcome — I'm your story editor. Every book here grows from one idea, and you haven't set one yet. That's fine: finding it is part of the work. Tell me a genre, a feeling, or a scene you can't shake — or let me pitch a few directions.</>
+                    : <>Welcome — I'm your story editor. I'll walk you from your brief to finished prose, one rung at a time — <span className="pv-mono text-[10.5px] uppercase tracking-[0.08em]">idea → foundations → structure → scenes → prose</span> — and teach you the craft behind each rung as we go.</>)
+                  : <>Talk to the editor's agent about the whole book — ask a question, get a summary, pressure-test the story. It reads the actual pages before it answers.</>}
+              </p>
+              {objectiveHeadline && (needsIdea ? IDEA_TEACH : objectiveKey && STEP_TEACH[objectiveKey]) && (
+                <p className="border-l-2 border-[hsl(var(--pv-accent))]/40 pl-2.5 pv-serif text-[12.5px] italic leading-[1.55] text-[hsl(var(--pv-text-faint))]">
+                  {needsIdea ? IDEA_TEACH : STEP_TEACH[objectiveKey!]}
+                </p>
+              )}
+            </div>
           )}
           {steps.map((s, i) => <StepBubble key={i} step={s} nodes={nodes} />)}
           {proposals.map((p) => (
@@ -391,7 +434,9 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
               no error. So it reads as "here's what's next", not a pinned CTA. One click hands the step to
               the agent (the objective itself already rides every message's context). */}
           {!active && !optimistic && proposals.length === 0 && row?.status !== "error" && objectiveHeadline && (
-            <button type="button" onClick={() => void send(draftTarget
+            <button type="button" onClick={() => void send(needsIdea
+              ? IDEA_MESSAGE
+              : draftTarget
               ? `Write "${nodeLabel(draftTarget.scene)}".`
               : (objectiveKey && NEXT_STEP_MESSAGE[objectiveKey]) || objectiveHeadline || "Let's work on the next step.")} disabled={busy}
               title="Let the agent lead you through this step"
@@ -409,7 +454,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, attachedIds = [],
                     </span>
                   </>
                 ) : (
-                  <span className="block pv-serif text-[13px] leading-snug text-foreground">{objectiveHeadline}</span>
+                  <span className="block pv-serif text-[13px] leading-snug text-foreground">{needsIdea ? "Find the story idea — pitch me a few directions" : objectiveHeadline}</span>
                 )}
               </span>
               <ArrowUp className="h-3.5 w-3.5 shrink-0 rotate-90 text-[hsl(var(--pv-text-faint))]" />

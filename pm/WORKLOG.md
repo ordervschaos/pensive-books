@@ -17,6 +17,11 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-10 — Agent-as-guide: journey-aware greeting + teach-as-you-go persona `[ship]`
+- **What:** The AgentRail's empty state is now a scripted, journey-aware guide greeting — orients the ladder (idea→foundations→structure→scenes→prose), teaches the current rung's concept (STEP_TEACH), and switches to ideation stance when the brief has no idea (needsIdea → "Find the story idea" nudge + IDEA_MESSAGE). The book-agent system prompt gained a "Teach as you go" section (define each craft term on first use, 1–2 sentences of what/why per rung, pitch idea directions when the seed is blank). Chose scripted-greet + click-to-accept over auto-firing an AI turn on page open (cost/latency/double-fire).
+- **Files/commits:** apps/web/src/features/dna/components/AgentRail.tsx, pages/DnaTreePage.tsx (brief prop), supabase/functions/book-agent/index.ts (deployed). Uncommitted on feat/ai-provider-switch. Design notes: doc_1783664950001.md.
+- **PM impact:** none structural — folds into the DNA studio/agent surface row; not a Now item.
+
 ## 2026-07-10 — wip `[wip]` — book-agent can now reach claude-local through a real local run, restart needed to finish testing
 - **What:** User pointed at a live AiCalls row (book 1237, deployed, real deepseek-v4-pro traffic) and
   asked for agent calls to route through claude-local. Confirmed book-agent always hits the DEPLOYED
