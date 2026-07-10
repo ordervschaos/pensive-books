@@ -26,13 +26,11 @@ dumps don't capture extension activation, and no archived migration ever did eit
 a full request through the local gateway → edge fn → local Postgres → `callLLM` → the `claude-local`
 shim → real `claude -p` → response round-tripped correctly end to end.
 
-**Caveat, not yet acted on:** the remote project's own `supabase_migrations.schema_migrations` table
-still has all 135 old versions recorded as applied; this new baseline's version has never been pushed.
-Before the next `supabase db push`, someone must run
-`supabase migration repair 20260710140000 --status applied --linked` to mark it applied without
-executing it remotely (every object already exists there) — deliberately left undone here since it
-mutates the shared/production project's migration bookkeeping, not something to do silently as a side
-effect of a local dev-experience fix.
+**Update 2026-07-10, same day:** ran `supabase migration repair 20260710140000 --status applied
+--linked` on the user's explicit go-ahead. `supabase migration list` confirms `20260710140000` now
+shows applied on both Local and Remote — the CLI marked it applied without executing it (nothing ran
+against the live schema; every object already existed there). A future `supabase db push` will treat
+it as already-applied and skip it, so the next push is safe.
 
 ### 2026-07-10 — Provider is an explicit setting, not a naming convention; DeepSeek's own API satisfies the escape clause
 Shipped `ai_provider` (`auto|anthropic|openrouter|deepseek|mulerouter`) in `admin_settings`, read at
