@@ -17,6 +17,15 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-10 — wrap: closing out the claude-local bridge session `[chore]`
+- **What:** Stop-hook re-fired after this session's real work was already committed and catalogued
+  (the two `[ship]` entries directly below: bridge implementation, then live Docker-networking
+  verification). The re-fire is the working-tree fingerprint shifting under untracked scratch files
+  (`doc_1783663022711.md`, `todo.md`) dropped by a concurrent session on this same branch — not new
+  work of mine to catalogue. Wrapping now to acknowledge and re-stamp.
+- **Files/commits:** none new; see `3c18203`, `34a8c88` in the entries below.
+- **PM impact:** none.
+
 ## 2026-07-10 — claude-local bridge: Docker networking path verified live `[ship]`
 - **What:** Closed the one open item from the claude-local bridge ship entry below — actually
   proved the real `edge-runtime` Docker container can reach the laptop shim via
