@@ -16,7 +16,7 @@
 //   self   → POST { runId, chain: true }              → one model call → …          (x-chain secret)
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { type Brief, briefContext } from "../_shared/brief.ts";
-import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { callLLM, textFromLLM } from "../_shared/llm.ts";
 import { getRoleModels } from "../_shared/model-config.ts";
@@ -32,7 +32,7 @@ import dnaSchema from "../_shared/dna-schema.json" with { type: "json" };
 // The agent's specialized playbooks (progressive disclosure, doc_1783663022711.md): a one-line index
 // rides in the system prompt, trigger-matched bodies inject per turn, read_skill covers missed triggers.
 import { AGENT_SKILLS, matchSkills, SKILLS_INDEX } from "../_shared/agent-skills.ts";
-import { serviceClient } from "../_shared/task.ts";
+import { serviceClient, userClient as createUserClient } from "../_shared/task.ts";
 import { reinvoke, isChainCall } from "../_shared/self-chain.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
 import { judgeProse } from "../_shared/mandate-gate.ts";
@@ -219,11 +219,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Authenticated client calls ──
-    const userClient = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      { global: { headers: { Authorization: req.headers.get("Authorization")! } } }
-    );
+    const userClient = createUserClient(req.headers.get("Authorization") ?? "");
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return json({ error: "Unauthorized" }, 401);
 

@@ -74,9 +74,27 @@ export interface AgentThreadRow extends TaskRow {
 export const AGENT_THREAD_SELECT =
   "id, book_id, kind, status, created_at, updated_at, steps, pending, proposals, report, cancel_requested, error, context_auto";
 
-// book-agent is invoked directly (it is NOT mirrored in the dev bridge — the tool loop runs against
-// the deployed edge fn + the active model stack in dev and prod alike).
+// book-agent is invoked directly against the DEPLOYED edge fn + the active model stack in dev and prod
+// alike — it is NOT mirrored in the eval-bridge dev bridge (that reimplements flows locally; book-agent's
+// tool loop is too stateful/complex for that). VITE_LOCAL_BOOK_AGENT_URL is a narrower, different escape
+// hatch: it doesn't reimplement anything, it just points this ONE fetch at a LOCALLY-served book-agent
+// (`supabase functions serve`) instead of the deployed one — for exercising the claude-local bridge (see
+// _shared/task.ts's hostedEnv: the local function itself is set up to read/write the SAME hosted book
+// data, only its LLM calls move to claude-local). Undefined by default → unchanged behavior.
+const LOCAL_URL = import.meta.env.VITE_LOCAL_BOOK_AGENT_URL as string | undefined;
+
 async function invoke(body: Record<string, unknown>): Promise<void> {
+  if (LOCAL_URL) {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(LOCAL_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || (data as { error?: string })?.error) throw new Error((data as { error?: string }).error ?? `book-agent ${res.status}`);
+    return;
+  }
   const { data, error } = await supabase.functions.invoke("book-agent", { body });
   if (error) throw error;
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);

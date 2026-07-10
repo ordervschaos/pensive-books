@@ -11,11 +11,29 @@
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { captureException, isBillingError } from "./sentry.ts";
 
+// `SUPABASE_URL`/`SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY` are reserved by the platform — the CLI
+// silently drops any attempt to set them via --env-file ("Env name cannot start with SUPABASE_, skipping"),
+// so a locally-served function always points at the LOCAL project's (empty, unseeded) database, even when
+// you explicitly want it to operate on real hosted data. These three non-reserved names, set only in a
+// developer's own gitignored supabase/functions/.env, let a local run override that — the point being to
+// pair with CLAUDE_LOCAL_URL: LOCAL edge runtime (reachable from the claude-local shim) + HOSTED data/auth,
+// so only the LLM transport moves, not the books/users it operates on. Absent everywhere else (deployed,
+// any other developer's machine), so this is a no-op by default — same shape as CLAUDE_LOCAL_URL itself.
+function hostedEnv(name: "URL" | "ANON_KEY" | "SERVICE_ROLE_KEY"): string {
+  return Deno.env.get(`LOCAL_DEV_HOSTED_SUPABASE_${name}`) ?? Deno.env.get(`SUPABASE_${name}`) ?? "";
+}
+
 export function serviceClient(): SupabaseClient {
-  return createClient(
-    Deno.env.get("SUPABASE_URL") ?? "",
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
-  );
+  return createClient(hostedEnv("URL"), hostedEnv("SERVICE_ROLE_KEY"));
+}
+
+// For callers that need a user-scoped client (auth.getUser(), RLS-checked reads) instead of the
+// service-role client above — same hosted-override behavior, so a locally-served function's auth check
+// validates against the SAME project that minted the caller's session JWT.
+export function userClient(authHeader: string): SupabaseClient {
+  return createClient(hostedEnv("URL"), hostedEnv("ANON_KEY"), {
+    global: { headers: { Authorization: authHeader } },
+  });
 }
 
 // Run `work` in the background and write the terminal row. `work` resolves to the success patch
