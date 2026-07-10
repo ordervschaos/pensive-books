@@ -35,18 +35,25 @@ const MODEL = process.env.CLAUDE_LOCAL_SHIM_MODEL || null;
 const TIMEOUT_MS = Number(process.env.CLAUDE_LOCAL_SHIM_TIMEOUT_MS ?? 20 * 60 * 1000);
 const CLAUDE_FLAGS = (process.env.CLAUDE_LOCAL_SHIM_FLAGS || "--dangerously-skip-permissions").split(" ").filter(Boolean);
 
-// Spawn from a NEUTRAL directory, not this repo. `--tools ""` means the child never needs filesystem
-// access, so there's no reason to run it inside the project — and every reason not to: a child spawned
-// with cwd inside this repo inherits ITS `.claude/settings.json` (the PM worklog Stop-hook, the
-// SessionStart hook), which fire on every one-shot completion and corrupt the reply with meta-commentary
-// about the repo's git state instead of the requested answer. Verified live 2026-07-10: a plain-text test
-// prompt came back as a Stop-hook nudge about running `/wrap`, not "shim works", until this was fixed.
-// (`--bare` also suppresses hooks, but forces ANTHROPIC_API_KEY-only auth — no OAuth/keychain — which
-// defeats the whole point of this bridge: billing against the subscription, not per-token spend.)
-// This does NOT suppress user- or plugin-level hooks (~/.claude/settings.json, installed plugins) — those
-// apply regardless of cwd. Observed live: a global plugin's SessionStart hook still injected instructions
-// into a neutral-cwd run, and the model correctly flagged it as untrusted tool output and ignored it. A
-// known, surfaced limitation (weaker isolation than a real API), not a blocker.
+// Spawn from a NEUTRAL directory, not this repo — `--tools ""` means the child never needs filesystem
+// access, so there's no reason to run it inside the project. This alone stops PROJECT-level
+// `.claude/settings.json` hooks (this repo's PM worklog Stop-hook) from firing, since those only
+// resolve from inside the project directory.
+//
+// It does NOT stop the GLOBAL `~/.claude/CLAUDE.md` / `~/.claude/settings.json` — those are user-level,
+// loaded regardless of cwd. Verified live 2026-07-10 (second incident): a book-agent "suggest logline"
+// call came back as Claude Code narrating MY OWN coding session — "the uncommitted changes... aren't
+// mine to catalogue; doing a /wrap on someone else's in-flight work would misattribute it" — because the
+// user's global CLAUDE.md (a PM /wrap ritual + auto-memory + "document your work" instructions) was
+// still part of the default system prompt Claude Code assembles, contaminating book-agent's persona.
+// `--bare` suppresses that too, but forces ANTHROPIC_API_KEY-only auth (no OAuth/keychain) — defeating
+// the whole point of this bridge (subscription billing, not per-token spend).
+//
+// Fix: `--system-prompt` REPLACES Claude Code's default system prompt outright, rather than appending
+// to it — verified live: with it, "shim works." came back clean, no leaked git-status/memory/PM content,
+// still on subscription auth (no ANTHROPIC_API_KEY in the shell). So the actual system text (book-agent's
+// persona + the tool envelope instructions) goes through `--system-prompt`, and only the conversation
+// transcript goes through `-p` — see buildSystemPrompt/buildUserPrompt below.
 const spawnCwd = join(tmpdir(), "claude-local-shim-cwd");
 mkdirSync(spawnCwd, { recursive: true });
 
@@ -109,16 +116,25 @@ function toolEnvelopeBlock(tools) {
   ].join("\n");
 }
 
-function buildPrompt(body) {
+// Everything that defines WHO the model is this turn (book-agent's persona + the tool envelope
+// instructions) — goes through --system-prompt, which replaces Claude Code's own default system prompt
+// rather than appending to it (that's what keeps the global CLAUDE.md/memory/git-status content out).
+function buildSystemPrompt(body) {
   const sys = systemText(body.system);
   const toolBlock = toolEnvelopeBlock(body.tools);
+  return [sys, toolBlock].filter(Boolean).join("\n\n");
+}
+
+// Everything that defines WHAT to respond to this turn — the flattened conversation. Goes through -p.
+// No leading "---"-style delimiter: a userPrompt starting with dashes gets misparsed as a CLI flag by
+// `claude`'s own arg parser (spawn() passes it as one literal argv entry, but the parser still balks at
+// a value that LOOKS like an option) — verified live: "unknown option '--- conversation so far ---...'".
+function buildUserPrompt(body) {
   const transcript = (body.messages ?? []).map(flattenMessage).filter(Boolean).join("\n\n");
   return [
-    sys,
-    toolBlock,
-    "--- conversation so far ---",
+    "Conversation so far:",
     transcript,
-    "--- respond now, as the assistant, following the JSON reply format above ---",
+    "Respond now, as the assistant, following the JSON reply format in the system prompt.",
   ].filter(Boolean).join("\n\n");
 }
 
@@ -170,9 +186,15 @@ function toAnthropicResponse(raw, requestedModel) {
 // `claude -p` gets immediate EOF instead of waiting on an empty pipe, prompt via the -p arg, SIGTERM
 // then SIGKILL escalation on timeout. `--tools ""` is load-bearing — it forces a single completion
 // instead of a multi-minute repo-roaming agentic run.
-function runClaudeLocal(prompt) {
+function runClaudeLocal(systemPrompt, userPrompt) {
   return new Promise((resolve, reject) => {
-    const args = ["-p", prompt, ...CLAUDE_FLAGS, ...(MODEL ? ["--model", MODEL] : []), "--tools", ""];
+    const args = [
+      "-p", userPrompt,
+      "--system-prompt", systemPrompt,
+      ...CLAUDE_FLAGS,
+      ...(MODEL ? ["--model", MODEL] : []),
+      "--tools", "",
+    ];
     const child = spawn("claude", args, { cwd: spawnCwd, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
@@ -229,11 +251,12 @@ const server = createServer(async (req, res) => {
   const started = Date.now();
   try {
     const body = JSON.parse(await readBody(req));
-    const prompt = buildPrompt(body);
+    const systemPrompt = buildSystemPrompt(body);
+    const userPrompt = buildUserPrompt(body);
     console.log(
-      `→ claude -p [model=${body.model ?? "?"} messages=${body.messages?.length ?? 0} tools=${body.tools?.length ?? 0}] "${prompt.slice(0, 80).replace(/\n/g, " ")}…"`,
+      `→ claude -p [model=${body.model ?? "?"} messages=${body.messages?.length ?? 0} tools=${body.tools?.length ?? 0}] "${userPrompt.slice(0, 80).replace(/\n/g, " ")}…"`,
     );
-    const raw = await runClaudeLocal(prompt);
+    const raw = await runClaudeLocal(systemPrompt, userPrompt);
     const data = toAnthropicResponse(raw, body.model);
     const latencyS = ((Date.now() - started) / 1000).toFixed(1);
     console.log(`← ${data.stop_reason} in ${latencyS}s`);
