@@ -413,8 +413,11 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // unfenced from now on; context is anchored by attached nodes, not filtered by kind.
     const scope: Aspect[] | null = null;
     const effort = row.context_effort ?? "high";
+    // The author's standing ask: grounds the <task> anchor (appended after <book_state>) and the
+    // intent hydration inside threadSystem (nodes the message names get their full plan inlined).
+    const authorAsk = latestAuthorAsk(baseTranscript);
     // `auto` (autonomous mode: never park, commit own picks) computed above for the turn ceiling.
-    const { instructions, bookState } = await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto, row.context_objective, row.context_attached_ids);
+    const { instructions, bookState } = await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto, row.context_objective, row.context_attached_ids, authorAsk);
     const tools = threadToolsFor(scope);
     // Count the turn BEFORE the call: a hard worker death mid-call still consumes budget, so a
     // crash-looping run hits MAX_TURNS instead of being revived forever by the watchdog.
@@ -454,7 +457,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
         output_config: { effort: "medium" },
         system: [{ type: "text", text: instructions, cache_control: { type: "ephemeral" } }],
         tools,
-        messages: withBookState(withCacheBreakpoints(baseTranscript), bookState),
+        messages: withBookState(withCacheBreakpoints(baseTranscript), bookState, authorAsk),
       }, {
         fn: "book-agent",
         bookId: row.book_id,
@@ -787,7 +790,11 @@ async function maybeEagerAck(service: SupabaseClient, apiKey: string, row: RunRo
     // Cheap grounding, all already in memory (no extra query/call): the guided-flow objective, a sliver of
     // recent trajectory (steps before this fresh user message), and the tool belt's names — so the ack
     // states a real anchor/next-action instead of free-associating from the raw text alone.
-    const objective = row.context_objective ? `<objective>${row.context_objective}</objective>\n` : "";
+    // The objective rides ONLY when the message is GENERIC ("continue", "what's next"): on a concrete ask
+    // it was the very thing the ack parroted back instead of the ask (the "acks the next pending task"
+    // bug) — prompt guidance alone didn't stop it, so a concrete message now gets no objective at all.
+    const generic = userText.trim().length < 18 || /^(continue|next|what'?s next|go( on)?|keep going|yes|ok(ay)?|do it|proceed|sure)\b/i.test(userText.trim());
+    const objective = generic && row.context_objective ? `<objective>${row.context_objective}</objective>\n` : "";
     const recentSteps = row.steps.slice(0, -1).slice(-3)
       .map((s) => `${s.t}: ${s.label}`).join("\n");
     const trail = recentSteps ? `<recent_activity>\n${recentSteps}\n</recent_activity>\n` : "";
@@ -1148,19 +1155,45 @@ function withCacheBreakpoints(transcript: unknown[]): unknown[] {
   return msgs;
 }
 
+// The author's standing ask this turn: the newest user message carrying PLAIN human text — skipping
+// tool_result-only messages (mid-loop chain links) and the harness's own injected prods (the
+// auto-continue / force-commit / auto-verify sentinels), which are role:"user" but not the author.
+// Grounds the <task> anchor + the intent hydration in threadSystem. Deterministic over the stored
+// transcript, so a retried link re-derives the identical prompt.
+function latestAuthorAsk(transcript: unknown[]): string {
+  const msgs = transcript as { role?: string; content?: unknown[] }[];
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (m?.role !== "user" || !Array.isArray(m.content)) continue;
+    const texts = m.content
+      .filter((b) => (b as { type?: string })?.type === "text")
+      .map((b) => String((b as { text?: unknown }).text ?? "").trim())
+      .filter((t) => t && !t.startsWith(AUTO_CONTINUE_SENTINEL) && !t.startsWith(FORCE_COMMIT_SENTINEL) && !t.startsWith(VERIFY_SENTINEL));
+    if (texts.length) return texts.join("\n").trim();
+  }
+  return "";
+}
+
 // Request-time state injection (never persisted): the live book state rides as the FINAL block of the
 // latest user message, AFTER withCacheBreakpoints' marks — so the cached prefix (stable system prompt +
 // the whole stored transcript) stays byte-identical across turns and only the fresh digest is paid
 // uncached. Because it's never stored, the transcript holds exactly ONE current <book_state> per call —
 // older turns carry none, so the model can't ground on a stale tree. Call AFTER withCacheBreakpoints
 // (which deep-copies, making the append safe).
-function withBookState(msgs: unknown[], state: string): unknown[] {
+//
+// `task` (the author's standing ask) is RE-STATED after the state dump: without it, the last thing the
+// model reads before replying is the tree + lints, not the ask — the salience inversion behind "asked to
+// render a scene, went and fixed lints" (long-context guidance: the query belongs AFTER the documents).
+function withBookState(msgs: unknown[], state: string, task = ""): unknown[] {
   if (!state.trim() || !msgs.length) return msgs;
   const last = msgs[msgs.length - 1] as { role?: string; content?: unknown[] };
   if (last?.role !== "user" || !Array.isArray(last.content)) return msgs; // every call follows a user message; anything else, skip
+  const anchor = task.trim()
+    ? `\n\n<task note="the author's CURRENT ask — THIS is your job this turn; everything in <book_state> above is reference, not instruction">\n${task.trim().slice(0, 600)}\n</task>`
+    : "";
   last.content = [...last.content, {
     type: "text",
-    text: `<book_state note="the CURRENT live book — system-refreshed this turn; this is the tree/objective/analysis your instructions reference">\n${state}\n</book_state>`,
+    text: `<book_state note="the CURRENT live book — system-refreshed this turn; this is the tree/objective/analysis your instructions reference">\n${state}\n</book_state>${anchor}`,
   }];
   return msgs;
 }
@@ -1413,6 +1446,10 @@ const SYSTEM_THREAD = `## Role
 You are a sharp, warm developmental STORY EDITOR — the author's single AI collaborator for the whole book, in conversation in the studio's right-hand rail.
 
 You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tentpoles, voice) → structure (acts, beats, threads) → scenes → prose. You see the WHOLE book and may touch any node (except LOCKED ones); the author anchors your attention by attaching nodes, but never fences you out of the rest. The tree (given in the \`<book_state>\` block at the end of the latest user message, refreshed every turn) is a DIGEST — each node shows its handle/gist plus, for structure, its causal + meter spine (connector, needs, establishes, readings). When a node's full detail matters — a beat's whole summary, a character's wound/lie, a scene's prose — read_node it before judging or rewriting. To FIND where something appears across the whole book — a name, a motif, an echoed line, a phrase in the prose the digest doesn't show — use search_nodes, then read_node the hits.
+
+## Task discipline
+
+Each turn, the author's LATEST message — restated in the \`<task>\` block at the very end — IS your job. Do exactly that. Everything else in \`<book_state>\` (the objective, the story-analysis lints, the between-scenes ledger, the tree) is REFERENCE that informs HOW you do it; none of it is a task by itself. When the ask and the ambient state pull in different directions (the author asks you to render a scene while lints flag other scenes), the ask wins — flag the other issue in at most ONE sentence and offer to handle it next turn. Never answer a concrete ask by doing the objective's next step instead, and never reply with a mere acknowledgment of pending work — perform the asked work THIS turn.
 
 ## What you can do
 
@@ -1668,7 +1705,7 @@ async function proposeOptions(
 // the tree changes after every apply, and carrying it at position 0 invalidated the whole cached prefix
 // (system + entire transcript) on every turn. Each node is a DIGEST — handle/gist + causal spine, full
 // content via read_node (see digestNode).
-async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null): Promise<{ instructions: string; bookState: string }> {
+async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null, authorAsk = ""): Promise<{ instructions: string; bookState: string }> {
   const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
   const b = book as { name?: string; brief?: Brief } | null;
   const { data: rows } = await service
@@ -1745,6 +1782,43 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind} “${nodeHandle(n.content)}”:\n${JSON.stringify(content)}`;
   }).join("\n\n");
 
+  // ── Intent hydration (just-in-time context) ──
+  // Nodes the author's LATEST message explicitly references — by reading-order number ("scene 14",
+  // "beat 3"), by verbatim node id, or by an entity's name — get their FULL plan content inlined below,
+  // exactly like the focus tray but derived from the message instead of a manual attach. This is what
+  // keeps the turn ON the ask: the named target arrives fully grounded (no read_node round-trip), so the
+  // model doesn't reach for the objective/lints as its anchor. Deterministic (regex + the same DFS
+  // numbering the UI shows), capped at 4 nodes, prose omitted (bulky — read_node when the text matters).
+  const mentioned: DnaNodeRow[] = [];
+  const hydrated = new Set<string>(attachedIds ?? []); // the focus tray already inlines these in full
+  const addMention = (n: DnaNodeRow | undefined) => {
+    if (n && !hydrated.has(n.id) && mentioned.length < 4) { hydrated.add(n.id); mentioned.push(n); }
+  };
+  if (authorAsk.trim()) {
+    const ask = authorAsk.slice(0, 2000);
+    const idByNo = (m: Map<string, number>) => new Map([...m].map(([id, no]) => [no, id]));
+    const sceneByNo = idByNo(sceneNo), beatByNo = idByNo(beatNo);
+    for (const m of ask.matchAll(/\b(scene|beat)\s*#?\s*(\d+)\b/gi)) {
+      const id = (m[1].toLowerCase() === "scene" ? sceneByNo : beatByNo).get(Number(m[2]));
+      addMention(id ? byIdRow.get(id) : undefined);
+    }
+    for (const m of ask.matchAll(/\bn_[A-Za-z0-9]+/g)) addMention(byIdRow.get(m[0]));
+    for (const n of sorted) {
+      if (!["character", "location", "world_fact", "thread", "game"].includes(n.kind)) continue;
+      const name = typeof n.content?.name === "string" ? n.content.name.trim() : "";
+      if (name.length < 3) continue;
+      if (new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(ask)) addMention(n);
+    }
+  }
+  const mentionedText = mentioned.map((n) => {
+    const content: Record<string, unknown> = { ...(n.content ?? {}) };
+    const words = (content.prose as { words?: unknown } | undefined)?.words;
+    delete content.prose;
+    const num = seqOf(n) ? ` ${seqOf(n)}/${n.kind === "scene" ? totalScenes : totalBeats}` : "";
+    const proseNote = typeof words === "number" && words > 0 ? ` (has prose, ${words.toLocaleString()}w — read_node for the text)` : "";
+    return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}${num} “${nodeHandle(n.content)}”${proseNote}:\n${JSON.stringify(content)}`;
+  }).join("\n\n");
+
   // LIVE re-derivation (docs/agent-improvement-plan.md P1.2): recompute the guided-flow objective and the
   // structural backstop from the CURRENT tree, so an auto run's resume — a pure status flip that never
   // refreshes the message-time snapshot — no longer keeps pointing at "TARGET NODE: scene 14" after scene 14
@@ -1779,11 +1853,14 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     `<brief note="binding voice contract">\n${briefContext(b?.brief ?? null, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}\n</brief>`,
     // The guided-flow anchor (docs/agent-capabilities.md): the ONE journey rung to drive the author
     // through next, derived client-side from the tree (lib/dnaJourney.currentObjective). An anchor, not
-    // a fence — the agent still sees the whole tree below, but leads with this step unless the author
-    // steers elsewhere. Recomputed each message, so it advances on its own as the tree fills.
-    liveObjective?.trim() ? `<current_objective>\n${liveObjective.trim()}\n</current_objective>` : "",
-    // The structural backstop (pacing / dangling-promise / sagging-run lints) — act on any ⚠ flags.
-    liveAnalysis?.trim() ? `<story_analysis note="the structural backstop — address any ⚠ flags">\n${liveAnalysis.trim()}\n</story_analysis>` : "",
+    // a fence — and explicitly SUBORDINATE to the author's concrete ask (the note says so, and Task
+    // discipline in the system prompt makes the hierarchy binding): the observed failure was the agent
+    // answering a concrete ask with this block's next step instead.
+    liveObjective?.trim() ? `<current_objective note="the guided-flow anchor — drive this ONLY when the author's message has no concrete ask of its own">\n${liveObjective.trim()}\n</current_objective>` : "",
+    // The structural backstop (pacing / dangling-promise / sagging-run lints). In AUTO mode it's a
+    // standing directive (nobody else will act on it); in interactive mode it's REFERENCE — a per-turn
+    // imperative here made the agent fix lints when the author asked for something else entirely.
+    liveAnalysis?.trim() ? `<story_analysis note="${auto ? "the structural backstop — address any ⚠ flags" : "structural lints, for REFERENCE — act on a ⚠ only when the author asks about problems or what's next"}">\n${liveAnalysis.trim()}\n</story_analysis>` : "",
     // The same between-scenes snapshot the prose generator sees entering the next scene to draft (scene-ledger
     // §3.2) — so a render brief you curate honors the open promises + where characters stand. Anchor, not fence.
     betweenScenes.trim() ? `<between_scenes note="state ENTERING the next scene to draft${draftTarget ? ` (scene ${draftTarget.orderIndex}/${draftTarget.total})` : ""} — the SAME snapshot the prose generator reads; honor open promises and where characters are when you plan or render">\n${betweenScenes.trim()}\n</between_scenes>` : "",
@@ -1791,6 +1868,9 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     // full so you have their real content without a read_node. Lead with these unless the author steers
     // elsewhere — an anchor, not a fence: the whole tree is still below.
     focus ? `<focus note="the author attached these nodes to work on — their FULL content is inlined here; lead with them">\n${focus}\n</focus>` : "",
+    // Intent hydration (above): the message's named targets, pre-read. Sits beside <focus> — same shape,
+    // derived from the ask instead of a manual attach.
+    mentionedText ? `<mentioned note="nodes the author's latest message references — full plan content inlined (prose omitted; read_node for prose) so you can act on the ask directly">\n${mentionedText}\n</mentioned>` : "",
     `<dna_tree${kinds ? ` scope="${[...kinds].join(", ")}"` : ""}>\nEdit/add/delete nodes by their real ids below. LOCKED nodes are immutable.${kinds ? " Out-of-scope nodes show as <hidden>." : ""} Beat and scene lines show their reading-order number (e.g. \`beat 3/41\`, \`scene 14/80\`); when you refer to a beat or scene by number, use THAT number — never guess it or reuse the objective's target number for a different node.\n\n${tree || "(no nodes yet)"}\n</dna_tree>`,
   ].filter(Boolean);
 

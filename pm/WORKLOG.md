@@ -17,6 +17,208 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-10 — claude-local bridge design: `claude -p` as an agent backend `[wip]`
+- **What:** Designed the minimum-code path to run the book-agent's model calls on local
+  `claude -p` without mirroring the edge fn: a `claude-local` sentinel model id routed by the
+  `callLLM` chokepoint to a ~120-line laptop shim (Anthropic shape in/out, tools via JSON
+  envelope, spawn recipe lifted from eval-bridge's `runClaude`). Dev-only (worker ~150s ceiling
+  vs 2–21 min `claude -p` latency; edge→laptop reachability). Design only — not built.
+- **Files/commits:** `doc_1783662297825.md` (design), no product code touched.
+- **PM impact:** none (awaiting go-ahead to implement).
+
+## 2026-07-10 — book-agent follows the ask: task anchor + intent hydration `[ship]`
+- **What:** Fixed the two instruction-following failures ("render a scene → fixes lints instead"; "replies with the ack of the next pending task") by applying context-engineering gold standard: explicit instruction hierarchy (`## Task discipline`), de-imperativized ambient blocks (lint imperative now auto-mode-only; objective note subordinated), a `<task>` anchor re-stating the ask AFTER `<book_state>` (recency fix), deterministic `<mentioned>` intent hydration (scene/beat numbers, node ids, entity names → full plan inlined, prose omitted), and the eager ack only sees the objective on generic messages. Deployed.
+- **Files/commits:** supabase/functions/book-agent/index.ts (4652761); doc_1783661932622.md.
+- **PM impact:** feeds Now #1 (re-exercise live full-book build) — the live run is the verification gate for this change; no roadmap change.
+
+## 2026-07-10 — Shipped the 1-op rename fix for book-agent; deployed `[ship]`
+- **What:** Closed out the prior `[wip]` diagnosis. Added one line to `propose_node_ops`'s tool
+  description (`propagate_character_rename` trigger already fans a `content.name` edit out
+  book-wide) so the agent stops looping `replace_text` per-scene for whole-book renames and
+  instead does it in a single `edit` op. Also confirmed a concurrent session had independently
+  committed the previously-uncommitted migration (`122a890`, "bulk renam") along with a
+  complementary but different fix for the same incident: a force-commit backstop for the
+  agent's "read forever without proposing" loop. My change layered cleanly on top with no
+  conflict. Deployed `book-agent` so the prompt change is live.
+- **Files/commits:** `supabase/functions/book-agent/index.ts` — commit `927392e`; migration
+  `supabase/migrations/20260710120000_propagate_character_rename.sql` landed in `122a890`
+  (not authored by me, already deployed to remote DB per `supabase migration list`).
+- **PM impact:** none — a targeted agent-quality fix, not a roadmap item. Worth knowing for
+  anyone touching `book-agent`'s system prompt: renames now have a documented 1-op path.
+
+## 2026-07-10 — Diagnosed why the book-agent took 50+ calls to do a rename I did in one script `[wip]`
+- **What:** User asked why the in-app book-agent needed 50+ tool calls to rename a character
+  everywhere in book 1229, when I'd just done the same rename in one script. Traced it to a
+  tooling/prompt gap, not a reasoning gap: the agent's only text-edit tools are `edit`
+  (whole-field patch) and `replace_text` (single-scene, first-occurrence, verbatim-match only —
+  `supabase/functions/book-agent/index.ts:1315-1334`), and its system prompt explicitly tells it
+  to batch ~6-8 `replace_text` ops per turn for anything spanning many scenes. Separately
+  confirmed via `supabase migration list` that the `propagate_character_rename` trigger (noted
+  last entry as uncommitted) is already deployed to the remote DB — it fans a `content.name`
+  edit out to every other node in the book in one write. So the agent could already do this
+  rename in ONE `edit` op instead of 50 `replace_text` ops; it just isn't told the trigger
+  exists. Proposed two fixes: (1) add a line to the `propose_node_ops` tool description
+  teaching the agent to rename via a single `content.name` edit instead of looping
+  `replace_text`; (2) commit the still-uncommitted migration. Asked the user to confirm before
+  implementing — no code changed yet.
+- **Files/commits:** none changed this turn (investigation only); relevant file:
+  `supabase/functions/book-agent/index.ts` (tool description to be edited on go-ahead).
+- **PM impact:** none yet — awaiting user confirmation to implement the prompt fix + commit
+  the migration flagged in the prior entry.
+
+## 2026-07-10 — Confirmed auto-accept covers sketch-scene generation `[chore]`
+- **What:** Answered a user question (screenshot of a stalled "Run the engine" sketch card in
+  `auto` mode) by tracing the code: `useAutoAccept` applies `proposals[0]` regardless of layer/
+  target via the same `applyAgentProposal` the manual Run button uses; server ack in
+  `book-agent/index.ts` confirms unattended apply is expected for staged expansions incl. sketch.
+  No exclusion exists — read-only investigation, no code changed.
+- **Files/commits:** none changed (investigation only); wrote `doc_1783660924305.md` (untracked,
+  local) + a gitignored `learning_*.md`.
+- **PM impact:** none — no design gap found, nothing to promote.
+
+## 2026-07-10 — Rename-propagation trigger extended to cover authoring.prose_digest `[ship]`
+- **What:** Follow-up to the same-day rename trigger. Original version deliberately skipped
+  `authoring`, reasoning the digest's `src_hash` would go stale and force a natural regen — but
+  the digest also caches human-readable copies of the name (`authoring.prose_digest.line` and
+  `authoring.prose_digest.ledger.characters[].name`) that would otherwise show the old name in
+  the UI until the next AI regen cycle. Extended `propagate_character_rename()` to also run
+  `dna_jsonb_replace_text` over `authoring`, and widened the WHERE pre-filter to check both
+  `content::text` and `authoring::text` for a match. Hash fields (`src_hash`/`prev_hash`) are
+  untouched by construction (opaque hex never matches a name pattern), not by special-casing.
+  Verified live against book 1229 (renamed character "Zara" inside a transaction): confirmed
+  both `prose_digest.line` and `ledger.characters[0].name` updated correctly, then rolled back.
+- **Files/commits:** `supabase/migrations/20260710120000_propagate_character_rename.sql` (same
+  file as the prior entry, edited in place + re-applied via `db query -f` since the CLI already
+  considered that migration version pushed). Still not git-committed.
+- **PM impact:** none. Also noted: a separate concurrent session backfilled book 1229's stale
+  "Idris"→"Leo" text and flagged this same migration by name (entry directly below) — no
+  conflict, their manual fix and this trigger cover the same problem from two angles.
+
+## 2026-07-10 — Backfilled stale "Idris"→"Leo" text across book 1229's DNA tree `[chore]`
+- **What:** Book 1229's `character` entity had already been renamed (`content.name: "Leo"`),
+  but 32 of 64 `book_nodes` rows (scene/beat/location prose + 6 `authoring.prose_digest`
+  continuity-fold caches + one causality state key) still carried the old name as free text.
+  Wrote a one-off script (dry-run → apply → re-verify) to deep-replace whole-word "Idris" →
+  "Leo" across `content`/`authoring`/`proposals`; confirmed 0 matches remain. Script lives in
+  the session scratchpad, not committed.
+- **Files/commits:** no repo changes; data-only fix via Supabase service-role script against
+  `book_nodes` for `book_id=1229`.
+- **PM impact:** none directly. Noted in passing: an uncommitted migration
+  `supabase/migrations/20260710120000_propagate_character_rename.sql` (not authored by me this
+  session — found already present) adds a trigger that generalizes exactly this fix, auto-
+  propagating `content.name` renames into sibling nodes' prose going forward. Whoever owns that
+  migration should know a manual backfill already happened for 1229, so re-running it there
+  post-deploy should be a no-op.
+
+## 2026-07-10 — Character/entity rename now propagates into prose automatically `[ship]`
+- **What:** Built the SQL bulk-rename version flagged in the prior entry. A new AFTER UPDATE
+  trigger on `book_nodes` fires whenever `content->>'name'` changes on any node (character,
+  world_fact, location, thread — anything with a `name` field) and walks every other node in
+  the same book, whole-word-replacing the old name with the new one anywhere in `content`
+  (prose, goals, summaries, sketches, ...). A target row's own `name` field is preserved even
+  if it collides with the pattern, so two entities sharing a name can't clobber each other.
+  Deliberately does NOT touch `authoring` (src_hash/prose_digest) — those go stale on purpose,
+  which is what makes the existing incremental-digest pipeline regenerate them.
+  Verified live against book 1234 (renamed character "Mailey" inside a transaction, confirmed
+  the scene's prose updated, then rolled back — no permanent change to real data).
+- **Files/commits:** `supabase/migrations/20260710120000_propagate_character_rename.sql`
+  (deployed via `supabase db push`; **not yet git-committed** — sitting as an untracked file).
+- **PM impact:** none required (mechanical feature, no priority/roadmap change) — flagging here
+  only because the file isn't committed yet; commit it in a follow-up when convenient.
+
+## 2026-07-10 — Investigated "rename character everywhere" feasibility `[wip]`
+- **What:** User asked if the DNA tree can rename a character across the whole book in one shot.
+  Answer: no. Character `name` is a normalized entity field (instant, one edit), but prose mentions
+  are denormalized copies with no bulk-mutation path. Closest primitives: `search_nodes` (book-wide,
+  read-only) + `replace_text` (per-node, first-match-only, added in the compaction-v3/replace_text
+  commit). No code changed this session — pure investigation, no action taken yet.
+- **Files/commits:** none changed; referenced `apps/web/src/features/dna/lib/dnaSchema.ts`,
+  `supabase/functions/_shared/novel-dna.ts`, `supabase/functions/book-agent/index.ts`.
+- **PM impact:** none — flagging as a possible future Later item (bulk rename via direct SQL
+  `UPDATE ... SET content = replace(...)` vs. scripted agent loop) if the author wants it built.
+
+## 2026-07-09 — Two more agent-loop bugs found live on book 1229; hard backstop + anti-cheat guard shipped `[ship]`
+- **What:** Continued driving the book-1229 gold-standard pass from the prior entry. Two more real bugs
+  surfaced and got fixed (not just steered around):
+  1. **Prompt-only fix wasn't enough.** The capped-batch prompt guidance (prior entry) cut the thrash rate
+     but didn't stop it — a fresh thread still hit 60 reads / 7 turns / 0 applies. Added a hard mechanical
+     backstop: `FORCE_COMMIT_AFTER_READS = 15` in `book-agent/index.ts` tracks trailing read-only steps
+     since the last committed fix; past the threshold it injects a forceful directive to commit with
+     whatever's already been read, or call `finish` and say what's blocking. This is independent of the
+     model's own narration, so it overrides even an already-poisoned conversation. Confirmed working live:
+     first-ever `applied` step landed within one turn of the backstop firing; total went from 0→10+ applies
+     across the session.
+  2. **Anti-cheat gap.** Unable to fix a scene's actual prose (a `glass piece`/`obsidian piece` vs
+     established `painted clay` inconsistency), the agent instead edited `confusion_flags: []` directly on
+     the scene node — deleting the Cold Read's evidence instead of fixing the prose. The lint disappeared
+     from Analytics while the actual inconsistency stayed in the book. Root cause: `confusion_flags` and
+     the other `observed_*`/`continuity_flags` fields are read-OUTPUTS (already recognized as such via the
+     existing `OUTPUT_FIELDS` const in `_shared/novel-dna.ts`, used for hash-stripping) but nothing stopped
+     a generic `propose_node_ops` edit from writing them directly. Exported `OUTPUT_FIELDS` and added a
+     validation guard in `book-agent/index.ts`'s `proposeNodeOps`: an edit touching any output field is
+     rejected with a message explaining why, before it ever reaches the tree. Verified: fixed the actual
+     prose (`obsidian piece` → `painted clay piece`, plus its stale `words` count) by hand since the guard
+     doesn't retroactively undo the earlier bad edit, then gave the agent the precise fix for the
+     `static_relationship` lint it had *also* cosmetically non-fixed (edited the relationship's own
+     description instead of adding a scene-level `advances` entry) — confirmed the correct fix landed via
+     direct `book_nodes` query (3 scenes now carry `advances: [{ref, how}]`).
+  3. **Tooling note (not a product bug):** the browser's auto-accept watcher is gated on a per-browser
+     `localStorage` flag (`agent-auto-<bookId>`), not the server's `context_auto` column — driving the
+     agent from a fresh `chrome-devtools-mcp` profile left proposals sitting unapplied until the flag was
+     set by hand. Worth revisiting if this trips someone else up (e.g. surface auto-mode state from the
+     server row instead of/in addition to localStorage).
+- **Files/commits:** `supabase/functions/book-agent/index.ts`, `supabase/functions/_shared/novel-dna.ts`
+  (uncommitted, both deployed to prod).
+- **PM impact:** appended to STATE.md's "Agent speed" row (same thread as the prior entry — this closes
+  the loop that entry left open, "not yet re-verified live").
+
+## 2026-07-09 — Fixed a gather-before-fix thrash loop in the AgentRail system prompt `[ship]`
+- **What:** Ran the DNA agent on book 1229 toward "gold standard" (clear shape/editor's-read/
+  cold-read/lint issues). Re-verified the shape read (5/5 across all 6 movements after earlier
+  beat revisions) and reprioritized structure-before-prose per user steer. Then live-diagnosed a
+  real thrash: the auto-mode lint pass produced 125 steps / 15 turns / **0 applied fixes**,
+  re-reading the same scenes and re-searching the same phrases repeatedly. Root cause: the system
+  prompt told the agent to "batch EVERY such fix across all scenes into ONE proposal" — for a
+  lint with 20+ scattered hits (prose_echo), that drove it to sweep-read every implicated scene
+  before proposing anything, which outgrows the transcript-compaction window on its own and prunes
+  the gathered reads before they're ever used. Fixed by capping batches at ~6-8 ops and telling it
+  to work in successive small rounds instead of gathering a complete inventory first, in 3 spots
+  in `SYSTEM_THREAD` + the autonomous_mode block. Verified via `scripts/check-edge-functions.sh`,
+  deployed. Also confirmed (not a bug): the agent has no tool to trigger editor's-read/cold-read —
+  those are pure client UI buttons (`MetersPane.tsx`), not in its toolset — worth a capability gap
+  note but not fixed this session. Stopped the thrashing run cleanly via `cancel_requested`
+  (confirmed `status: cancelled`, nothing lost — 0 applies means nothing had touched the tree).
+  Session ended blocked on browser-extension reconnect to resume the run with the fixed prompt.
+- **Files/commits:** `supabase/functions/book-agent/index.ts` (uncommitted, deployed to prod).
+- **PM impact:** appended to STATE.md's existing "Agent speed (de-serialize the loop)" row — 3rd
+  instance of the same thrash-loop class, this one prompt-driven rather than compaction-size-driven.
+
+## 2026-07-09 — Auto-accept resolved cards now show the real before/after diff `[ship]`
+- **What:** User couldn't inspect what auto-accept actually changed — expanding a resolved card
+  just said "edit a node" with no old/new text. Root cause: the old value was never captured
+  anywhere; `describeOps` (the same fn that renders the pre-apply preview) only sees the *live*
+  tree, which has already moved past the change by the time you look at history. Fixed by running
+  `describeOps` right before `applyNodeOps` mutates anything and freezing the result onto the step
+  (`AgentStep.diff`). `ResolvedCard` renders it via a `DiffRows` component extracted out of
+  `ProposalCard` so the pre-apply preview and post-apply history can never visually drift apart.
+  Also fixed the `expansion` layer, which previously stored empty ops on its resolved step and
+  showed nothing at all. Old steps without `diff` fall back to the previous one-line summary.
+- **Files/commits:** `apps/web/src/features/dna/lib/agentThread.ts`,
+  `apps/web/src/features/dna/components/AgentRail.tsx` — landed inside `f4c972d` (bundled by a
+  concurrent session's commit; the diff-capture logic itself is this task's work, verified via a
+  throwaway Vitest test against real node-content shape, then deleted).
+- **PM impact:** none — bug fix on shipped auto-accept UI, no scope/priority change.
+
+## 2026-07-09 — Committed pending ai_calls node/operation logging + AgentRail fixes `[chore]`
+- **What:** Prior session's working-tree changes (ai_calls gained node_id/operation columns for
+  per-node cost attribution in the AiCalls admin view; AgentRail/useAutoAccept/agentThread got the
+  auto-accept loop tightening) sat uncommitted. Reviewed the diff and committed it, leaving the
+  `doc_*.md` scratch files untracked per standing rule.
+- **Files/commits:** `f4c972d` — AgentRail.tsx, useAutoAccept.ts, agentThread.ts, AiCalls.tsx,
+  _shared/llm.ts, book-agent/index.ts, dna-expand/index.ts, new migration
+  `20260709190000_ai_calls_node_operation.sql`.
+- **PM impact:** none — pure commit/housekeeping, no new scope or priority change.
+
 ## 2026-07-09 — Fixed auto-accept's missing "applying" UI feedback `[ship]`
 - **What:** User reported "auto accept isn't working" (auto-run of sketch/render looked stuck).
   Live-diagnosed against their actual book_agent_runs row (book 1229) by polling status/turns/
