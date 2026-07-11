@@ -12,15 +12,16 @@ import { nodeTitle } from "./nodeDisplay";
 import { MONO, SERIF, T } from "./treeChrome";
 
 // ── Discard story modal ───────────────────────────────────────────────────────
-type DiscardLevel = "prose" | "scenes" | "beats" | "story";
+type DiscardLevel = "prose" | "scenes" | "beats" | "story" | "everything";
 const DISCARD_OPTIONS: { level: DiscardLevel; label: string; detail: string }[] = [
-  { level: "prose",  label: "prose only",         detail: "clear written prose — keep scene plans, beats, acts" },
-  { level: "scenes", label: "scenes + prose",      detail: "delete all scene nodes — keep beats and acts" },
-  { level: "beats",  label: "beats + scenes",      detail: "delete all beat nodes and their scenes — keep acts" },
-  { level: "story",  label: "full story",          detail: "delete acts, beats, scenes and all prose — keep foundations" },
+  { level: "prose",      label: "prose only",         detail: "clear written prose — keep scene plans, beats, acts" },
+  { level: "scenes",     label: "scenes + prose",      detail: "delete all scene nodes — keep beats and acts" },
+  { level: "beats",      label: "beats + scenes",      detail: "delete all beat nodes and their scenes — keep acts" },
+  { level: "story",      label: "full story",          detail: "delete acts, beats, scenes and all prose — keep foundations" },
+  { level: "everything", label: "everything",          detail: "delete the entire tree, including foundations — start fresh. A checkpoint is saved to History first." },
 ];
-export function DiscardStoryModal({ nodes, onClose }: { nodes: DnaNode[]; onClose: () => void }) {
-  const [level, setLevel] = useState<DiscardLevel>("prose");
+export function DiscardStoryModal({ bookId, nodes, initialLevel, onClose }: { bookId: number; nodes: DnaNode[]; initialLevel?: DiscardLevel; onClose: () => void }) {
+  const [level, setLevel] = useState<DiscardLevel>(initialLevel ?? "prose");
   const [busy, setBusy] = useState(false);
   const mono = MONO;
 
@@ -38,10 +39,11 @@ export function DiscardStoryModal({ nodes, onClose }: { nodes: DnaNode[]; onClos
     setPicked(allPicked ? new Set() : new Set(proseScenes.map((s) => s.id)));
 
   const counts: Record<DiscardLevel, string> = {
-    prose:  `${picked.size} of ${proseScenes.length} scenes selected`,
-    scenes: `${scenes.length} scenes`,
-    beats:  `${beats.length} beats · ${scenes.length} scenes`,
-    story:  `${acts.length} acts · ${beats.length} beats · ${scenes.length} scenes`,
+    prose:      `${picked.size} of ${proseScenes.length} scenes selected`,
+    scenes:     `${scenes.length} scenes`,
+    beats:      `${beats.length} beats · ${scenes.length} scenes`,
+    story:      `${acts.length} acts · ${beats.length} beats · ${scenes.length} scenes`,
+    everything: `${nodes.length} node(s), whole tree`,
   };
 
   const run = async () => {
@@ -57,8 +59,17 @@ export function DiscardStoryModal({ nodes, onClose }: { nodes: DnaNode[]; onClos
         await Promise.all(scenes.map((s) => deleteNode(s.id)));
       } else if (level === "beats") {
         await Promise.all(beats.map((b) => deleteNode(b.id)));
-      } else {
+      } else if (level === "story") {
         await Promise.all(acts.map((m) => deleteNode(m.id)));
+      } else {
+        // The tree's true root is `seed` (parent_id null — book_nodes_one_root_per_book guarantees
+        // exactly one). `pillar` is only a grandchild of it (seed → premise → pillar), so deleting
+        // the pillar leaves seed/premise behind instead of clearing everything.
+        const root = nodes.find((n) => n.parent_id === null);
+        if (root) {
+          await snapshotTree(bookId, "before clear all");
+          await deleteNode(root.id); // ON DELETE CASCADE takes the whole tree with it
+        }
       }
       onClose();
     } catch (e) {

@@ -131,7 +131,9 @@ export default function DnaTreePage() {
     setProseOpenSet((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   }, []);
   const [discardOpen, setDiscardOpen] = useState(false);
-  const discardStory = useCallback(() => setDiscardOpen(true), []);
+  const [discardInitialLevel, setDiscardInitialLevel] = useState<"prose" | "everything">("prose");
+  const discardStory = useCallback(() => { setDiscardInitialLevel("prose"); setDiscardOpen(true); }, []);
+  const clearAllNodes = useCallback(() => { setDiscardInitialLevel("everything"); setDiscardOpen(true); }, []);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [detailsNodeId, setDetailsNodeId] = useState<string | null>(null); // "view details" modal
   // #1 — the status-dot/glyph key, folded off the permanent chrome into a click-to-open popover.
@@ -561,6 +563,9 @@ export default function DnaTreePage() {
           <button onClick={() => { setOverflowOpen(false); void forkDna(); }} disabled={forking} title="Copy this DNA tree into a new book to experiment freely" style={{ ...menuItemStyle, color: forking ? T.faint : menuItemStyle.color, cursor: forking ? "default" : "pointer" }}>
             {forking ? "forking…" : "⑂ fork →"}
           </button>
+          <button onClick={() => { setOverflowOpen(false); clearAllNodes(); }} title="Delete the entire tree and start fresh" style={{ ...menuItemStyle, color: T.bad }}>
+            ✕ clear all
+          </button>
         </div>
       )}
     </div>
@@ -602,7 +607,7 @@ export default function DnaTreePage() {
           </span>
         </div>
       )}
-      {discardOpen && <DiscardStoryModal nodes={nodes} onClose={() => setDiscardOpen(false)} />}
+      {discardOpen && <DiscardStoryModal bookId={bookId} nodes={nodes} initialLevel={discardInitialLevel} onClose={() => setDiscardOpen(false)} />}
       {historyOpen && nodes && <HistoryModal bookId={bookId} nodes={nodes} onClose={() => setHistoryOpen(false)} />}
       {detailsNodeId && index.get(detailsNodeId) && (
         <NodeDetailsModal node={index.get(detailsNodeId)!} nodes={nodes ?? []} onClose={() => setDetailsNodeId(null)} />
