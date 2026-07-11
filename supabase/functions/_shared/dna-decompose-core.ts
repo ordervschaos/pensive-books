@@ -29,7 +29,7 @@ export interface SystemsRead {
   world_facts?: { name?: string; rule?: string; mechanism?: string; category?: string }[];
   threads?: { name?: string; kind?: string; promise?: string; payoff?: string; setup_chapter?: number; payoff_chapter?: number }[];
   games?: { name?: string; players?: string[]; win_condition?: string; lose_condition?: string; stake?: string; governing_rules?: string[]; outcome?: string; resolved_chapter?: number }[];
-  tentpoles?: { summary?: string; realized_chapter?: number }[];
+  tentpoles?: { name?: string; summary?: string; realized_chapter?: number }[];
   meters?: { name?: string; kind?: string; poles?: { low?: string; high?: string }; scale?: { min?: number; max?: number } }[];
 }
 export interface ActsRead {
@@ -50,9 +50,11 @@ const drop = (c: Record<string, unknown>): NodeContent =>
   Object.fromEntries(Object.entries(c).filter(([, v]) => v != null && v !== "" && (!Array.isArray(v) || v.length))) as NodeContent;
 
 /** Lowercased identity of an existing entity node, for idempotent re-runs (a re-run must not
- *  double-mint the cast/world). Tentpoles key on summary; everything else on name. */
-const identityOf = (n: DnaNode): string =>
-  String((n.content as { name?: string; summary?: string })[n.kind === "tentpole" ? "summary" : "name"] ?? "").trim().toLowerCase();
+ *  double-mint the cast/world). Every kind keys on name; a legacy tentpole with no name falls back to summary. */
+const identityOf = (n: DnaNode): string => {
+  const c = n.content as { name?: string; summary?: string };
+  return String((n.kind === "tentpole" ? c.name || c.summary : c.name) ?? "").trim().toLowerCase();
+};
 const existingIdentities = (nodes: DnaNode[], kind: NodeKind): Set<string> =>
   new Set(nodes.filter((n) => n.kind === kind).map(identityOf).filter(Boolean));
 
@@ -259,11 +261,11 @@ export function systemsOps(nodes: DnaNode[], s: SystemsRead, chapterBeatIds: str
     if (outcome) link(resolved_chapter, `game "${g.name}" resolution`, (b) => patchFor(b).resolves.push({ ref: id, outcome }));
   }
   for (const t of s.tentpoles ?? []) {
-    if (!fresh("tentpole", t.summary)) continue;
+    if (!fresh("tentpole", t.name || t.summary)) continue;
     const { realized_chapter, ...content } = t;
     const id = newId();
     ops.push({ op: "add", kind: "tentpole", parentId: pillar.id, id, content: drop({ ...content }) });
-    link(realized_chapter, `tentpole "${(t.summary ?? "").slice(0, 40)}"`, (b) => patchFor(b).realizes.push(id));
+    link(realized_chapter, `tentpole "${(t.name || t.summary || "").slice(0, 40)}"`, (b) => patchFor(b).realizes.push(id));
   }
   for (const m of s.meters ?? []) {
     if (!fresh("meter", m.name)) continue;

@@ -15,7 +15,7 @@ export function nodeTitle(n: DnaNode): string {
     case "relationship": return s(c.bond);
     case "world_fact": return s(c.name) || s(c.rule);
     case "location": return s(c.name) || s(c.summary);
-    case "tentpole": return s(c.summary);
+    case "tentpole": return s(c.name) || s(c.summary);
     case "game": return s(c.name);
     case "thread": return s(c.name) || s(c.promise);
     case "act": return s(c.title) || s(c.goal);

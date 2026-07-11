@@ -1280,7 +1280,7 @@ const DIGEST_FIELDS: Record<string, string[]> = {
   location: ["name", "mood"],
   thread: ["name", "kind", "promise"],
   game: ["name", "win_condition", "lose_condition"],
-  tentpole: ["summary"],
+  tentpole: ["name", "summary"],
   meter: ["name", "kind"],
   voice_profile: ["pov", "tense", "style"],
   act: ["title", "goal", "target_pct", "turning_point"],

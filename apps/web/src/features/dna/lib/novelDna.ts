@@ -177,7 +177,7 @@ export interface SceneContent {
 // tag = the physical/visual tag (a character-appearance descriptor).
 export interface CharacterContent { name?: string; role?: "protagonist" | "antagonist" | "ally" | "love_interest" | "minor"; want?: string; need?: string; wound?: string; lie?: string; truth?: string; idiolect?: string; tag?: string }
 export interface RelationshipContent { a?: string; b?: string; bond?: string; charge?: string }
-export interface TentpoleContent { summary?: string }
+export interface TentpoleContent { name?: string; summary?: string }
 // name = a short handle (so beats/scenes can reference the rule); mechanism = the OPERABLE rule — what it
 // enables or forbids, with inputs→outputs — not just atmosphere. The climax's win must fire a mechanism.
 export interface WorldFactContent { name?: string; rule?: string; mechanism?: string; category?: string }
@@ -779,7 +779,7 @@ export function obligationLedger(nodes: DnaNode[], cfg: LintConfig = DEFAULT_LIN
   for (const t of nodes.filter((n) => n.kind === "tentpole" && pinnedOrAccepted(n))) {
     const c = t.content as TentpoleContent;
     const at = placedAt.get(t.id) ?? null;
-    out.push({ id: `tentpole:${t.id}`, ref: t.id, kind: "tentpole", name: c.summary ?? t.id, promise: c.summary ?? "",
+    out.push({ id: `tentpole:${t.id}`, ref: t.id, kind: "tentpole", name: c.name || c.summary || t.id, promise: c.summary ?? "",
       state: isWaived(t) ? "waived" : at !== null ? "closed" : "unopened",
       openedAt: null, closedAt: at, touches: at !== null ? 1 : 0, quiet: null });
   }

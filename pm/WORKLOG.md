@@ -17,6 +17,29 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-11 — tentpoles: guidance-by-name, not verbatim-text matching `[ship]`
+- **What:** `tentpole` was the only DNA entity with no short `name` field — its one `summary` field
+  did double duty as both the beat-sheet generator's matching key (exact lowercase text match) and
+  its content, so the prompt forced the model to quote a whole sentence back verbatim just to get a
+  tentpole placed; a paraphrase silently dropped it (surfacing later as an unexplained
+  `tentpole_unplaced` lint). Fixed by mirroring the thread/game/world_fact pattern: added a required
+  `name` field, relabeled `summary` → "guidance" (a feel/turn to honor, not a line to quote), and
+  switched the beat-sheet + brief-compile prompts in dna-expand to reference tentpoles BY NAME.
+  Propagated through the agent's tree digest, tree UI title, obligation-ledger display name (both
+  parity-locked novelDna twins), and the EPUB-import decompose path, with a legacy fallback so
+  already-authored tentpoles (no `name` yet) keep resolving. Regenerated the checked-in
+  dna-schema.json artifact. 600 web vitest tests pass (incl. 449 parity), tsc clean.
+- **Files/commits:** `apps/web/src/features/dna/lib/dnaSchema.ts`,
+  `apps/web/src/features/dna/lib/dnaSchema.artifact.test.ts`,
+  `apps/web/src/features/dna/lib/novelDna.ts`, `apps/web/src/features/dna/components/tree/nodeDisplay.ts`,
+  `supabase/functions/dna-expand/index.ts`, `supabase/functions/book-agent/index.ts`,
+  `supabase/functions/dna-decompose/index.ts`, `supabase/functions/_shared/dna-decompose-core.ts`,
+  `supabase/functions/_shared/novel-dna.ts`, `supabase/functions/_shared/dna-schema.json` — not yet
+  committed or deployed.
+- **PM impact:** none new (not a Now-list item; a scoped fix surfaced by the author reading the
+  tentpole-realization code). Existing tentpoles in already-authored books now read as incomplete
+  (missing `name`) until backfilled — expected, same as any new required field.
+
 ## 2026-07-10 — claude-local shim: per-call empty cwd; diagnosed two live-session incidents `[ship]`
 - **What (requested):** Switched the shim's `claude -p` spawn from one shared tmpdir (created once,
   reused across every turn) to a fresh `mkdtempSync` directory per call, removed via `rmSync` once

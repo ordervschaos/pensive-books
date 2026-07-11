@@ -20,7 +20,7 @@ describe("dna-schema artifact (edge/bridge ↔ NODE_SCHEMA)", () => {
   it("the prompt guide uses the real keys, not the drifted ones", () => {
     const { promptGuide } = dnaSchemaArtifact();
     expect(promptGuide).toContain("relationship → a*→character, b*→character, bond*"); // not dynamic/arc
-    expect(promptGuide).toContain("tentpole → summary*");                              // not title/when
+    expect(promptGuide).toContain("tentpole → name*, summary*");                       // not title/when
     expect(promptGuide).toContain("value_shift");                                      // scene, not "value"
     expect(promptGuide).toContain("connector(therefore|but)");
     expect(promptGuide).not.toContain("dynamic"); // the old relationship drift

@@ -239,7 +239,7 @@ async function systemsRead(bookId: number, bookLine: string, digests: RunRow["di
       `  "world_facts": [{ "name", "rule", "mechanism", "category" }],  // rules the story world runs on, max 14; [] for mundane settings\n` +
       `  "threads": [{ "name", "kind", "promise", "payoff", "setup_chapter": <n>, "payoff_chapter": <n or omit if unpaid> }],  // promises to the reader (mystery|foreshadow|setup_payoff|arc), max 10\n` +
       `  "games": [{ "name", "players": ["<character name>"], "win_condition", "lose_condition", "stake", "governing_rules": ["<world fact name>"], "outcome": "<won|lost, omit if undecided>", "resolved_chapter": <n> }],  // explicit contests with win/lose conditions, max 6; [] if none\n` +
-      `  "tentpoles": [{ "summary", "realized_chapter": <n> }],  // the big set-piece moments the book builds to, max 8\n` +
+      `  "tentpoles": [{ "name", "summary", "realized_chapter": <n> }],  // the big emotional/scene beats the book builds to — name = short handle, summary = the guidance (feel/turn), max 8\n` +
       `  "meters": [{ "name", "kind", "poles": { "low", "high" }, "scale": { "min": 0, "max": 10 } }]  // 1-4 numeric axes this book visibly runs on (tension|heat|comedy|affect|relationship|value|custom)\n}`,
     6_000, "low", 140_000, DIGEST_MODEL);
   return {
@@ -259,7 +259,7 @@ async function systemsRead(bookId: number, bookLine: string, digests: RunRow["di
       outcome: oneOf(g.outcome, ["won", "lost"]), resolved_chapter: num(g.resolved_chapter),
     })).filter((g) => g.name && g.win_condition && g.lose_condition),
     tentpoles: arr(parsed.tentpoles, 8).map((t) => ({
-      summary: clamp(t.summary, 300), realized_chapter: num(t.realized_chapter),
+      name: clamp(t.name, 80), summary: clamp(t.summary, 300), realized_chapter: num(t.realized_chapter),
     })).filter((t) => t.summary),
     meters: arr(parsed.meters, 4).map((m) => {
       const poles = obj(m.poles), scale = obj(m.scale);

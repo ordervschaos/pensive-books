@@ -90,8 +90,13 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     { key: "governing_rules", label: "rules", type: "refs", refKind: "world_fact" },
     { key: "waived", label: "waived", genOnly: true, note: "true = contest deliberately left undecided (sequel hook) — settles it in the obligation ledger; only with the author's consent" },
   ],
-  tentpole: [{ key: "summary", label: "summary", multiline: true, required: true },
-    { key: "waived", label: "waived", genOnly: true, note: "true = set-piece deliberately unplaced (cut or deferred) — settles it in the obligation ledger; only with the author's consent" }],
+  tentpole: [
+    { key: "name", label: "name", required: true },
+    // summary is GUIDANCE, not a script line: the emotional/scene quality a beat must deliver (a feeling, an
+    // image, a turn) — the beat sheet honors its spirit in its own words, it never has to quote this back.
+    { key: "summary", label: "guidance", multiline: true, required: true },
+    { key: "waived", label: "waived", genOnly: true, note: "true = set-piece deliberately unplaced (cut or deferred) — settles it in the obligation ledger; only with the author's consent" },
+  ],
   // meter (docs/novel-dna-meters.md): a named bounded axis (comedy/heat/freedom/game-score) defined once on
   // the pillar. Beats/scenes carry numeric `readings` on it; the engine plots the series + lints its shape.
   meter: [
@@ -185,7 +190,7 @@ export const KIND_EXPLAINER: Record<NodeKind, string> = {
   location: "a place scenes happen in, with its sensory palette",
   thread: "a promise to the reader (mystery/foreshadow/arc) paid off later",
   game: "a contest between characters with a win/lose condition",
-  tentpole: "a planned major event or set-piece the story builds toward",
+  tentpole: "a pinned emotional/scene beat the story must deliver — guidance a beat honors, not a line to quote",
   meter: "a numeric axis (comedy, heat, tension…) tracked scene by scene",
   voice_profile: "the narrative voice — pov, tense, style — prose follows",
   act: "a movement of the story — a phase of beats with its own turn",

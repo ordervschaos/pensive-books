@@ -353,12 +353,21 @@ Deno.serve(async (req: Request) => {
           return `- [${c.title ?? ""}] turn: ${c.turning_point ?? ""}${v}`;
         }).join("\n")
       : "";
-    // The tentpole registry — set-pieces the beat sheet must place (each pinned tentpole → a beat).
+    // The tentpole registry — emotional/scene GUIDANCE the beat sheet must place (each pinned tentpole → a
+    // beat that embodies its feel). Reference tentpoles BY NAME (like threads/games/world_facts) — the
+    // `guidance` text is not a line to quote back, so identity can't ride on reproducing it verbatim.
     const tentpoles = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "tentpole" && (n.authoring?.locked || n.authoring?.status === "accepted")) : [];
-    const tpName = (e: Node) => String((e.content as { summary?: string }).summary ?? "").trim();
+    const tpName = (e: Node) => {
+      const c = e.content as { name?: string; summary?: string };
+      const n = String(c.name ?? "").trim();
+      // legacy tentpoles authored before the `name` field existed: derive a short handle from the guidance
+      // text so old data still resolves.
+      return n || String(c.summary ?? "").trim().split(/\s+/).slice(0, 6).join(" ");
+    };
+    const tpGuidance = (e: Node) => String((e.content as { summary?: string }).summary ?? "").trim();
     const tentpoleBlock = tentpoles.length
-      ? "TENTPOLES — set-pieces you MUST place (assign each to the beat that delivers it, BY its summary):\n" +
-        tentpoles.map((t) => `- ${tpName(t)}`).join("\n")
+      ? "TENTPOLES — emotional/scene guidance to honor (each is a feel or turn the story builds toward, not a line to quote; reference it BY NAME in \"realizes\"):\n" +
+        tentpoles.map((t) => `- ${tpName(t)}: ${tpGuidance(t)}`).join("\n")
       : "";
     // The world RULES (name + mechanism) — so turning points (esp. the climax) can be GROUNDED in a rule.
     const worldFacts = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "world_fact") : [];
@@ -835,8 +844,8 @@ CRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md
 - 2 to 4 beats per act; each beat links to the prior with "therefore" or "but" (escalating causality).
 - ${POLARITY_CRAFT}
 - Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats that develop it in between. Reference threads BY NAME.
-- ${CAUSALITY_CRAFT}${tentpoles.length ? `\n- PLACE every TENTPOLE: assign each set-piece to the ONE beat that delivers it, in "realizes" (by its summary). Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}${statePreconds.length ? `\n- ESTABLISH every STATE PRECONDITION: each game's win SPENDS resources/states (listed above). For each, an EARLIER beat must establish it (list its key in that beat's "establishes") BEFORE the beat that resolves the game — you cannot spend a resource the story never acquired (no "she had enough all along"). Make the establishing a real turn.` : ""}
-Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": "...", "payoff": "...", "kind": "mystery"|"foreshadow"|"setup_payoff"|"arc"${arcCast.length ? `, "character": "<cast name — arc threads only>"` : ""} } ], ` : ""}"beats": [ { "act": <1..${acts.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole summary>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}, "needs": [ "<state key earned upstream>" ], "establishes": [ "<state key this beat produces>" ] } ] }`;
+- ${CAUSALITY_CRAFT}${tentpoles.length ? `\n- HONOR every TENTPOLE: each names an emotional/scene quality the story must deliver (a feel, an image, a turn) — not a line to reproduce. Pick the ONE beat whose turn embodies it and reference the tentpole BY NAME in "realizes"; write the beat's summary in your own words. Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}${statePreconds.length ? `\n- ESTABLISH every STATE PRECONDITION: each game's win SPENDS resources/states (listed above). For each, an EARLIER beat must establish it (list its key in that beat's "establishes") BEFORE the beat that resolves the game — you cannot spend a resource the story never acquired (no "she had enough all along"). Make the establishing a real turn.` : ""}
+Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": "...", "payoff": "...", "kind": "mystery"|"foreshadow"|"setup_payoff"|"arc"${arcCast.length ? `, "character": "<cast name — arc threads only>"` : ""} } ], ` : ""}"beats": [ { "act": <1..${acts.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole name>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}, "needs": [ "<state key earned upstream>" ], "establishes": [ "<state key this beat produces>" ] } ] }`;
       // Browser-streamed path: hand back the assembled request; the client streams it via /api/stream-prose,
       // then calls back with phase "finalize" (mirrors the prose `prepare` split, todo/dna-streaming-proxy.md).
       if (phase === "prepare") {
@@ -1004,17 +1013,21 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
         vp?.constraints?.length ? `Voice constraints already set (do NOT repeat or contradict):\n${vp.constraints.map((c) => `- ${c}`).join("\n")}` : "",
       ].filter(Boolean).join("\n\n");
       const system = `You are a story architect COMPILING THE BRIEF into the book's derived contract — the concrete promises its genre, audience, tone, and content type make to the reader. Derive ONLY from the BRIEF and MANDATE (the story-so-far is orientation, not a source of new plot); phrase everything for THIS book. Skip anything the existing registry already covers — empty arrays are fine. Three deliverables:
-1. TENTPOLES — the 3–6 OBLIGATORY scenes/moments this genre owes the reader (e.g. romance: the meet, the dark moment, the grand gesture; thriller: the reveal, the final confrontation). One line each.
+1. TENTPOLES — the 3–6 OBLIGATORY scenes/moments this genre owes the reader (e.g. romance: the meet, the dark moment, the grand gesture; thriller: the reveal, the final confrontation). Give each a short NAME (2-4 words, e.g. "the grand gesture") and a one-line GUIDANCE: the emotional/scene quality it must deliver for THIS book — a feel or turn, not a script line to quote back.
 2. METERS — the 1–3 numeric axes the brief demands (a comedy brief → a comedy meter; the content type's heat → a heat meter; most genres → a tension meter). Each has poles (what low/high FEEL like on the page), a 0–100 scale, and a TARGET curve: 3–7 sparse keyframes { at: 0..1 position through the book, value: 0..100 } encoding the genre's expected shape (e.g. thriller tension: a sawtooth rising to ~90 near the climax, then release; romance heat: slow build with a spike at the midpoint turn).
 3. VOICE_CONSTRAINTS — 2–5 short imperative register bounds for THIS audience: vocabulary ceiling/floor, content phrasing limits, sentence-complexity guidance (e.g. "YA: no graphic gore; keep slang timeless, not dated").
-Output JSON ONLY: { "tentpoles": [ { "summary": "..." } ], "meters": [ { "name": "...", "kind": "comedy"|"heat"|"tension"|"affect"|"value"|"custom", "poles": { "low": "...", "high": "..." }, "scale": { "min": 0, "max": 100 }, "target": [ { "at": 0.0, "value": 10 } ] } ], "voice_constraints": [ "..." ] }`;
+Output JSON ONLY: { "tentpoles": [ { "name": "...", "summary": "..." } ], "meters": [ { "name": "...", "kind": "comedy"|"heat"|"tension"|"affect"|"value"|"custom", "poles": { "low": "...", "high": "..." }, "scale": { "min": 0, "max": 100 }, "target": [ { "at": 0.0, "value": 10 } ] } ], "voice_constraints": [ "..." ] }`;
       const data = await callLLM(apiKey, { model, max_tokens: 3000, output_config: { effort: "medium" }, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}${existingBlock ? `\n\nEXISTING REGISTRY:\n${existingBlock}` : ""}\n\nCompile the brief's contract. JSON only.` }] }, meta, { signal: AbortSignal.any([req.signal, AbortSignal.timeout(140_000)]) });
       const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
       const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
       const METER_KINDS = new Set(["value", "game_score", "affect", "relationship", "heat", "comedy", "tension", "custom"]);
       const outTentpoles = (Array.isArray(parsed.tentpoles) ? parsed.tentpoles as Record<string, unknown>[] : [])
-        .map((t) => ({ summary: String(t?.summary ?? "").trim() })).filter((t) => t.summary);
+        .map((t) => {
+          const summary = String(t?.summary ?? "").trim();
+          const name = String(t?.name ?? "").trim() || summary.split(/\s+/).slice(0, 6).join(" ");
+          return { name, summary };
+        }).filter((t) => t.summary);
       const outMeters = (Array.isArray(parsed.meters) ? parsed.meters as Record<string, unknown>[] : [])
         .map((m) => {
           const scaleRaw = (m?.scale ?? {}) as { min?: unknown; max?: unknown };
