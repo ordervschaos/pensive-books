@@ -14,7 +14,7 @@ import { getRoleModels, getActiveProvider, DIGEST_MODEL } from "../_shared/model
 import { extractJsonBlock } from "../_shared/json.ts";
 // Shared craft KB — the ONE copy of the distilled story craft both write paths use (the agent's
 // skill bodies embed the same consts), so engine and agent can't drift apart.
-import { CAUSALITY_CRAFT, POLARITY_CRAFT, PREMISE_CRAFT, SCENE_DIRECTION_CRAFT } from "../_shared/craft-kb.ts";
+import { CAUSALITY_CRAFT, LOGLINE_CRAFT, POLARITY_CRAFT, PREMISE_CRAFT, PREMISE_JUDGE_CRITERIA, SCENE_DIRECTION_CRAFT } from "../_shared/craft-kb.ts";
 // The shared engine's beat-native lints, run over the just-generated beat sheet so a silently-degraded sheet
 // gets one bounded repair turn instead of shipping the damage (docs/agent-improvement-plan.md P2.1).
 import { canonicalizeKey, entityRegistryBlock, ledgerAt, ledgerText, validate, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneLedger } from "../_shared/novel-dna.ts";
@@ -653,23 +653,7 @@ Deno.serve(async (req: Request) => {
       // one or two sentences. This is the system's first refinement (docs/dna-studio-analysis.md §0/§1).
       const system = `You are a story editor. Turn the author's raw idea into ONE polished LOGLINE for the book — one or two sentences that make the story instantly legible and compelling. A logline sells the ENGINE of the story, not its meaning.
 
-ANATOMY — name FIVE things, concretely and specifically (no generic placeholders):
-- the PROTAGONIST — defined by the trait or role that matters, NOT a name ("a disgraced surgeon", not "Sarah"),
-- the INCITING INCIDENT — the event that upends their world,
-- their PRIMARY GOAL — what they must now actively do,
-- the MAIN OBSTACLE / antagonist — what stands in the way,
-- the STAKES — what is lost if they fail (life-or-death, or emotional/social — but felt and concrete).
-The working shape is: "When [inciting incident], a [flawed/specific protagonist] must [pursue goal] or else [stakes] — but [obstacle]." (e.g. Jaws: "When a great white terrorizes a beach town, a water-phobic sheriff must hunt it down before it kills again — against a mayor who wants the beaches open.")
-
-WHAT MAKES IT STRONG:
-- IRONY baked in — the protagonist's trait should rub against the task (a water-phobic sheriff hunting a shark). If person and problem create no friction, it reads flat.
-- SPECIFICITY over vagueness — a world, a wound, a mission; never "a woman deals with loss".
-- An ACTIVE protagonist — "must", "fights to", "races to". The character DOES; things don't merely happen to them.
-- ONE story, not three — pick the spine; cut the romance/mystery/family subplots that dilute it.
-- Under ~35 WORDS — if it doesn't fit in one breath, it's carrying backstory or subplot.
-
-AVOID: naming characters, describing THEME instead of plot ("a story about redemption"), withholding the hook to be mysterious, stuffing in backstory, and passive framing ("a man discovers his life is a lie").
-TEST before you answer: could a stranger imagine the poster, the genre, and the general shape of the ending? If they'd ask "okay, but what happens?", you've written a situation, not a story — rewrite.
+${LOGLINE_CRAFT}
 
 Honor the MANDATE (genre/tone) and any LOCKED ancestors. Do NOT invent a title. Do NOT restate the raw idea verbatim — SHARPEN it into a real logline. Output the LOGLINE ONLY: one or two sentences, no preamble, no label, no quotes, no JSON.`;
       const data = await callLLM(apiKey, { model, max_tokens: 400, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
@@ -696,11 +680,7 @@ Constraints:
 Silent evaluation lint before you answer:
 You are a ruthless development editor. Score this PSE against its BRIEF and LOGLINE. Do not be polite. A premise that would produce a readable but forgettable book should fail.
 Score each criterion 0-5:
-1. ESCALATION — Does each movement complicate the previous one, or do any merely sequence events? Name any swappable pair (automatic <=2 if one exists).
-2. INTERNAL TRAJECTORY — Do movements track the protagonist's changing relationship to their want, or external plot? Quote the weakest movement.
-3. FORCED CHOICE — Does the final movement present a want-vs-need choice that costs something either way? If one option is obviously correct, score <=2.
-4. QUESTION-SHAPE LOCK — Is the dramatic question answered precisely by the final movement — no more, no less?
-5. PRICE IN THE QUESTION — Does the question contain a cost, and could a reader root for both answers?
+${PREMISE_JUDGE_CRITERIA.map((c, i) => `${i + 1}. ${c.label} — ${c.desc}`).join("\n")}
 6. ORIGINALITY SURFACED — Does the brief's most distinctive element appear explicitly in the premise? Name that element first, then check.
 7. BRIEF FIDELITY — Genre, tone, heat, and ending_feel all consistent with the brief? Flag any drift.
 8. LOAD-BEARING RISK — Identify the single claim the premise asks the reader to accept that the story must earn on the page. State which movement carries it and whether the shape gives it enough room.

@@ -17,6 +17,46 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-11 — traced the logline review/accept loop for the user `[chore]`
+- **What:** User asked how a generated logline gets reviewed and "closes the loop." Traced the
+  existing (already-shipped) mechanism rather than proposing anything new: `dna-expand` generates
+  the seed's logline from the brief idea; `verticalLints()` (`novelDna.ts`) runs two deterministic,
+  warn-only checks (`logline_overlong`, `logline_static`) with no LLM-judge; the author's explicit
+  Accept flips `seed.authoring.status`, which both unlocks the Premise stage
+  (`dnaJourney.ts`) and becomes the FIXED contract premise/pillar generation must honor. No code
+  changed, no design gap found worth flagging beyond noting the mechanical-only review (no
+  semantic/LLM check on obstacle specificity or stakes).
+- **Files/commits:** none (explanation only); `doc_1783756703717.md` +
+  `learning_1783756703717_logline_review_loop.md` (local-only, not committed).
+- **PM impact:** none.
+
+## 2026-07-11 — stale-mechanism design question raised, not yet ratified `[wip]`
+- **What:** User proposed replacing the tree's automatic parent→children staleness with an
+  explicit write-time choice (nothing goes stale / mark children stale / discard children).
+  Traced the current mechanism to ground the discussion: staleness is derived, not set —
+  `isStale()` (`novelDna.ts`) hashes a node's live inputs and compares against the recorded
+  `src_hash`; nothing ever "marks" a child, the mismatch just shows up on next read via the
+  existing per-node stale-chip accept/discard UI (`staleActions.ts`). No code changed. Open
+  question surfaced for the user: is this decision point for manual tree edits, the agent's edits
+  (manual-accept/auto-accept), or both — and if manual, blocking modal vs. lighter inline
+  affordance, since a modal on every parent save cuts against the no-edit-reflex bar (NORTH_STAR
+  §2).
+- **Files/commits:** none (discussion only); `doc_1783755713224.md` (local-only trace of the
+  current mechanism + the tradeoffs, not committed).
+- **PM impact:** none yet — no ROADMAP/DECISIONS entry until the user ratifies a direction.
+
+## 2026-07-11 — clear all nodes: whole-tree discard option in the overflow menu `[ship]`
+- **What:** Committed by a concurrent session, uncatalogued until now. Added an "everything" level
+  to `DiscardStoryModal` (previously prose/scenes/beats/story) that snapshots the tree to History
+  then deletes the true root node (`parent_id === null`) so `ON DELETE CASCADE` clears the whole
+  tree, including foundations — wired to a new "✕ clear all" item in the tree's overflow menu
+  (`DnaTreePage.tsx`). Fixes the modal's pre-existing `pillar`-vs-`seed` root confusion (pillar is
+  a grandchild of the true root via seed → premise → pillar, so deleting it left seed/premise
+  behind).
+- **Files/commits:** `apps/web/src/features/dna/components/tree/modals.tsx`,
+  `apps/web/src/features/dna/pages/DnaTreePage.tsx` — `95bfb5b`.
+- **PM impact:** noted on the DNA tree editor row in STATE.md.
+
 ## 2026-07-11 — committed the tentpole guidance-by-name fix `[chore]`
 - **What:** Landed the previously-catalogued tentpole fix (see the entry directly below) as commit
   `386769a`. No new work — just closing the loop from "not yet committed" to committed. Left the

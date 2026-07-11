@@ -11,6 +11,46 @@
 // Keep this file dependency-free (pure string consts) so any runtime — edge function, web test,
 // script — can import it without dragging Deno- or browser-specific code along.
 
+// The seed's logline anatomy — what a logline must NAME (protagonist/inciting incident/goal/obstacle/
+// stakes) and what makes it land. Used by dna-expand's one-shot logline forge AND by read-logline (the
+// brief-fidelity judge) — the same definition of "a good logline" grounds both writing it and judging it.
+export const LOGLINE_CRAFT = `ANATOMY — name FIVE things, concretely and specifically (no generic placeholders):
+- the PROTAGONIST — defined by the trait or role that matters, NOT a name ("a disgraced surgeon", not "Sarah"),
+- the INCITING INCIDENT — the event that upends their world,
+- their PRIMARY GOAL — what they must now actively do,
+- the MAIN OBSTACLE / antagonist — what stands in the way,
+- the STAKES — what is lost if they fail (life-or-death, or emotional/social — but felt and concrete).
+The working shape is: "When [inciting incident], a [flawed/specific protagonist] must [pursue goal] or else [stakes] — but [obstacle]." (e.g. Jaws: "When a great white terrorizes a beach town, a water-phobic sheriff must hunt it down before it kills again — against a mayor who wants the beaches open.")
+
+WHAT MAKES IT STRONG:
+- IRONY baked in — the protagonist's trait should rub against the task (a water-phobic sheriff hunting a shark). If person and problem create no friction, it reads flat.
+- SPECIFICITY over vagueness — a world, a wound, a mission; never "a woman deals with loss".
+- An ACTIVE protagonist — "must", "fights to", "races to". The character DOES; things don't merely happen to them.
+- ONE story, not three — pick the spine; cut the romance/mystery/family subplots that dilute it.
+- Under ~35 WORDS — if it doesn't fit in one breath, it's carrying backstory or subplot.
+
+AVOID: naming characters, describing THEME instead of plot ("a story about redemption"), withholding the hook to be mysterious, stuffing in backstory, and passive framing ("a man discovers his life is a lie").
+TEST before you answer: could a stranger imagine the poster, the genre, and the general shape of the ending? If they'd ask "okay, but what happens?", you've written a situation, not a story — rewrite.`;
+
+// Five of the premise generator's own silent self-eval criteria (dna-expand's "Silent evaluation lint
+// before you answer" — it scores itself against these before answering, then discards the scores). Shared
+// here so read-premise (the logline-fidelity judge) grounds its axes in the SAME wording rather than a
+// second hand-authored copy that can drift from this one as either prompt gets tuned later. Each consumer
+// wraps its own scale/mechanics around this text (dna-expand: 0-5/40pt internal; read-premise: 1-5/floor-3
+// stored-and-linted) — only the diagnostic wording is shared.
+export const PREMISE_JUDGE_CRITERIA: { key: string; label: string; desc: string }[] = [
+  { key: "escalation", label: "ESCALATION",
+    desc: "Does each movement complicate the previous one, or do any merely sequence events? Name any swappable pair." },
+  { key: "internal_trajectory", label: "INTERNAL TRAJECTORY",
+    desc: "Do movements track the protagonist's changing relationship to their want, or external plot? Quote the weakest movement." },
+  { key: "forced_choice", label: "FORCED CHOICE",
+    desc: "Does the final movement present a want-vs-need choice that costs something either way? An obviously correct option is a failure." },
+  { key: "question_shape_lock", label: "QUESTION-SHAPE LOCK",
+    desc: "Is the dramatic question answered precisely by the final movement — no more, no less?" },
+  { key: "price_in_question", label: "PRICE IN THE QUESTION",
+    desc: "Does the question contain a cost, and could a reader root for both answers?" },
+];
+
 // The premise's two coupled halves. The final movement ANSWERS the dramatic question at its stated
 // price — which is why the agent path's coupling rule forbids editing one without the other.
 export const PREMISE_CRAFT = `SHAPE

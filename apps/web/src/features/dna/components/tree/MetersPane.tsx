@@ -6,12 +6,14 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  beatsInOrder, buildShapeReadInput, buildSynopsisReadInput, byId, childrenOf, isSerialMeter, meterSeries, meterShape, meterTarget, observedSeries, shapeReadHash, synopsisReadHash, validate,
-  type DnaNode, type MeterContent, type DnaIssue, type MeterPoint, type PillarContent, type PremiseContent,
+  beatsInOrder, briefFitHash, buildBriefFitInput, buildLoglineFitInput, buildShapeReadInput, buildSynopsisReadInput, byId, childrenOf, isSerialMeter, loglineFitHash, meterSeries, meterShape, meterTarget, observedSeries, shapeReadHash, synopsisReadHash, validate,
+  type DnaNode, type MeterContent, type DnaIssue, type MeterPoint, type PillarContent, type PremiseContent, type SeedContent,
 } from "@/features/dna/lib/novelDna";
 import { buildMeterReadInput, invokeMeterRead, observedFindingsMessage, sendFindingsToEditor, writeObserved } from "@/features/dna/lib/meterRead";
 import { invokeShapeRead, sendShapeFindingsToEditor, shapeFindingsMessage, writeShapeFit } from "@/features/dna/lib/shapeRead";
 import { craftFindingsMessage, invokeSynopsisRead, sendCraftFindingsToEditor, writeCraft } from "@/features/dna/lib/synopsisRead";
+import { briefFitFindingsMessage, invokeBriefRead, sendBriefFitFindingsToEditor, writeBriefFit } from "@/features/dna/lib/loglineRead";
+import { loglineFitFindingsMessage, invokePremiseRead, sendLoglineFitFindingsToEditor, writeLoglineFit } from "@/features/dna/lib/premiseRead";
 import { buildConfusionReadInput, confusionFindingsMessage, invokeConfusionRead, judgedSceneIds, sendConfusionFindingsToEditor, writeConfusionFlags } from "@/features/dna/lib/confusionRead";
 import { T } from "./treeChrome";
 
@@ -186,6 +188,65 @@ export function MetersPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; book
     } finally { setReading(false); }
   };
 
+  // The brief read (read-logline): does the LOGLINE still honor the BRIEF it was forged from? Writes the
+  // verdict onto the seed, sealed by the input hash; the brief_fit_flag lint reads it. Distinct from the
+  // deterministic logline_overlong/logline_static lints — those check prose mechanics, this checks fidelity
+  // to the brief's idea/genre/tone/stakes.
+  const runBriefRead = async () => {
+    if (!nodes || !bookId) return;
+    const input = buildBriefFitInput(nodes);
+    if (!input) { setNote("Accept a logline first — nothing to read yet."); return; }
+    setReading(true); setNote("Reading the logline against the brief…");
+    try {
+      const rows = await invokeBriefRead(bookId, input);
+      await writeBriefFit(nodes, input, rows);
+      setNote(`Scored ${rows.length} brief-fidelity axis(es).`);
+    } catch (e) {
+      setNote(`Brief read failed: ${String((e as Error)?.message ?? e)}`);
+    } finally { setReading(false); }
+  };
+
+  const sendBriefFitToEditor = async () => {
+    if (!nodes || !bookId) return;
+    setReading(true);
+    try {
+      const sent = await sendBriefFitFindingsToEditor(bookId, nodes, {});
+      if (sent) navigate(`/books/${bookSlug}/dna/tree`);
+      else setNote("The logline clears every brief-fidelity axis — no flags to send.");
+    } catch (e) {
+      setNote(`Couldn't send to the editor: ${String((e as Error)?.message ?? e)}`);
+    } finally { setReading(false); }
+  };
+
+  // The premise read (read-premise): does the PREMISE still honor the LOGLINE it was derived from? Writes
+  // the verdict onto the premise, sealed by the input hash; the logline_fit_flag lint reads it. Distinct
+  // from observed_shape_fit (the shape read — per-movement act-delivery, a different judge).
+  const runPremiseRead = async () => {
+    if (!nodes || !bookId) return;
+    const input = buildLoglineFitInput(nodes);
+    if (!input) { setNote("Derive a premise (dramatic question) from the logline first — nothing to read yet."); return; }
+    setReading(true); setNote("Reading the premise against the logline…");
+    try {
+      const rows = await invokePremiseRead(bookId, input);
+      await writeLoglineFit(nodes, input, rows);
+      setNote(`Scored ${rows.length} logline-fidelity axis(es).`);
+    } catch (e) {
+      setNote(`Premise read failed: ${String((e as Error)?.message ?? e)}`);
+    } finally { setReading(false); }
+  };
+
+  const sendLoglineFitToEditor = async () => {
+    if (!nodes || !bookId) return;
+    setReading(true);
+    try {
+      const sent = await sendLoglineFitFindingsToEditor(bookId, nodes, {});
+      if (sent) navigate(`/books/${bookSlug}/dna/tree`);
+      else setNote("The premise clears every logline-fidelity axis — no flags to send.");
+    } catch (e) {
+      setNote(`Couldn't send to the editor: ${String((e as Error)?.message ?? e)}`);
+    } finally { setReading(false); }
+  };
+
   // The synopsis read (W2): the shift-left editor's read of the PLAN — an acquisitions editor scores the whole
   // premise+pillar+acts+beats synopsis on fixed craft axes. Writes the verdict onto the pillar, sealed by the
   // input hash; the craft_flag lint reads it. Plan-plane only (no prose) — the cheapest place to catch a boring book.
@@ -282,6 +343,32 @@ export function MetersPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; book
     return { movements, verdict, fresh, findings, readable: !!input };
   }, [nodes]);
 
+  // Brief-read state (read-logline): the stored brief-fidelity verdict on the seed + whether its seal is
+  // still FRESH — same fresh/stale discipline as the shape/synopsis reads.
+  const briefFit = useMemo(() => {
+    const ns = nodes ?? [];
+    const seed = ns.find((n) => n.kind === "seed");
+    const sc = seed?.content as SeedContent | undefined;
+    const verdict = sc?.observed_brief_fit ?? null;
+    const input = buildBriefFitInput(ns);
+    const fresh = !!verdict && !!input && sc?.observed_brief_fit_hash === briefFitHash(input);
+    const findings = briefFitFindingsMessage(ns); // null unless a FRESH verdict has a sub-floor axis
+    return { verdict, fresh, findings, readable: !!input };
+  }, [nodes]);
+
+  // Premise-read state (read-premise): the stored logline-fidelity verdict on the premise + whether its
+  // seal is still FRESH — same fresh/stale discipline as the shape/synopsis reads.
+  const loglineFit = useMemo(() => {
+    const ns = nodes ?? [];
+    const premise = ns.find((n) => n.kind === "premise");
+    const pc = premise?.content as PremiseContent | undefined;
+    const verdict = pc?.observed_logline_fit ?? null;
+    const input = buildLoglineFitInput(ns);
+    const fresh = !!verdict && !!input && pc?.observed_logline_fit_hash === loglineFitHash(input);
+    const findings = loglineFitFindingsMessage(ns); // null unless a FRESH verdict has a sub-floor axis
+    return { verdict, fresh, findings, readable: !!input };
+  }, [nodes]);
+
   // Synopsis-read state (W2): the stored craft verdict on the pillar + whether its seal is still FRESH — the
   // same fresh/stale discipline as the shape read (a stale verdict dims; the author re-triggers the paid read).
   const craft = useMemo(() => {
@@ -310,6 +397,37 @@ export function MetersPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; book
         The story's tracked axes (docs/novel-dna-meters.md). Serial meters — those with readings across ≥2 beats — plot below, each normalized to its own scale.
       </p>
 
+      {/* THE BRIEF READ (read-logline): does the logline still honor the brief it was forged from? Fixed
+          brief-fidelity axes scored 1–5; the verdict + stale seal live on the seed node. */}
+      {(briefFit.readable || briefFit.verdict) && (
+        <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px 14px", marginBottom: 18, background: T.raised }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: briefFit.verdict ? 10 : 0 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Brief fit</span>
+            <button type="button" onClick={() => void runBriefRead()} disabled={reading || !briefFit.readable}
+              style={{ fontSize: 12, color: T.paper, background: T.accent, border: "none", borderRadius: 6, padding: "5px 11px", fontWeight: 600, cursor: reading || !briefFit.readable ? "default" : "pointer", opacity: reading || !briefFit.readable ? 0.5 : 1 }}>
+              {reading ? "Reading…" : "Read logline vs. brief"}
+            </button>
+            <button type="button" onClick={() => void sendBriefFitToEditor()} disabled={reading || !briefFit.findings}
+              style={{ fontSize: 12, color: T.inkSoft, background: "transparent", border: `1px solid ${T.border}`, borderRadius: 6, padding: "5px 11px", cursor: reading || !briefFit.findings ? "default" : "pointer", opacity: reading || !briefFit.findings ? 0.4 : 1 }}>
+              Send brief-fit flags to editor →
+            </button>
+            {briefFit.verdict && !briefFit.fresh && (
+              <span style={{ fontSize: 11, color: T.stale, border: `1px solid ${T.stale}44`, borderRadius: 5, padding: "2px 7px" }}>read is stale — logline changed since</span>
+            )}
+          </div>
+          {briefFit.verdict?.map((row, i) => {
+            const color = row.score <= 2 ? T.bad : row.score >= 4 ? T.good : T.warn;
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 12, padding: "2px 0", opacity: briefFit.fresh ? 1 : 0.5 }}>
+                <span style={{ color, fontWeight: 700, minWidth: 26 }}>{row.score}/5</span>
+                <span style={{ color: T.inkSoft }}>{row.axis}</span>
+                {row.note && <span style={{ color: T.muted }}>— {row.note}</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* THE SHAPE READ (doc_1783113903000): the paid semantic ceiling of vertical fit — do the acts deliver each
           movement the premise promised? Plan-plane only; the verdict + stale seal live on the premise node. */}
       {shape.movements.length > 0 && (
@@ -337,6 +455,37 @@ export function MetersPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; book
                 <span style={{ color, fontWeight: 700, minWidth: 26 }}>{score == null ? "—" : `${score}/5`}</span>
                 <span style={{ color: T.inkSoft }}>{i + 1}. {text}</span>
                 {row?.note && <span style={{ color: T.muted }}>— {row.note}</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* THE PREMISE READ (read-premise): does the premise still honor the logline it was derived from? Fixed
+          logline-fidelity axes scored 1–5; the verdict + stale seal live on the premise node. */}
+      {(loglineFit.readable || loglineFit.verdict) && (
+        <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px 14px", marginBottom: 18, background: T.raised }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: loglineFit.verdict ? 10 : 0 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Premise fit</span>
+            <button type="button" onClick={() => void runPremiseRead()} disabled={reading || !loglineFit.readable}
+              style={{ fontSize: 12, color: T.paper, background: T.accent, border: "none", borderRadius: 6, padding: "5px 11px", fontWeight: 600, cursor: reading || !loglineFit.readable ? "default" : "pointer", opacity: reading || !loglineFit.readable ? 0.5 : 1 }}>
+              {reading ? "Reading…" : "Read premise vs. logline"}
+            </button>
+            <button type="button" onClick={() => void sendLoglineFitToEditor()} disabled={reading || !loglineFit.findings}
+              style={{ fontSize: 12, color: T.inkSoft, background: "transparent", border: `1px solid ${T.border}`, borderRadius: 6, padding: "5px 11px", cursor: reading || !loglineFit.findings ? "default" : "pointer", opacity: reading || !loglineFit.findings ? 0.4 : 1 }}>
+              Send premise-fit flags to editor →
+            </button>
+            {loglineFit.verdict && !loglineFit.fresh && (
+              <span style={{ fontSize: 11, color: T.stale, border: `1px solid ${T.stale}44`, borderRadius: 5, padding: "2px 7px" }}>read is stale — logline or premise changed since</span>
+            )}
+          </div>
+          {loglineFit.verdict?.map((row, i) => {
+            const color = row.score <= 2 ? T.bad : row.score >= 4 ? T.good : T.warn;
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 12, padding: "2px 0", opacity: loglineFit.fresh ? 1 : 0.5 }}>
+                <span style={{ color, fontWeight: 700, minWidth: 26 }}>{row.score}/5</span>
+                <span style={{ color: T.inkSoft }}>{row.axis}</span>
+                {row.note && <span style={{ color: T.muted }}>— {row.note}</span>}
               </div>
             );
           })}

@@ -290,6 +290,19 @@ describe("dead-field + chronology + cold-reader lints", () => {
     expect(validate([mk("seed", { id: "sd" })]).map((i) => i.rule)).not.toContain("logline_static");
   });
 
+  it("brief_fit_flag / logline_fit_flag: no verdict yet, or nothing to judge yet, stays silent (early, not wrong)", () => {
+    const seed = mk("seed", { id: "sd", content: { logline: "A courier must cross a burning province before the letter dies with her." } });
+    // no verdict written yet — buildBriefFitInput has something to judge, but there's no observed_brief_fit
+    // to read, so the lint has nothing to fire on.
+    expect(validate([seed]).map((i) => i.rule)).not.toContain("brief_fit_flag");
+    // no seed / no logline at all — buildBriefFitInput returns null (nothing to read yet).
+    expect(validate([]).map((i) => i.rule)).not.toContain("brief_fit_flag");
+    expect(validate([mk("seed", { id: "sd" })]).map((i) => i.rule)).not.toContain("brief_fit_flag");
+    // premise with no dramatic_question yet — buildLoglineFitInput returns null.
+    const premise = mk("premise", { id: "pr", parent_id: "sd" });
+    expect(validate([seed, premise]).map((i) => i.rule)).not.toContain("logline_fit_flag");
+  });
+
   it("reader_confusion surfaces stored cold-reader flags as warns on the scene", () => {
     const s = mk("scene", { id: "s", content: { goal: "g", value_shift: { value: "v", from: "-", to: "+" }, confusion_flags: [{ kind: "who", note: "three unnamed speakers" }] } });
     const hit = validate([s]).find((i) => i.rule === "reader_confusion");

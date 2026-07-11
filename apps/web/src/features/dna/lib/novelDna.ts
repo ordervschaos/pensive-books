@@ -61,7 +61,16 @@ export interface ValueShift { value: string; from: string; to: string; polarity?
 // about in the agent's read; `mustHonor` = specific continuity facts it retrieved (grep/read); `avoid` =
 // things not to repeat/contradict beyond the mechanical blocklist. See docs/agent-capabilities.md.
 export interface RenderBrief { focus: string; mustHonor?: string[]; avoid?: string[] }
-export interface SeedContent { logline?: string }
+export interface SeedContent {
+  logline?: string;
+  // THE BRIEF READ (read-logline): a paid verdict on whether the logline honors the BRIEF it was forged
+  // from — protagonist/idea fidelity, genre/tone fit, whether the brief's most distinctive element survived,
+  // stakes grounded in what the brief signals. Written by read-logline onto the seed (the level that owns
+  // the logline). Output data, never authored (kept out of dnaSchema FIELDS + stripped from input hashing
+  // via OUTPUT_FIELDS). observed_brief_fit_hash is the staleness seal.
+  observed_brief_fit?: { axis: string; score: number; note?: string }[];
+  observed_brief_fit_hash?: string;
+}
 export interface PremiseContent {
   genre?: string[]; tone?: string[]; dramatic_question?: string;
   shape?: { name?: string; movements?: string[]; ending_feel?: "up" | "down" | "bittersweet" | "ambivalent" };
@@ -72,6 +81,17 @@ export interface PremiseContent {
   // the read (acts carry no movement ref) and returned as data (actIds). observed_shape_hash is the staleness seal.
   observed_shape_fit?: { movement: number; actIds: string[]; fit: number; worst?: string; note?: string }[];
   observed_shape_hash?: string;
+  // THE PREMISE READ (read-premise): a paid verdict on whether the premise honors the LOGLINE it was derived
+  // from — the craft rubric dna-expand already self-scores at generation time (escalation/internal trajectory/
+  // forced choice/question-shape lock/price-in-question, PREMISE_JUDGE_CRITERIA), plus brief_fidelity (the
+  // last affordable brief-drift checkpoint before acts/beats/cast fan out) and logline_fixity — the new axis:
+  // does the premise still honor the logline's protagonist/inciting/goal/obstacle/stakes as FIXED (the
+  // contract stated in dnaJourney.ts's premise stage instructions), varying only the dramatic question and
+  // the shape's internal arc. Distinct from observed_shape_fit (a different judge: per-movement act-delivery,
+  // not logline-fidelity). Output data, never authored (kept out of dnaSchema FIELDS + stripped from input
+  // hashing via OUTPUT_FIELDS). observed_logline_fit_hash is the staleness seal.
+  observed_logline_fit?: { axis: string; score: number; note?: string }[];
+  observed_logline_fit_hash?: string;
 }
 export interface PillarContent {
   controlling_idea?: string; ending?: string;
@@ -393,7 +413,7 @@ export function backlinkIndex(nodes: DnaNode[]): Map<string, DnaNode[]> {
 // Fields that are OUTPUTS of generation/the read, never plan INPUTS — stripped before any input-set hash so
 // writing them (e.g. a meter read onto a beat, a fact ledger onto a scene) never spuriously stales the nodes
 // that hash this content. Mirrors how the prose hash already excludes prose.
-const OUTPUT_FIELDS = ["prose", "observed_readings", "observed_establishes", "continuity_flags", "confusion_flags", "observed_value_carrier", "observed_fingerprint", "observed_shape_fit", "observed_shape_hash", "observed_craft", "observed_craft_hash"] as const;
+const OUTPUT_FIELDS = ["prose", "observed_readings", "observed_establishes", "continuity_flags", "confusion_flags", "observed_value_carrier", "observed_fingerprint", "observed_shape_fit", "observed_shape_hash", "observed_craft", "observed_craft_hash", "observed_brief_fit", "observed_brief_fit_hash", "observed_logline_fit", "observed_logline_fit_hash"] as const;
 function planOf(content: NodeContent | null | undefined): NodeContent | null {
   if (!content) return null;
   const out: Record<string, unknown> = { ...(content as Record<string, unknown>) };
@@ -1188,6 +1208,53 @@ export function synopsisReadHash(input: SynopsisReadInput): string {
   return metaHash(stableStringify(input));
 }
 
+// ── THE BRIEF READ (read-logline) — does the logline honor the BRIEF it was forged from? ─────────────────
+export interface BriefFitInput { logline: string }
+export const BRIEF_FIT_FLOOR = 3; // score ≤ 2 ⇒ the axis is flagged (1–5 scale, same convention as CRAFT_AXIS_FLOOR)
+
+/** Assemble the brief read's input from the live tree: just the seed's logline (the brief itself loads
+ *  server-side in the edge fn — never sent by the client, so it can't be tampered with). Skip-empty: no
+ *  seed or no logline yet ⇒ null (no call). */
+export function buildBriefFitInput(nodes: DnaNode[]): BriefFitInput | null {
+  const seed = nodes.find((n) => n.kind === "seed");
+  const logline = ((seed?.content as SeedContent | undefined)?.logline ?? "").trim();
+  if (!seed || !logline) return null;
+  return { logline };
+}
+
+/** The staleness seal: a stable hash of the exact input sent. A verdict is FRESH iff this still matches the
+ *  seed's stored observed_brief_fit_hash; editing the logline changes the input, silencing the lint. */
+export function briefFitHash(input: BriefFitInput): string {
+  return metaHash(stableStringify(input));
+}
+
+// ── THE PREMISE READ (read-premise) — does the premise honor the LOGLINE it was derived from? ────────────
+export interface LoglineFitInput {
+  logline: string;
+  premise: { dramaticQuestion?: string; shapeName?: string; movements?: string[]; endingFeel?: string };
+}
+export const LOGLINE_FIT_FLOOR = 3; // score ≤ 2 ⇒ the axis is flagged (1–5 scale, same convention as CRAFT_AXIS_FLOOR)
+
+/** Assemble the premise read's input from the live tree: the accepted logline plus the premise's promise
+ *  (dramatic question + shape). Skip-empty: no logline, no premise, or no dramatic question yet ⇒ null. */
+export function buildLoglineFitInput(nodes: DnaNode[]): LoglineFitInput | null {
+  const seed = nodes.find((n) => n.kind === "seed");
+  const logline = ((seed?.content as SeedContent | undefined)?.logline ?? "").trim();
+  const premise = nodes.find((n) => n.kind === "premise");
+  const pc = premise?.content as PremiseContent | undefined;
+  if (!logline || !premise || !pc?.dramatic_question) return null;
+  return {
+    logline,
+    premise: { dramaticQuestion: pc.dramatic_question, shapeName: pc.shape?.name, movements: pc.shape?.movements, endingFeel: pc.shape?.ending_feel },
+  };
+}
+
+/** The staleness seal: a stable hash of the exact input sent. A verdict is FRESH iff this still matches the
+ *  premise's stored observed_logline_fit_hash; editing the logline or the premise's promise flips it. */
+export function loglineFitHash(input: LoglineFitInput): string {
+  return metaHash(stableStringify(input));
+}
+
 // ── LOGLINE ANATOMY (the seed) ────────────────────────────────────────────────────────────────────────────
 // The seed's logline is the story's ENGINE in one or two sentences (protagonist · inciting incident · goal ·
 // obstacle · stakes) — not the raw idea, and not a situation. Two deterministic checks below, both warn.
@@ -1217,6 +1284,25 @@ function verticalLints(nodes: DnaNode[], cfg: LintConfig): DnaIssue[] {
     if (!LOGLINE_ACTIVE_VERB.test(logline)) {
       issues.push({ rule: "logline_static", severity: "warn", nodeId: seed.id,
         message: `the logline reads passive — the protagonist should DRIVE the story (must, fights to, races to…), not have things happen to them` });
+    }
+  }
+
+  // brief_fit_flag — the brief read's verdict (seed.observed_brief_fit): does the logline still honor the
+  // BRIEF it was forged from? Same sensor/judge split and freshness gate as craft_flag: the floor lives here
+  // (BRIEF_FIT_FLOOR, not LintConfig — a fixed craft convention, not a genre dial), and a stale seal is silent
+  // (early-not-wrong; the read is paid, so the author re-triggers it rather than us nagging). Distinct from
+  // logline_overlong/logline_static above — those are deterministic prose mechanics, this is LLM-judged
+  // fidelity to the brief's idea/genre/tone/stakes.
+  const briefFitVerdict = (seed?.content as SeedContent | undefined)?.observed_brief_fit;
+  if (seed && Array.isArray(briefFitVerdict) && briefFitVerdict.length) {
+    const input = buildBriefFitInput(nodes);
+    const fresh = !!input && (seed.content as SeedContent).observed_brief_fit_hash === briefFitHash(input);
+    if (fresh) {
+      for (const row of briefFitVerdict) {
+        if (typeof row.axis !== "string" || typeof row.score !== "number" || row.score >= BRIEF_FIT_FLOOR) continue;
+        issues.push({ rule: "brief_fit_flag", severity: "warn", nodeId: seed.id,
+          message: `the brief read scores ${row.axis} ${row.score}/5${row.note ? ` — ${row.note}` : ""}` });
+      }
     }
   }
 
@@ -1250,6 +1336,25 @@ function verticalLints(nodes: DnaNode[], cfg: LintConfig): DnaIssue[] {
         const worst = row.worst && index.has(row.worst) ? row.worst : premise.id; // anchor to the node that can fix it
         issues.push({ rule: "movement_unfit", severity: "warn", nodeId: worst,
           message: `movement ${row.movement + 1} "${text}" scores ${score}/5 in the acts that carry it${row.note ? ` — ${row.note}` : ""}` });
+      }
+    }
+  }
+
+  // logline_fit_flag — the premise read's verdict (premise.observed_logline_fit): does the premise still
+  // honor the LOGLINE it was derived from — the craft rubric (escalation/internal trajectory/forced choice/
+  // question-shape lock/price-in-question), brief_fidelity, and logline_fixity (does it still honor the
+  // logline's protagonist/inciting/goal/obstacle/stakes as FIXED). Same sensor/judge split and freshness gate
+  // as movement_unfit/craft_flag: the floor lives here (LOGLINE_FIT_FLOOR, not LintConfig), and a stale seal
+  // is silent (early-not-wrong; the read is paid, so the author re-triggers it rather than us nagging).
+  const loglineFitVerdict = (premise?.content as PremiseContent | undefined)?.observed_logline_fit;
+  if (premise && Array.isArray(loglineFitVerdict) && loglineFitVerdict.length) {
+    const input = buildLoglineFitInput(nodes);
+    const fresh = !!input && (premise.content as PremiseContent).observed_logline_fit_hash === loglineFitHash(input);
+    if (fresh) {
+      for (const row of loglineFitVerdict) {
+        if (typeof row.axis !== "string" || typeof row.score !== "number" || row.score >= LOGLINE_FIT_FLOOR) continue;
+        issues.push({ rule: "logline_fit_flag", severity: "warn", nodeId: premise.id,
+          message: `the premise read scores ${row.axis} ${row.score}/5${row.note ? ` — ${row.note}` : ""}` });
       }
     }
   }

@@ -183,6 +183,43 @@ function stampCraft(fresh: boolean): DnaNode[] {
   return nodes;
 }
 
+// Brief-read fixtures (read-logline): the same plan as shapeBase, with a PAID brief-fidelity verdict written
+// onto the SEED. genre_tone_fit scores 2 (fires), originality_honored scores 1 (fires), idea_fidelity 4 and
+// stakes_grounded 5 stay silent. Same staleness-seal gating as the shape/synopsis reads.
+function stampBriefFit(fresh: boolean): DnaNode[] {
+  const nodes = shapeBase();
+  const seed = nodes.find((n) => n.id === "sf_seed")!;
+  const input = web.buildBriefFitInput(nodes)!;
+  const observed_brief_fit = [
+    { axis: "idea_fidelity", score: 4 },
+    { axis: "genre_tone_fit", score: 2, note: "reads more literary than the brief's thriller ask" },
+    { axis: "originality_honored", score: 1, note: "the border-forgetting hook never appears" },
+    { axis: "stakes_grounded", score: 5 },
+  ];
+  seed.content = { ...seed.content, observed_brief_fit, observed_brief_fit_hash: fresh ? web.briefFitHash(input) : "stale-hash" };
+  return nodes;
+}
+
+// Premise-read fixtures (read-premise): the same plan as shapeBase, with a PAID logline-fidelity verdict
+// written onto the PREMISE. forced_choice scores 2 (fires) and logline_fixity scores 1 (fires); the rest
+// clear the floor. Same staleness-seal gating as the shape/synopsis reads.
+function stampLoglineFit(fresh: boolean): DnaNode[] {
+  const nodes = shapeBase();
+  const premise = nodes.find((n) => n.id === "sf_prem")!;
+  const input = web.buildLoglineFitInput(nodes)!;
+  const observed_logline_fit = [
+    { axis: "escalation", score: 4 },
+    { axis: "internal_trajectory", score: 3 },
+    { axis: "forced_choice", score: 2, note: "the final movement's choice isn't costly either way" },
+    { axis: "question_shape_lock", score: 5 },
+    { axis: "price_in_question", score: 4 },
+    { axis: "brief_fidelity", score: 5 },
+    { axis: "logline_fixity", score: 1, note: "swapped the obstacle from a border guard to a rival courier" },
+  ];
+  premise.content = { ...premise.content, observed_logline_fit, observed_logline_fit_hash: fresh ? web.loglineFitHash(input) : "stale-hash" };
+  return nodes;
+}
+
 // W3 prose-lint fixture: planted MECHANICAL faults for the deterministic read layer — an adjacent verbatim
 // echo (pp_s1→pp_s2 share one distinctive 5-gram), a flat-cadence scene (pp_s3: 8 five-word sentences, CV 0),
 // a name-soup scene (pp_s4: 180 words dense with Mara/Okonkwo), a 3-run of all-dialogue scenes
@@ -320,12 +357,18 @@ const cases: [string, (m: typeof web, n: DnaNode[]) => unknown][] = [
   // The synopsis read's assembler + seal (W2) — the craft_flag lint recomputes both, so they must agree.
   ["buildSynopsisReadInput", (m, n) => m.buildSynopsisReadInput(n)],
   ["synopsisReadHash", (m, n) => { const i = m.buildSynopsisReadInput(n); return i ? m.synopsisReadHash(i) : null; }],
+  // The brief read's assembler + seal (read-logline) — the brief_fit_flag lint recomputes both.
+  ["buildBriefFitInput", (m, n) => m.buildBriefFitInput(n)],
+  ["briefFitHash", (m, n) => { const i = m.buildBriefFitInput(n); return i ? m.briefFitHash(i) : null; }],
+  // The premise read's assembler + seal (read-premise) — the logline_fit_flag lint recomputes both.
+  ["buildLoglineFitInput", (m, n) => m.buildLoglineFitInput(n)],
+  ["loglineFitHash", (m, n) => { const i = m.buildLoglineFitInput(n); return i ? m.loglineFitHash(i) : null; }],
   // W3: the deterministic prose linter — the twins must reach identical mechanical verdicts.
   ["proseLints", (m, n) => m.proseLints(n, m.DEFAULT_LINT_CONFIG)],
 ];
 
 describe("novel-dna edge twin ↔ web engine parity", () => {
-  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)], ["craftFresh", stampCraft(true)], ["craftStale", stampCraft(false)], ["proseBook", proseBook()], ["cadenceBook", cadenceBook()], ["sketchBook", sketchBook()], ["endgameBook", endgameBook()], ["contractBook", contractBook()]];
+  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)], ["craftFresh", stampCraft(true)], ["craftStale", stampCraft(false)], ["briefFitFresh", stampBriefFit(true)], ["briefFitStale", stampBriefFit(false)], ["loglineFitFresh", stampLoglineFit(true)], ["loglineFitStale", stampLoglineFit(false)], ["proseBook", proseBook()], ["cadenceBook", cadenceBook()], ["sketchBook", sketchBook()], ["endgameBook", endgameBook()], ["contractBook", contractBook()]];
   for (const [fxName, nodes] of fixtures) {
     for (const [fnName, fn] of cases) {
       it(`${fnName} agrees on ${fxName}`, () => {
@@ -447,6 +490,52 @@ describe("the synopsis read (craft_flag)", () => {
   it("stays SILENT on a STALE verdict (the seal no longer matches the tree)", () => {
     const rules = web.validate(stampCraft(false)).map((i) => i.rule);
     expect(rules).not.toContain("craft_flag");
+  });
+});
+
+// The brief read (read-logline): does the logline still honor the brief it was forged from?
+describe("the brief read (brief_fit_flag)", () => {
+  it("fires per FRESH sub-floor axis, anchored to the seed", () => {
+    const issues = web.validate(stampBriefFit(true)).filter((i) => i.rule === "brief_fit_flag");
+    expect(issues.map((i) => i.nodeId)).toEqual(["sf_seed", "sf_seed"]);
+    expect(issues.map((i) => i.message)).toEqual([
+      "the brief read scores genre_tone_fit 2/5 — reads more literary than the brief's thriller ask",
+      "the brief read scores originality_honored 1/5 — the border-forgetting hook never appears",
+    ]);
+  });
+
+  it("does not fire at or above the floor (idea_fidelity 4 and stakes_grounded 5 stay silent)", () => {
+    const messages = web.validate(stampBriefFit(true)).filter((i) => i.rule === "brief_fit_flag").map((i) => i.message);
+    expect(messages.some((m) => m.includes("idea_fidelity"))).toBe(false);
+    expect(messages.some((m) => m.includes("stakes_grounded"))).toBe(false);
+  });
+
+  it("stays SILENT on a STALE verdict (the seal no longer matches the tree)", () => {
+    const rules = web.validate(stampBriefFit(false)).map((i) => i.rule);
+    expect(rules).not.toContain("brief_fit_flag");
+  });
+});
+
+// The premise read (read-premise): does the premise still honor the logline it was derived from?
+describe("the premise read (logline_fit_flag)", () => {
+  it("fires per FRESH sub-floor axis, anchored to the premise", () => {
+    const issues = web.validate(stampLoglineFit(true)).filter((i) => i.rule === "logline_fit_flag");
+    expect(issues.map((i) => i.nodeId)).toEqual(["sf_prem", "sf_prem"]);
+    expect(issues.map((i) => i.message)).toEqual([
+      "the premise read scores forced_choice 2/5 — the final movement's choice isn't costly either way",
+      "the premise read scores logline_fixity 1/5 — swapped the obstacle from a border guard to a rival courier",
+    ]);
+  });
+
+  it("does not fire at or above the floor (escalation 4 and brief_fidelity 5 stay silent)", () => {
+    const messages = web.validate(stampLoglineFit(true)).filter((i) => i.rule === "logline_fit_flag").map((i) => i.message);
+    expect(messages.some((m) => m.includes("escalation"))).toBe(false);
+    expect(messages.some((m) => m.includes("brief_fidelity"))).toBe(false);
+  });
+
+  it("stays SILENT on a STALE verdict (the seal no longer matches the tree)", () => {
+    const rules = web.validate(stampLoglineFit(false)).map((i) => i.rule);
+    expect(rules).not.toContain("logline_fit_flag");
   });
 });
 

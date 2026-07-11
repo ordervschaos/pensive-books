@@ -1,6 +1,6 @@
 # STATE — what exists, and what status it's in
 
-> Snapshot date: **2026-07-10**. Update when something ships, parks, or dies.
+> Snapshot date: **2026-07-11**. Update when something ships, parks, or dies.
 > Deep detail lives in `docs/` and `apps/web/src/features/dna/FEATURE.md`; this is the map.
 
 ## The product at a glance
@@ -23,7 +23,7 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 | Project | Status | Notes |
 |---|---|---|
 | DNA tree substrate (`book_nodes`, novelDna.ts engine) | shipped | Single source of truth; pages = projection |
-| DNA tree editor (grouped tree, typed fields, CRUD, reviser rail) | shipped | The ONE studio surface (vanilla /dna studio deprecated 2026-07-03) |
+| DNA tree editor (grouped tree, typed fields, CRUD, reviser rail) | shipped | The ONE studio surface (vanilla /dna studio deprecated 2026-07-03). 2026-07-11: "clear all nodes" added to the overflow menu — snapshots to History then cascade-deletes from the true root, fixing a prior pillar-vs-seed root-detection bug in the discard modal |
 | Structure-as-render (outline → reconcile → pages) | shipped | Cheap JSON edits, deliberate render; reader export paginates by beat (not chapter) as of 2026-07-09, scene breaks marked "***" |
 | Causality axis (state keys, earned `therefore`) | shipped | Generation constraint, not just lint |
 | Meters (comedy/heat/game-score plottable axes) | shipped (P1) | Vertical fit cascade remaining |

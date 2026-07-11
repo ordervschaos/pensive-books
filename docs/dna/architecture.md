@@ -128,7 +128,7 @@ flowchart TB
     ba["⬡ book-agent (tool loop)"]
     dx["⬡ dna-expand (generator)"]
     dc["⬡ dna-chat"]
-    reads["⬡ read-meters · read-shape\nread-synopsis · read-confusion · read-facts"]
+    reads["⬡ read-meters · read-shape\nread-synopsis · read-confusion · read-facts\nread-logline · read-premise"]
   end
 
   subgraph DB["Postgres"]
@@ -212,6 +212,7 @@ structural + causal + dead-field into `DnaIssue[]`; verticals/prose/sketch run p
 | **Causal (why)** | `uncaused_therefore` | `causality()` — `needs`/`establishes` DAG | error |
 | **Vertical fit** | `movement_unfit`, `act_value_undelivered`, `beat_polarity_undelivered`, `scene_reading_departs` | vertical-fit / timeline layer | warn |
 | **Shape read** | `shape_unmapped`, `ending_feel_mismatch`, `craft_flag` | `buildShapeReadInput` + `read-shape` / `read-synopsis` | warn |
+| **Brief / premise read** | `brief_fit_flag`, `logline_fit_flag` | `buildBriefFitInput` + `read-logline`; `buildLoglineFitInput` + `read-premise` | warn |
 | **Sketch** | scene-treatment lints | SKETCH LINTS section | warn |
 | **Prose** | deterministic read-layer flags | `proseLints()` | warn |
 | **Dead-field** | `dead_arc`, `static_relationship` | DEAD-FIELD LINTS (declared-never-consumed) | warn |
@@ -283,6 +284,8 @@ flowchart TB
     rsy["read-synopsis → craft_flag (shift-left judge)"]
     rc["read-confusion → reader_confusion (cold read)"]
     rf["read-facts → continuity flags"]
+    rbf["read-logline → brief_fit_flag (brief↔logline)"]
+    rpr["read-premise → logline_fit_flag (logline↔premise)"]
   end
 
   reads --> obs["observed traces / flags"]
@@ -337,6 +340,14 @@ flowchart LR
 
 ## 11 · Recent changes (what landed lately)
 
+- **Brief/premise reads** (2026-07-11): two new craft judges close the gap between
+  the deterministic logline anatomy lints and the shape/synopsis reads — `read-logline`
+  (`brief_fit_flag`, does the logline still honor the brief?) and `read-premise`
+  (`logline_fit_flag`, does the premise still honor the logline's protagonist/inciting/
+  goal/obstacle/stakes as FIXED — the `dnaJourney.ts` premise-stage contract, previously
+  unchecked). Grounded in `craft-kb.ts`'s `LOGLINE_CRAFT` and `PREMISE_JUDGE_CRITERIA` —
+  the latter shared with `dna-expand`'s premise-generation self-eval, which previously
+  scored itself and discarded the scores.
 - **Verify layer** (2026-07-06): `LintConfig` + genre presets, brief-compile
   (`check_against_contract`), synopsis read (`craft_flag`), `proseLints`, arc
   threads (`dead_arc` / `static_relationship`), cold read (`reader_confusion`),

@@ -88,6 +88,8 @@ const LINTS: Lint[] = [
   { code: "shape_unmapped", family: "Shape read", fn: "buildShapeReadInput · read-shape", sev: "warn" },
   { code: "ending_feel_mismatch", family: "Shape read", fn: "read-shape", sev: "warn" },
   { code: "craft_flag", family: "Shape read", fn: "read-synopsis (shift-left judge)", sev: "warn" },
+  { code: "brief_fit_flag", family: "Brief / premise read", fn: "buildBriefFitInput · read-logline", sev: "warn" },
+  { code: "logline_fit_flag", family: "Brief / premise read", fn: "buildLoglineFitInput · read-premise", sev: "warn" },
   { code: "dead_arc", family: "Dead-field", fn: "DEAD-FIELD LINTS", sev: "warn" },
   { code: "static_relationship", family: "Dead-field", fn: "DEAD-FIELD LINTS", sev: "warn" },
   { code: "unmarked_travel", family: "Chronology", fn: "CHRONOLOGY LINTS (timeline floor)", sev: "warn" },
@@ -115,6 +117,8 @@ const READS: Read[] = [
   { fn: "read-synopsis", out: "craft_flag — shift-left quality judge" },
   { fn: "read-confusion", out: "reader_confusion — cold read" },
   { fn: "read-facts", out: "continuity flags / breaks" },
+  { fn: "read-logline", out: "brief_fit_flag — does the logline honor the brief?" },
+  { fn: "read-premise", out: "logline_fit_flag — does the premise honor the logline as FIXED?" },
 ];
 
 type Table = { name: string; owner: string; role: string; priv?: boolean };
@@ -131,6 +135,7 @@ const TABLES: Table[] = [
 
 type Change = { date: string; title: string; body: string };
 const CHANGES: Change[] = [
+  { date: "2026-07-11", title: "Brief/premise reads", body: "read-logline (brief_fit_flag) and read-premise (logline_fit_flag) close the gap between the deterministic logline anatomy lints and the shape/synopsis reads; grounded in craft-kb.ts's LOGLINE_CRAFT + PREMISE_JUDGE_CRITERIA (shared with dna-expand's premise self-eval)" },
   { date: "2026-07-06", title: "Verify layer", body: "LintConfig + genre presets · brief-compile · synopsis read (craft_flag) · proseLints · arc threads (dead_arc / static_relationship) · cold read (reader_confusion) · decision journal (⑂) · unmarked_travel" },
   { date: "2026-07-04", title: "Timeline + vertical-fit lints", body: "shape_unmapped · ending_feel_mismatch · beat_polarity_undelivered · scene_reading_departs; shape read = paid semantic ceiling (movement_unfit)" },
   { date: "2026-07-03", title: "Scene ledger unification", body: "three between-scenes reads folded into ledgerAt (id-keyed) + entityRegistryBlock + facet exposure" },
@@ -350,7 +355,7 @@ export default function DnaArchitecturePage() {
             <div className="arch-lane-gap">⇄</div>
             <div className="arch-lane">
               <div className="arch-lane-head edge">EDGE · supabase/functions (via _shared: llm · task · access)</div>
-              {["⬡ book-agent — the tool loop", "⬡ dna-expand — the generator", "⬡ dna-chat", "⬡ read-meters · read-shape · read-synopsis · read-confusion · read-facts"].map((x) => <div key={x} className="arch-lane-item edge">{x}</div>)}
+              {["⬡ book-agent — the tool loop", "⬡ dna-expand — the generator", "⬡ dna-chat", "⬡ read-meters · read-shape · read-synopsis · read-confusion · read-facts", "⬡ read-logline · read-premise"].map((x) => <div key={x} className="arch-lane-item edge">{x}</div>)}
             </div>
             <div className="arch-lane-gap">⇄</div>
             <div className="arch-lane">
