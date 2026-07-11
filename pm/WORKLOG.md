@@ -17,6 +17,14 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-11 — committed the tentpole guidance-by-name fix `[chore]`
+- **What:** Landed the previously-catalogued tentpole fix (see the entry directly below) as commit
+  `386769a`. No new work — just closing the loop from "not yet committed" to committed. Left the
+  unrelated pre-existing WIP (`modals.tsx`/`DnaTreePage.tsx` "discard everything" feature,
+  `doc_*.md`/`todo.md`) unstaged/untracked, out of scope for this commit.
+- **Files/commits:** `386769a`.
+- **PM impact:** none new — same as the entry below.
+
 ## 2026-07-11 — tentpoles: guidance-by-name, not verbatim-text matching `[ship]`
 - **What:** `tentpole` was the only DNA entity with no short `name` field — its one `summary` field
   did double duty as both the beat-sheet generator's matching key (exact lowercase text match) and
