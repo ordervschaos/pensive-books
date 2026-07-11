@@ -72,7 +72,7 @@ Deno.serve(async (req: Request) => {
     const meta: CallMeta = { fn: "read-premise", bookId, taskTable: "book_nodes", taskId: bookId };
     const data = await callLLM(apiKey, {
       model,
-      max_tokens: 1400,
+      max_tokens: 3000,
       thinking: { type: "adaptive" },
       output_config: { effort: "low" },
       system: [{

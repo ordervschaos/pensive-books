@@ -7,8 +7,9 @@ import {
   beatMeterReadings, byId, causality, ledgerAt, scenesInOrder, sceneProseStats, traceDiff,
   type DnaNode, type NodeContent, type PillarContent, type PremiseContent, type SceneContent,
 } from "@/features/dna/lib/novelDna";
+import { editSpecs } from "@/features/dna/lib/dnaSchema";
 import { diffAgainstVersion, listVersions, loadVersion, restoreVersion, snapshotTree, type TreeDiff, type TreeVersion } from "@/features/dna/lib/treeVersions";
-import { nodeTitle } from "./nodeDisplay";
+import { displayValue, hiddenFields, nodeTitle } from "./nodeDisplay";
 import { MONO, SERIF, T } from "./treeChrome";
 
 // ── Discard story modal ───────────────────────────────────────────────────────
@@ -523,6 +524,26 @@ function NodeAnalysis({ node, nodes }: { node: DnaNode; nodes: DnaNode[] }) {
   return null;
 }
 
+// Every content field this node's schema declares (plan fields like value_shift, goal, conflict…) plus
+// anything genOnly/undeclared (hiddenFields) — read-only, so "view details" actually shows the plan, not
+// just provenance + derived analysis. Reuses the same displayValue/hiddenFields the tree editor renders from.
+function ContentFields({ node, index }: { node: DnaNode; index: Map<string, DnaNode> }) {
+  const rows = editSpecs(node.kind).flatMap((spec) => {
+    if (spec.type === "object") {
+      return (spec.fields ?? []).map((sub) => ({ key: `${spec.key}.${sub.key}`, label: `${spec.label} · ${sub.label}`, value: displayValue(node, sub, index, spec.key) }));
+    }
+    return [{ key: spec.key, label: spec.label, value: displayValue(node, spec, index) }];
+  }).filter((r) => r.value);
+  const hidden = hiddenFields(node, index);
+  if (!rows.length && !hidden.length) return null;
+  return (
+    <Section label="content">
+      {rows.map((r) => <Row key={r.key} label={r.label} value={r.value} />)}
+      {hidden.map((f) => <Row key={f.key} label={f.label} value={f.value} />)}
+    </Section>
+  );
+}
+
 export function NodeDetailsModal({ node, nodes, onClose }: { node: DnaNode; nodes: DnaNode[]; onClose: () => void }) {
   const mono = MONO;
   const [call, setCall] = useState<AiCallDetail | null | "loading" | "error">(node.last_ai_call_id ? "loading" : null);
@@ -556,6 +577,8 @@ export function NodeDetailsModal({ node, nodes, onClose }: { node: DnaNode; node
             <span style={{ color: T.muted }}>status: <span style={{ color: T.inkSoft }}>{a.status}</span></span>
             {a.locked && <span style={{ color: T.warn }}>🔒 locked</span>}
           </div>
+
+          <ContentFields node={node} index={byId(nodes)} />
 
           {call === null && (
             <div style={{ marginTop: 14, fontFamily: mono, fontSize: 11, color: T.muted }}>

@@ -18,9 +18,9 @@ export function nodeTitle(n: DnaNode): string {
     case "tentpole": return s(c.name) || s(c.summary);
     case "game": return s(c.name);
     case "thread": return s(c.name) || s(c.promise);
-    case "act": return s(c.title) || s(c.goal);
-    case "beat": return s((c as BeatContent).summary);
-    case "scene": return s((c as SceneContent).chapter_start?.title) || s((c as SceneContent).goal);
+    case "act": return s(c.title);
+    case "beat": return "";
+    case "scene": return s((c as SceneContent).chapter_start?.title);
     case "voice_profile": return s(c.style) || "voice profile";
     default: return "";
   }

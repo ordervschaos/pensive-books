@@ -1,6 +1,6 @@
 # STATE — what exists, and what status it's in
 
-> Snapshot date: **2026-07-11**. Update when something ships, parks, or dies.
+> Snapshot date: **2026-07-12**. Update when something ships, parks, or dies.
 > Deep detail lives in `docs/` and `apps/web/src/features/dna/FEATURE.md`; this is the map.
 
 ## The product at a glance
@@ -55,6 +55,7 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 |---|---|---|
 | Verify suite (LintConfig, brief-compile, synopsis read, proseLints, arc threads, cold read, decision journal) | shipped | 2026-07-06 build |
 | Vertical-fit lints (shape_unmapped, ending_feel_mismatch, …) | shipped | 2026-07-04 |
+| Brief/premise reads (`read-logline`→`brief_fit_flag`, `read-premise`→`logline_fit_flag`) | shipped | 2026-07-12: built + deployed + verified live end-to-end (scripted smoke test, no browser available). `logline_fixity` axis — new: catches a premise silently swapping the accepted logline's protagonist/inciting/goal/obstacle/stakes. Fixed a real truncation bug found live (`read-premise` max_tokens 1400→3000 — its system prompt + 7 axes needed more room than the other reads' budget) |
 | Book evaluation (editor's-read rubric, ~$0.33/read) | shipped | The cheap proxy for the human read-through |
 | Structure Miner (mine prose for missed axes, MDL gate) | shipped (R1–R2) | `controlling_metaphor` + `somatic_value_carrier` graduated → `metaphor_monotone`/`value_asserted` lints, both twins, parity-locked; `docs/structure-miner.md`, `scripts/structure-miner.mjs` |
 | Thread tracking (foreshadowing/open loops) | partial | Backbone shipped; UI remaining |

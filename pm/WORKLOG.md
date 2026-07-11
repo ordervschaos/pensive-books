@@ -17,6 +17,41 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-12 — DNA tree: stop echoing summary/goal as the inline title `[chore]`
+- **What:** Act/scene/beat rows in the tree editor showed the same text twice — the inline title next to the kind badge duplicated the SUMMARY (beat) or fell back to GOAL (act/scene) when no distinct title was set. `nodeTitle()` now only uses each kind's real short-title field (blank for beat, which has none; goal/summary stay visible in the expanded row).
+- **Files/commits:** `apps/web/src/features/dna/components/tree/nodeDisplay.ts` (uncommitted).
+- **PM impact:** none.
+
+## 2026-07-12 — node details modal now shows all content fields `[chore]`
+- **What:** User noticed `value_shift` (and every other plan field — goal/conflict/outcome/etc.)
+  was invisible in the node "view details" modal — it only ever showed provenance (AI call/prompt)
+  and derived analysis, never the node's actual schema content. Added a `ContentFields` block to
+  `NodeDetailsModal` that iterates `editSpecs(node.kind)` + `hiddenFields()` and renders every field
+  read-only, reusing the same `displayValue`/`hiddenFields` helpers the inline tree editor already
+  uses (so refs resolve to node titles, not raw ids). No new fields added to the schema — this was
+  a projection gap in the modal, not missing data.
+- **Files/commits:** `apps/web/src/features/dna/components/tree/modals.tsx` (uncommitted).
+- **PM impact:** none — small UI completeness fix, no roadmap/state change.
+
+## 2026-07-12 — verified the brief/premise reads live, fixed a truncation bug `[ship]`
+- **What:** Built on the "LLM reviewer for logline and premise" work (commit `8acc313`, already
+  landed): deployed `read-logline`/`read-premise`/`dna-expand` to Supabase, then verified both
+  new judges end-to-end against the real deployment — no browser available this session (both
+  claude-in-chrome and chrome-devtools-mcp were unreachable), so instead scripted a throwaway
+  smoke test: a disposable user + book + seed/premise nodes via service-role writes, a real
+  signed-in session, direct HTTP calls to both edge functions, verdict inspected, then torn down.
+  `read-logline` worked first try. `read-premise` 500'd with "Unexpected end of JSON input" —
+  its response was getting truncated before the model could emit the closing JSON (the longest
+  system prompt of the three reads: full `PREMISE_CRAFT` text + 7 axes, on the same 1400-token
+  budget `read-shape`/`read-synopsis` use for less). Bumped `max_tokens` 1400 → 3000, redeployed,
+  reran — both reads now return full, well-grounded verdicts. `logline_fixity` correctly caught a
+  deliberately-planted obstacle swap (storm → rival keeper) in the test premise, scoring it 2/5
+  with an accurate note — the exact new capability this axis was built for.
+- **Files/commits:** `supabase/functions/read-premise/index.ts` (max_tokens fix, not yet
+  committed — left for the user/next catalogue pass per the "never commit unless asked" rule).
+- **PM impact:** none beyond what `8acc313` already covers; this entry documents the live
+  verification pass and the one post-commit fix.
+
 ## 2026-07-11 — traced the logline review/accept loop for the user `[chore]`
 - **What:** User asked how a generated logline gets reviewed and "closes the loop." Traced the
   existing (already-shipped) mechanism rather than proposing anything new: `dna-expand` generates
