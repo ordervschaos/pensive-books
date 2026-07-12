@@ -13,7 +13,7 @@
 //
 // Env:
 //   EVAL_BRIDGE_PORT   default 8787
-//   EVAL_CLAUDE_FLAGS  default "--dangerously-skip-permissions"
+//   EVAL_CLAUDE_FLAGS  default "--dangerously-skip-permissions --setting-sources user"
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { readdirSync, readFileSync, existsSync, appendFileSync } from "node:fs";
@@ -24,7 +24,14 @@ import { distinctivePhrases, priorDialogue, approxTokens } from "./lib/prose-lin
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const reportsDir = join(repoRoot, "reports");
 const PORT = Number(process.env.EVAL_BRIDGE_PORT || 8787);
-const CLAUDE_FLAGS = (process.env.EVAL_CLAUDE_FLAGS || "--dangerously-skip-permissions").split(" ").filter(Boolean);
+// `--setting-sources user` is load-bearing: with the default (all sources) the spawned headless `claude -p`
+// runs in repoRoot, loads this repo's PROJECT .claude/settings.json, and FIRES the PM Stop hook mid-
+// generation — the model then answers the "uncatalogued work / run /wrap" nag instead of emitting the
+// requested JSON (observed on a sketch call, book 1249). Restricting to the `user` source drops the project
+// hook (and local settings) while KEEPING user-level OAuth login — `--bare` also killed the hook but broke
+// auth ("Not logged in"). A generation subprocess must never run the interactive repo hooks. Override via
+// EVAL_CLAUDE_FLAGS.
+const CLAUDE_FLAGS = (process.env.EVAL_CLAUDE_FLAGS || "--dangerously-skip-permissions --setting-sources user").split(" ").filter(Boolean);
 // `claude -p` latency on the CC subscription is congestion-bound and wildly variable (2–21 min,
 // occasionally a dropped socket). Past this many ms we kill the child and fail fast so the caller
 // can retry/re-roll instead of stranding (and never leave a zombie 'running' ai_calls row). 0 = off.
@@ -3728,6 +3735,43 @@ Output JSON ONLY: { "beats": [ { "act": <1..${acts.length}>, "summary": "...", "
       return { act: mi, content };
     });
     return { beatsheet: true, childKind: "beat", childLevel: 4, actIds: acts.map((m) => m.id), beats };
+  }
+
+  if (target === "sketch") {
+    // Scene → sketch: the TREATMENT between the scene's plan and its prose (mirrors supabase/functions/dna-expand
+    // index.ts:706). WHAT happens (a handful of moves) and HOW it's shown (cut points, psychic distance, mode,
+    // time, tension) — cheap structured JSON, generated BEFORE paying for the long prose. Reuses the same scoped
+    // `ctx` prose gets. SCENE_DIRECTION_CRAFT is inlined here (the bridge doesn't import _shared/craft-kb).
+    if (node.kind !== "scene") return { error: "'sketch' only applies to a scene node" };
+    const SCENE_DIRECTION_CRAFT = `- cut.in / cut.out: where the page enters/leaves the event (arrive late, leave early — never start "the moment before" or linger past the turn).
+- distance: far | mid | close | deep (psychic distance — how close the narration sits to the POV mind).
+- mode: dialogue | action | interior | description | summary (the dominant texture).
+- time: real | compressed | stretched (scene-time vs story-time).
+- tension: suspense | mystery | irony (what the reader knows vs the character).`;
+    const prompt = `You are a story editor writing ONE scene's TREATMENT — the low-resolution plan between its structural spec and its prose. Output JSON ONLY, no prose, no fences.
+
+Two parts:
+1. MOVES (3–7): what happens, in order — beats of ACTION, never dialogue lines or prose. Each move may optionally reference a thread id it works (from THREADS/ENTRY STATE above) and a sensory detail picked from the scene's location palette (SETTING above).
+2. DIRECTION — how this page is SHOWN:
+${SCENE_DIRECTION_CRAFT}
+
+Rules:
+- "opening" must differ from how the PREVIOUS page ended (different place/time/register — see PREVIOUS PAGE/STORY SO FAR above if present). Never resume literally where the last page left off.
+- If this scene PAYS OFF a thread, REALIZES a tentpole, or LANDS its beat's value turn (see ENTRY STATE / THIS NODE above for its threads/realizes_tentpole/value_shift), that moment must NOT be "summary" mode or "far" distance — a promise that's merely reported, not dramatized, is a promise the reader won't feel delivered.
+- Vary mode/distance/tension from the immediately PRIOR sketched scene if you can see it (BEAT PLAN / entry state above) — adjacent scenes should not read the same way twice in a row.
+- Never write actual dialogue lines or prose sentences — moves describe WHAT turns, not WHAT'S SAID.
+
+Output JSON ONLY: {"opening":"...","moves":[{"what":"...","thread":"<thread id, optional>","sense":"<e.g. smell:tar, optional>"}],"exit":"...","direction":{"cut":{"in":"...","out":"..."},"distance":"far|mid|close|deep","mode":"dialogue|action|interior|description|summary","time":"real|compressed|stretched","tension":"suspense|mystery|irony"}}
+
+${ctx}\n\nWrite this scene's sketch. JSON only.`;
+    const out = await runClaude(prompt, true, { fn: "dna-expand", bookId }, { noTools: true, model: MODEL_PLANNING });
+    if (out.error) return out;
+    let raw = out.text.trim();
+    const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fence) raw = fence[1].trim();
+    else { const f = raw.indexOf("{"), l = raw.lastIndexOf("}"); if (f !== -1 && l > f) raw = raw.slice(f, l + 1); }
+    try { return { sketch: JSON.parse(raw) }; }
+    catch { return { error: "Sketch generation returned unparsable JSON — try again." }; }
   }
 
   // Generic DNA target: load config from node_type_configs (mirrors edge fn), rebuild ctx with slot-filtered blocks.

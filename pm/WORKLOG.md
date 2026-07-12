@@ -16,6 +16,55 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-12 — eval-bridge: add `sketch` target + isolate spawned-claude from repo hooks `[chore]`
+- **What:** In-app "generate sketch" failed with `Unknown expand target "sketch"`. Root cause was
+  dev-path routing: `VITE_EVAL_BRIDGE_URL` is set, so the client routes `/dna-expand` to the local
+  eval-bridge, which mirrored `logline/prose/beatsheet` but not `sketch` → fell through to the
+  catch-all. Added the `sketch` branch mirroring `dna-expand/index.ts:706` (SCENE_DIRECTION_CRAFT
+  inlined, `runClaude`). Then hit a 2nd failure — `unparsable JSON`: the bridge's `runClaude` spawns
+  `claude -p` in repoRoot loading ALL setting sources, so the sub-instance fired this repo's PROJECT
+  PM Stop hook and answered the `/wrap` nag instead of emitting JSON. Fix: default CLAUDE_FLAGS now
+  `--dangerously-skip-permissions --setting-sources user` — drops the project hook while keeping
+  user-level OAuth. (`--bare` also kills the hook but broke auth → "Not logged in", so reverted.)
+  Verified the flag combo returns clean JSON via a direct `claude -p` probe.
+- **Files:** `scripts/eval-bridge.mjs` (sketch branch ~3733; CLAUDE_FLAGS L27-33).
+  Uncommitted, bridge restarted. Deployed `dna-expand` already had sketch — no edge change needed.
+- **Verify:** routing + auth + clean-JSON confirmed server-side; final in-app sketch render pending an
+  authenticated browser retry (book 1249, node n_gif4aamnn).
+- **PM impact:** none (dev-tooling; bridge is not the required dev route).
+
+## 2026-07-12 — claude-local bridge context bleed fixed with `--safe-mode` `[ship]`
+- **What:** Book-agent calls via the `claude-local` shim were inheriting this coding harness's
+  global `~/.claude/CLAUDE.md` (PM `/wrap` ritual, "teach me", chime) + enabled-plugin SessionStart
+  hooks (Vercel blob) — contaminating the novelist persona (surfaced as a logline reply narrating a
+  coding session). Root cause: on CLI 2.1.207 `--system-prompt` does NOT suppress ambient
+  CLAUDE.md/plugins (the old comment's claim was empirically false). Fix: add hardcoded `--safe-mode`
+  to the `claude -p` spawn — disables all customizations WITHOUT `--bare`'s ANTHROPIC_API_KEY-only
+  auth restriction, so subscription billing survives. Verified worst-case (cwd=repo, key unset) →
+  leak probe returns `NONE`, auth intact; and end-to-end through the restarted HTTP shim.
+- **Files/commits:** `scripts/claude-local-shim.mjs` (+22/−15; `--safe-mode` in `runClaudeLocal`
+  args + corrected header comments). Investigation `doc_1783843689012.md`,
+  `learning_1783843689012_shim-safe-mode.md`. Not committed. (Also restarted the live shim: killed
+  stale 1.5-day PID that predated the fix.)
+- **PM impact:** none to promote — the bridge is dev-only tooling, not a curated STATE project row.
+  Note: `supabase/functions/dna-expand/index.ts` shows modified in the tree but is NOT this task's
+  work (left untouched).
+
+## 2026-07-12 — Diagnosed Supabase egress-quota trip (Free tier hit 6.81/5.5GB) `[chore]`
+- **What:** User hit a Supabase Free-plan egress quota email and had already upgraded to Pro;
+  asked to find the root cause. Explore-agent audit of migrations + client found `book_nodes`
+  has `REPLICA IDENTITY FULL` + is in the `supabase_realtime` publication — same shape as the
+  previously-fixed `book_agent_runs` bug, but never generalized. `useBookNodesLiveSync.ts`
+  refetches the *entire* DNA tree (`select("*")`) on any single node change, so one agent turn
+  editing many nodes fires many full-tree broadcasts to every open tab. Secondary finding:
+  `BookDetails.tsx` refetches `pages.select("*")` (incl. `embedding`, `old_content`) on every
+  page write. No code changed — investigation only; fix proposed, awaiting go-ahead.
+- **Files/commits:** doc_1783842088499.md (write-up); implicated: `supabase/migrations_archive/
+  20260627120000_book_nodes_replica_full.sql`, `apps/web/src/features/dna/hooks/
+  useBookNodesLiveSync.ts`, `apps/web/src/pages/books/show/BookDetails.tsx`. No commits.
+- **PM impact:** none yet — candidate fix (revert `book_nodes` replica identity + incremental
+  live-sync instead of whole-tree refetch) not promoted; needs author sign-off before it ships.
+
 ## 2026-07-12 — Slot badges on tree beat rows `[ship]`
 - **What:** The structure-template slot names (hook / midpoint / climax…) now render as a small
   uppercase chip on each carrying beat's row in the tree — the tree reads like a beat board.
