@@ -56,7 +56,11 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
       { key: "ending_feel", label: "ending feel", type: "select", options: ["up", "down", "bittersweet", "ambivalent"] },
     ] },
   ],
-  pillar: [{ key: "controlling_idea", label: "idea", multiline: true, required: true, taste: true }, { key: "ending", label: "ending", multiline: true, taste: true }],
+  pillar: [{ key: "controlling_idea", label: "idea", multiline: true, required: true, taste: true }, { key: "ending", label: "ending", multiline: true, taste: true },
+    // structure = the plot-skeleton TEMPLATE (novelDna STRUCTURE_TEMPLATES): an explicit, swappable method
+    // choice — the opposite of the removed silent Freytag bias (see premise.shape note above). Absent = the
+    // house default (weiland_3act) applied at generation time; "none" = deliberately structure-free.
+    { key: "structure", label: "structure", type: "select", options: ["weiland_3act", "none"] }],
   character: [
     { key: "name", label: "name", required: true }, { key: "role", label: "role", type: "select", options: ROLES }, { key: "want", label: "want", multiline: true },
     { key: "need", label: "need", multiline: true }, { key: "wound", label: "wound", multiline: true }, { key: "lie", label: "lie", multiline: true },
@@ -136,6 +140,7 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     { key: "needs", label: "needs", genOnly: true, note: "[state key] this turn DEPENDS on (earned upstream)" },
     { key: "establishes", label: "establishes", genOnly: true, note: "[state key] this turn PRODUCES" },
     { key: "realizes", label: "realizes", genOnly: true, note: "[tentpole id] this beat delivers" },
+    { key: "slot", label: "slot", genOnly: true, note: "structure-template slot key this beat carries (hook|midpoint|climax|… — one beat per slot, set by the beat sheet)" },
     { key: "plays", label: "plays", genOnly: true, note: "[game id] this turn advances" },
     { key: "resolves", label: "resolves", genOnly: true, note: "[{ ref: game id, outcome: won|lost }]" },
     { key: "readings", label: "readings", genOnly: true, note: "[{ ref: meter id, value: number }] this turn's level on each meter (a y-value)" },

@@ -1166,3 +1166,52 @@ describe("the CONTRACT obligation (the genre promise — a meter's compiled targ
     expect(openObligations(nodes).map((o) => o.id)).toContain("contract:m_kept");
   });
 });
+
+describe("structure lints (the plot-skeleton template)", () => {
+  // A 9-beat spine under 3 acts, slots at their canonical Weiland positions — the clean case.
+  // beat i of 9 sits at (i+0.5)/9 ≈ 6/17/28/39/50/61/72/83/94%; halfStep ≈ 5.6% widens every band.
+  const SLOTS = ["hook", "inciting_event", "first_plot_point", "first_pinch_point", "midpoint",
+    "second_pinch_point", "third_plot_point", "climax", "resolution"];
+  const skeleton = (slotAt: (i: number) => string | undefined, structure?: string): DnaNode[] => {
+    const pillar = mk("pillar", { id: "p", content: { controlling_idea: "x", ...(structure ? { structure } : {}) } });
+    const acts = [0, 1, 2].map((i) => mk("act", { id: `a${i}`, parent_id: "p", position: i }));
+    const beats = Array.from({ length: 9 }, (_, i) => {
+      const slot = slotAt(i);
+      return mk("beat", { id: `b${i}`, parent_id: `a${Math.floor(i / 3)}`, position: i % 3,
+        content: { summary: "s", connector: i ? "therefore" : undefined, polarity: "up", needs: [], establishes: [`k${i}`], ...(slot ? { slot } : {}) } });
+    });
+    return [pillar, ...acts, ...beats];
+  };
+  const slotRules = (nodes: DnaNode[]) => validate(nodes).filter((i) => i.rule.startsWith("slot_")).map((i) => i.rule);
+
+  it("stays silent on a slotless sheet with no declared structure (legacy books)", () => {
+    expect(slotRules(skeleton(() => undefined))).toEqual([]);
+  });
+  it("stays silent when the pillar declares 'none' (structure-free on purpose)", () => {
+    expect(slotRules(skeleton(() => undefined, "none"))).toEqual([]);
+  });
+  it("a fully, correctly slotted sheet passes clean", () => {
+    expect(slotRules(skeleton((i) => SLOTS[i]))).toEqual([]);
+  });
+  it("an EXPLICITLY declared template with a slotless sheet flags every slot missing", () => {
+    const rules = slotRules(skeleton(() => undefined, "weiland_3act"));
+    expect(rules.filter((r) => r === "slot_missing")).toHaveLength(9);
+  });
+  it("flags the missing slot only (midpoint dropped)", () => {
+    const rules = slotRules(skeleton((i) => (i === 4 ? undefined : SLOTS[i])));
+    expect(rules).toEqual(["slot_missing"]);
+  });
+  it("flags a duplicate claim on the second beat", () => {
+    const issues = validate(skeleton((i) => (i === 5 ? "midpoint" : SLOTS[i]))).filter((i) => i.rule.startsWith("slot_"));
+    expect(issues.map((i) => i.rule).sort()).toEqual(["slot_duplicate", "slot_missing"]); // second_pinch_point vacated
+    expect(issues.find((i) => i.rule === "slot_duplicate")?.nodeId).toBe("b5");
+  });
+  it("flags a misplaced slot (climax parked at ~28% of the spine)", () => {
+    const rules = slotRules(skeleton((i) => (i === 2 ? "climax" : i === 7 ? "first_plot_point" : SLOTS[i])));
+    expect(rules).toContain("slot_misplaced");
+    expect(rules).toContain("slot_misordered"); // and everything after the early climax reads out of order
+  });
+  it("flags an unknown slot key against the template", () => {
+    expect(slotRules(skeleton((i) => (i === 0 ? "opening_image" : undefined)))).toContain("slot_unknown");
+  });
+});

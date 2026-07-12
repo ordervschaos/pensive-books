@@ -3672,7 +3672,6 @@ ${ctx}\n\nWrite this scene's prose.`;
     // schedule setup→payoff in order, plan polarity to oscillate. enforcePromiseSchedule (inline) drops orphan
     // payoffs so setup→payoff is an INVARIANT. Returns a flat act-indexed list; the caller persists it.
     if (!acts.length) return { error: "generate the acts before the beat sheet" };
-    if (!threads.length) return { error: "generate the threads before the beat sheet" };
     const prompt = `You are a story architect writing the ENTIRE BOOK'S BEAT SHEET in ONE pass — every beat of every act at once, so you can see the whole sequence. Honor every LOCKED ancestor and the MANDATE verbatim. Rules:
 - 2 to 4 beats per act; each beat links to the prior with "therefore" or "but" (escalating causality).
 - Set each beat's PLANNED polarity (up = ends better, down = ends worse). The act's value shift is the MACRO trend; you MUST still OSCILLATE within it — never more than ~3 beats of the same polarity in a row. Place deliberate relief/hope-spots inside down-acts and setbacks inside up-acts.

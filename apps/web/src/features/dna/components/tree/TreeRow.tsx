@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { isProseStale, isStale, refsOf, type DnaIssue, type DnaNode } from "@/features/dna/lib/novelDna";
 import { KIND_EXPLAINER } from "@/features/dna/lib/dnaSchema";
 import { detailRowStyle, fieldRowStart, KIND_BG, KIND_COLOR, labelStyle, MONO, SERIF, spineX, T } from "./treeChrome";
-import { beatGlyph, hiddenFields, nodeTitle, type ProseRollup } from "./nodeDisplay";
+import { beatGlyph, beatSlot, hiddenFields, nodeTitle, type ProseRollup } from "./nodeDisplay";
 import { type StaleActions } from "./staleActions";
 import { Highlighted } from "./search";
 
@@ -177,6 +177,7 @@ export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onTo
   const bg = KIND_BG[node.kind] ?? "transparent";
   const title = nodeTitle(node);
   const glyph = beatGlyph(node);
+  const slot = beatSlot(node);
   const markColor = mark === "delete" ? T.bad : mark === "edit" ? T.accent : null;
   // Health glyph — a right-side ▲/△ on a different visual axis than the round stale dot, so they don't fight.
   const hasErr = issues?.some((i) => i.severity === "error") ?? false;
@@ -225,6 +226,17 @@ export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onTo
           }}>
           {node.kind}{seq != null && <span style={{ opacity: 0.7, marginLeft: 4 }}>{seq}</span>}
         </span>
+
+        {/* Structure-slot badge — the beat's named function (hook / midpoint / climax…), hover for its job */}
+        {slot && (
+          <span title={slot.hint} style={{
+            fontFamily: MONO, fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase",
+            color: T.accent, background: `${T.accent}14`, border: `1px solid ${T.accent}40`,
+            padding: "1px 5px", borderRadius: 3, whiteSpace: "nowrap", flexShrink: 0,
+          }}>
+            {slot.label}
+          </span>
+        )}
 
         {/* Title / content preview */}
         {(glyph || title) && (

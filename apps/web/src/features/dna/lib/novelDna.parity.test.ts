@@ -322,6 +322,18 @@ function contractBook(): DnaNode[] {
   return [seed, premise, pillar, hero, kept, dropped, a1, b1, b2, b3];
 }
 
+// STRUCTURE (plot-skeleton template): a declared weiland_3act book whose sheet is deliberately wrong on
+// every slot axis — a duplicate midpoint, a missing climax, a misplaced/misordered resolution (parked at
+// ~17% of a 6-beat spine), and an unknown key. Both twins must produce the identical slot_* verdicts.
+function structureBook(): DnaNode[] {
+  const pillar = mk("pillar", { id: "st_pil", content: { controlling_idea: "Structure is a promise.", structure: "weiland_3act" } });
+  const acts = [0, 1, 2].map((i) => mk("act", { id: `st_a${i}`, parent_id: "st_pil", position: i, content: { title: `Act ${i + 1}` } }));
+  const beat = (i: number, slot?: string) => mk("beat", { id: `st_b${i}`, parent_id: `st_a${Math.floor(i / 2)}`, position: i % 2,
+    content: { summary: "turn", polarity: "up", ...(slot ? { slot } : {}) } });
+  return [pillar, ...acts,
+    beat(0, "hook"), beat(1, "resolution"), beat(2, "midpoint"), beat(3, "midpoint"), beat(4, "opening_image"), beat(5)];
+}
+
 const settings: BookSettings = { title: "The Folding City", author: "A. Nzal", word_target: 60000 };
 const j = (v: unknown) => JSON.stringify(v);
 
@@ -368,7 +380,7 @@ const cases: [string, (m: typeof web, n: DnaNode[]) => unknown][] = [
 ];
 
 describe("novel-dna edge twin ↔ web engine parity", () => {
-  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)], ["craftFresh", stampCraft(true)], ["craftStale", stampCraft(false)], ["briefFitFresh", stampBriefFit(true)], ["briefFitStale", stampBriefFit(false)], ["loglineFitFresh", stampLoglineFit(true)], ["loglineFitStale", stampLoglineFit(false)], ["proseBook", proseBook()], ["cadenceBook", cadenceBook()], ["sketchBook", sketchBook()], ["endgameBook", endgameBook()], ["contractBook", contractBook()]];
+  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)], ["craftFresh", stampCraft(true)], ["craftStale", stampCraft(false)], ["briefFitFresh", stampBriefFit(true)], ["briefFitStale", stampBriefFit(false)], ["loglineFitFresh", stampLoglineFit(true)], ["loglineFitStale", stampLoglineFit(false)], ["proseBook", proseBook()], ["cadenceBook", cadenceBook()], ["sketchBook", sketchBook()], ["endgameBook", endgameBook()], ["contractBook", contractBook()], ["structureBook", structureBook()]];
   for (const [fxName, nodes] of fixtures) {
     for (const [fnName, fn] of cases) {
       it(`${fnName} agrees on ${fxName}`, () => {
@@ -379,6 +391,11 @@ describe("novel-dna edge twin ↔ web engine parity", () => {
 
   it("the broken fixture actually produces lints (guards against a no-op test)", () => {
     expect(web.validate(brokenBook()).length).toBeGreaterThan(0);
+  });
+
+  it("the structure fixture trips every slot rule (guards against a no-op fixture)", () => {
+    const rules = web.validate(structureBook()).map((i) => i.rule);
+    for (const r of ["slot_missing", "slot_duplicate", "slot_misplaced", "slot_misordered", "slot_unknown"]) expect(rules).toContain(r);
   });
 
   it("the prose fixture trips all five prose rules (guards against a no-op fixture)", () => {

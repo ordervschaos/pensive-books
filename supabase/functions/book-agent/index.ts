@@ -1284,7 +1284,7 @@ const DIGEST_FIELDS: Record<string, string[]> = {
   meter: ["name", "kind"],
   voice_profile: ["pov", "tense", "style"],
   act: ["title", "goal", "target_pct", "turning_point"],
-  beat: ["connector", "polarity", "needs", "establishes", "threads", "grounds_in", "realizes", "plays", "resolves", "readings"],
+  beat: ["connector", "polarity", "slot", "needs", "establishes", "threads", "grounds_in", "realizes", "plays", "resolves", "readings"],
   scene: ["goal", "value_shift", "pov", "loc", "needs", "establishes", "grounds_in", "readings", "sketch"],
 };
 

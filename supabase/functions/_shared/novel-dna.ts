@@ -82,6 +82,10 @@ export interface PremiseContent {
 }
 export interface PillarContent {
   controlling_idea?: string; ending?: string;
+  // structure: the book's plot-skeleton template key (STRUCTURE_TEMPLATES — structureForBook). "none" opts
+  // out (kishōtenketsu, braided…); absent = the house default. Distinct from premise.shape (the EMOTIONAL
+  // trajectory): shape says how the book FEELS across its movements, structure says where the plot TURNS.
+  structure?: string;
   // THE SYNOPSIS READ (W2, doc_1783192600000_dna_build_plan.md): a paid craft verdict over the PLAN plane
   // (premise + pillar + acts + beats, zero prose) — the shift-left "editor's read", written by read-synopsis
   // onto the pillar (the level that owns the whole plan), parallel to observed_shape_fit on the premise.
@@ -143,6 +147,8 @@ export interface BeatContent {
   resolves?: GameResolution[];    // games DECIDED on this turn
   establishes?: string[];         // CAUSALITY: state keys this turn PRODUCES (was [EXP:preconditions])
   needs?: string[];               // CAUSALITY: state keys this turn DEPENDS ON (earned upstream, not ambient)
+  slot?: string;                  // STRUCTURE: the template slot this beat carries (hook/midpoint/… — set by
+                                  // the beat sheet, one beat per slot; structureLints verify placement/order)
   readings?: Reading[];           // METERS: this turn's PLANNED level on each meter (docs/novel-dna-meters.md)
   observed_readings?: Reading[];  // METERS: the level the PROSE actually delivers, written by the editor's read
                                   // (the verify loop, docs/true-agent.md). Output data — excluded from chat context.
@@ -2028,9 +2034,112 @@ export function structuralLints(nodes: DnaNode[]): DnaIssue[] {
   return issues;
 }
 
+// ── STORY STRUCTURE (the plot skeleton as data) ──────────────────────────────────────────────────────────
+// A structure TEMPLATE makes the book's plot-positional opinion explicit, swappable DATA instead of a silent
+// prompt bias (the objection that killed the old hardcoded Freytag arc — dnaSchema.ts premise-shape note —
+// was the SILENCE, not the opinion). A template names functional SLOTS (hook, midpoint…), each a job
+// description at a % position: guidance-by-name, exactly like tentpoles — the beat sheet honors the spirit
+// in its own words and marks the ONE beat that carries each slot (BeatContent.slot). Generation fills slots
+// forward (dna-expand injects the template into the beatsheet pass); structureLints verify backward — the
+// same plan-data-feeds-both-passes symmetry as threads/games/meters. The pillar's `structure` key picks the
+// method ("none" = deliberately structure-free); absent = the house default (weiland_3act), so a new book is
+// OPINIONATED BY DEFAULT while kishōtenketsu / Save-the-Cat stay one registry entry away.
+export interface StructureSlot {
+  key: string; label: string;
+  at: number;         // target position as a fraction of the BEAT SPINE (plan plane, like state_key indices)
+  tolerance: number;  // acceptable band around `at`; the lint widens it by half a beat-step (grid coarseness)
+  act: number;        // 1-based act this slot belongs to
+  polarity?: "up" | "down"; // the slot's conventional charge, when the method prescribes one
+  craft: string;      // guidance-by-name: what the slot must DO — never a line to reproduce
+}
+export interface StructureTemplate {
+  key: string; label: string;
+  acts: { title: string; purpose: string; target_pct: number }[];
+  slots: StructureSlot[]; // in canonical reading order — slot_misordered checks against this sequence
+}
+// K.M. Weiland's three-act / eight-beat structure (plus the resolution as its own slot) — the house default.
+// Percentages are hers: inciting 12%, plot points at 25/50/75, pinches at 37/62, climax in the final 10%.
+export const WEILAND_3ACT: StructureTemplate = {
+  key: "weiland_3act", label: "Three-act (Weiland)",
+  acts: [
+    { title: "Setup", purpose: "hook, orient, and force the commitment — the world before, then the door closes behind the protagonist", target_pct: 0.25 },
+    { title: "Confrontation", purpose: "reaction hardens into action against the antagonistic force; every pinch raises what losing costs", target_pct: 0.75 },
+    { title: "Resolution", purpose: "the low moment buys the inner transformation that decides the final confrontation", target_pct: 1 },
+  ],
+  slots: [
+    { key: "hook", label: "The Hook", at: 0.02, tolerance: 0.05, act: 1, craft: "the opening moment that makes the reader ask 'what happens next?' — seize attention before the main conflict begins" },
+    { key: "inciting_event", label: "The Inciting Event", at: 0.12, tolerance: 0.06, act: 1, craft: "the protagonist brushes against the main conflict for the first time and must choose whether to engage — the plot starts moving, but walking away is still possible" },
+    { key: "first_plot_point", label: "The First Plot Point", at: 0.25, tolerance: 0.06, act: 1, craft: "the point of no return: the protagonist's perspective changes dramatically and they fully commit to a concrete plot goal — after this beat they cannot go back" },
+    { key: "first_pinch_point", label: "The First Pinch Point", at: 0.37, tolerance: 0.06, act: 2, polarity: "down", craft: "the antagonistic force flexes: show exactly what is at stake and what the protagonist stands to lose; plants what the midpoint will overturn" },
+    { key: "midpoint", label: "The Midpoint", at: 0.5, tolerance: 0.06, act: 2, craft: "a massive turn that redirects the whole story: the protagonist shifts from REACTING to proactively taking the fight to the antagonist — the rug-pull that reframes everything before it" },
+    { key: "second_pinch_point", label: "The Second Pinch Point", at: 0.62, tolerance: 0.06, act: 2, polarity: "down", craft: "the stakes rise again and the antagonist's threat lands close to home — a real setback that sets up the third act's emotional toll" },
+    { key: "third_plot_point", label: "The Third Plot Point", at: 0.75, tolerance: 0.06, act: 3, polarity: "down", craft: "a false victory collapsing into the low moment — the dark night of the soul: the protagonist throws everything at the problem and falls short, forcing the deeper internal transformation" },
+    { key: "climax", label: "The Climax", at: 0.92, tolerance: 0.07, act: 3, craft: "the ultimate deciding confrontation with the antagonistic force — answers the dramatic question at its stated price, the win mechanically earned by an established rule" },
+    { key: "resolution", label: "The Resolution", at: 0.98, tolerance: 0.06, act: 3, craft: "catch breath and show how the journey permanently changed the protagonist — growth dramatized on the page, never narrated" },
+  ],
+};
+export const STRUCTURE_TEMPLATES: Record<string, StructureTemplate> = { [WEILAND_3ACT.key]: WEILAND_3ACT };
+export const DEFAULT_STRUCTURE_KEY = WEILAND_3ACT.key;
+
+/** Resolve the book's structure template from the pillar's `structure` key. "none" = deliberately
+ *  structure-free → undefined; absent or unrecognized = the house default. The default lives HERE (read
+ *  time), not in stored content — so the opinion can evolve without migrating books that never chose.
+ *  Param is the minimal shape it reads (kind + content) so edge callers with lighter row types fit. */
+export function structureForBook(nodes: { kind: string; content?: unknown }[]): StructureTemplate | undefined {
+  const pillar = nodes.find((n) => n.kind === "pillar");
+  const key = String((pillar?.content as PillarContent | undefined)?.structure ?? "").trim();
+  if (key === "none") return undefined;
+  return STRUCTURE_TEMPLATES[key] ?? STRUCTURE_TEMPLATES[DEFAULT_STRUCTURE_KEY];
+}
+
+/** STRUCTURE lints — the verify half of the template. Position basis = the beat spine (plan plane): beat i
+ *  of N sits at (i + 0.5)/N, and the band is slot.tolerance widened by half a beat-step so a coarse grid
+ *  can't fail a slot it couldn't possibly hit. Activation is fail-quiet (the "early, not wrong" rule): only
+ *  a sheet that already carries slots — or a pillar that EXPLICITLY declares a template — is judged, so
+ *  legacy books and structure-free books never see these. */
+function structureLints(nodes: DnaNode[]): DnaIssue[] {
+  const issues: DnaIssue[] = [];
+  const beats = beatsInOrder(nodes);
+  if (!beats.length) return issues;
+  const slotOf = (b: DnaNode) => String((b.content as BeatContent).slot ?? "").trim();
+  const slotted = beats.filter((b) => slotOf(b));
+  const pillar = nodes.find((n) => n.kind === "pillar");
+  const declared = String((pillar?.content as PillarContent | undefined)?.structure ?? "").trim();
+  if (!slotted.length && (!declared || declared === "none")) return issues;
+  const tpl = structureForBook(nodes);
+  if (!tpl) return issues; // declared "none" — structure-free on purpose
+  const byKey = new Map(tpl.slots.map((s) => [s.key, s]));
+  const order = new Map(tpl.slots.map((s, i) => [s.key, i]));
+  const claimed = new Map<string, DnaNode[]>();
+  for (const b of slotted) {
+    const key = slotOf(b);
+    if (!byKey.has(key)) { issues.push({ rule: "slot_unknown", severity: "warn", message: `beat claims structure slot "${key}", which isn't in the ${tpl.label} template`, nodeId: b.id }); continue; }
+    claimed.set(key, [...(claimed.get(key) ?? []), b]);
+  }
+  for (const [key, list] of claimed) for (const dup of list.slice(1))
+    issues.push({ rule: "slot_duplicate", severity: "warn", message: `"${byKey.get(key)!.label}" is claimed by ${list.length} beats — a structural slot is ONE beat's job`, nodeId: dup.id });
+  for (const slot of tpl.slots) if (!claimed.has(slot.key))
+    issues.push({ rule: "slot_missing", severity: "warn", message: `no beat carries "${slot.label}" (~${Math.round(slot.at * 100)}% — ${slot.craft.split(" — ")[0]})`, nodeId: pillar?.id ?? beats[0].id });
+  const halfStep = 0.5 / beats.length;
+  let prevOrd = -1, prevLabel = "";
+  beats.forEach((b, i) => {
+    const key = slotOf(b);
+    const slot = key ? byKey.get(key) : undefined;
+    if (!slot || claimed.get(key)?.[0] !== b) return; // dups already flagged; judge the first claim only
+    const frac = (i + 0.5) / beats.length;
+    const band = slot.tolerance + halfStep;
+    if (Math.abs(frac - slot.at) > band)
+      issues.push({ rule: "slot_misplaced", severity: "warn", message: `"${slot.label}" lands at ${Math.round(frac * 100)}% of the beat spine (target ${Math.round(slot.at * 100)}%±${Math.round(band * 100)}) — the skeleton is off its proportions`, nodeId: b.id });
+    const ord = order.get(key)!;
+    if (ord < prevOrd) issues.push({ rule: "slot_misordered", severity: "warn", message: `"${slot.label}" appears after "${prevLabel}" — ${tpl.label} slots must land in template order`, nodeId: b.id });
+    else { prevOrd = ord; prevLabel = slot.label; }
+  });
+  return issues;
+}
+
 export function validate(nodes: DnaNode[], cfg: LintConfig = DEFAULT_LINT_CONFIG): DnaIssue[] {
   const index = byId(nodes);
-  const issues: DnaIssue[] = structuralLints(nodes);
+  const issues: DnaIssue[] = [...structuralLints(nodes), ...structureLints(nodes)];
 
   for (const n of nodes) {
     // Ladder order: an accepted node whose parent isn't accepted jumped the gate.

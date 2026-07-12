@@ -17,7 +17,7 @@ import { extractJsonBlock } from "../_shared/json.ts";
 import { CAUSALITY_CRAFT, LOGLINE_CRAFT, POLARITY_CRAFT, PREMISE_CRAFT, PREMISE_JUDGE_CRITERIA, SCENE_DIRECTION_CRAFT } from "../_shared/craft-kb.ts";
 // The shared engine's beat-native lints, run over the just-generated beat sheet so a silently-degraded sheet
 // gets one bounded repair turn instead of shipping the damage (docs/agent-improvement-plan.md P2.1).
-import { canonicalizeKey, entityRegistryBlock, ledgerAt, ledgerText, validate, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneLedger } from "../_shared/novel-dna.ts";
+import { canonicalizeKey, entityRegistryBlock, ledgerAt, ledgerText, structureForBook, validate, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneLedger } from "../_shared/novel-dna.ts";
 import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
 import { isChainCall } from "../_shared/self-chain.ts";
 import { serviceClient } from "../_shared/task.ts";
@@ -790,6 +790,14 @@ CRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md
             return `- ${cName(c)} [${cc.role ?? "?"}]${cc.want ? ` · wants: ${cc.want}` : ""}${lie ? ` · lie: ${lie}` : ""}`;
           }).join("\n")
         : "";
+      // STRUCTURE TEMPLATE (structureForBook — pillar.structure, default weiland_3act, "none" opts out):
+      // the plot-skeleton slots the sheet must deliver, each on exactly ONE beat marked with "slot". Craft
+      // lines are guidance-by-name (like tentpoles) — a job description honored in the sheet's own words.
+      const structure = structureForBook(nodes);
+      const structureBlock = structure
+        ? `STRUCTURE TEMPLATE — ${structure.label}. The sheet must deliver every SLOT below, each carried by EXACTLY ONE beat, in this order, landing near its stated % of the whole book (interstitial beats between slots are welcome). Mark the carrying beat with "slot": "<key>".\n` +
+          structure.slots.map((s) => `- ${s.key} (${s.label}, ~${Math.round(s.at * 100)}%, act ${s.act}${s.polarity ? `, ends ${s.polarity}` : ""}): ${s.craft}`).join("\n")
+        : "";
       const beatCtx = [
         `BOOK: ${book?.name ?? ""}`,
         `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
@@ -803,6 +811,7 @@ CRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md
         gamesBlock,
         precondBlock,      // [EXP:preconditions]
         actBlock,          // THE ARC — the skeleton the beats interpolate
+        structureBlock,    // the plot-skeleton slots (empty when structure = "none")
         briefBlock,        // the agent's curated guidance (empty when none)
         `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
       ].filter(Boolean).join("\n\n");
@@ -821,11 +830,12 @@ CRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md
       const system = `You are a story architect writing the ENTIRE BOOK'S BEAT SHEET in ONE pass — every beat of every act at once, so you can see the whole sequence. Honor every LOCKED ancestor and the MANDATE verbatim. Rules:${mintThreads ? `
 - FIRST design the THREAD REGISTRY: 3–6 open loops (a promise set up early, paid off later) this book runs on — mysteries, foreshadowed reveals, setup→payoff arcs. Give each a short NAME, a "promise" (what's opened), and a "payoff" (how it closes). Then schedule them across the beats below. Emit them in a top-level "threads" array.${arcCast.length ? `
 - ALSO mint each of these characters' ARC thread (they carry a declared lie): ${arcCast.map((c) => cName(c)).join(", ")}. One per character — kind "arc", "character" = their name, promise = the LIE as it will be DRAMATIZED early (shown in action, not stated), payoff = the moment the TRUTH is accepted or fatally refused. Schedule each arc across the beats like any other thread (setup early, advance through the middle, pay off at that character's turn).` : ""}` : ""}
-- 2 to 4 beats per act; each beat links to the prior with "therefore" or "but" (escalating causality).
+- ${structure ? "3 to 5" : "2 to 4"} beats per act; each beat links to the prior with "therefore" or "but" (escalating causality).${structure ? `
+- DELIVER the STRUCTURE TEMPLATE: every slot listed above lands on exactly ONE beat — mark that beat with "slot": "<key>" — in template order, positioned so the beat sits near the slot's stated % of the whole sheet. Honor each slot's craft in your own words (guidance, not a script line); a slot marked "ends down/up" fixes that beat's polarity.` : ""}
 - ${POLARITY_CRAFT}
 - Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats that develop it in between. Reference threads BY NAME.
 - ${CAUSALITY_CRAFT}${tentpoles.length ? `\n- HONOR every TENTPOLE: each names an emotional/scene quality the story must deliver (a feel, an image, a turn) — not a line to reproduce. Pick the ONE beat whose turn embodies it and reference the tentpole BY NAME in "realizes"; write the beat's summary in your own words. Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}${statePreconds.length ? `\n- ESTABLISH every STATE PRECONDITION: each game's win SPENDS resources/states (listed above). For each, an EARLIER beat must establish it (list its key in that beat's "establishes") BEFORE the beat that resolves the game — you cannot spend a resource the story never acquired (no "she had enough all along"). Make the establishing a real turn.` : ""}
-Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": "...", "payoff": "...", "kind": "mystery"|"foreshadow"|"setup_payoff"|"arc"${arcCast.length ? `, "character": "<cast name — arc threads only>"` : ""} } ], ` : ""}"beats": [ { "act": <1..${acts.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down", "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole name>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}, "needs": [ "<state key earned upstream>" ], "establishes": [ "<state key this beat produces>" ] } ] }`;
+Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": "...", "payoff": "...", "kind": "mystery"|"foreshadow"|"setup_payoff"|"arc"${arcCast.length ? `, "character": "<cast name — arc threads only>"` : ""} } ], ` : ""}"beats": [ { "act": <1..${acts.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down"${structure ? `, "slot": "<structure slot key — ONLY on the one beat that carries it>"` : ""}, "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole name>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}, "needs": [ "<state key earned upstream>" ], "establishes": [ "<state key this beat produces>" ] } ] }`;
       // Browser-streamed path: hand back the assembled request; the client streams it via /api/stream-prose,
       // then calls back with phase "finalize" (mirrors the prose `prepare` split, todo/dna-streaming-proxy.md).
       if (phase === "prepare") {
@@ -864,10 +874,12 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
       const roles = new Set(["setup", "payoff", "advance"]);
       // Resolve refs, clamp act index, then ENFORCE setup→payoff order (drop orphan payoffs). Wrapped as a fn
       // so P2.1's repair path (below) can re-run it on a repaired sheet — fresh dedup sets per call.
+      const slotKeys = new Set((structure?.slots ?? []).map((s) => s.key));
       const sanitize = (raw: Record<string, unknown>[]) => {
       const setUp = new Set<string>();
       const claimedTp = new Set<string>(); // a tentpole is realized by at most ONE beat (first claim wins)
       const resolvedG = new Set<string>(); // a game is resolved by at most ONE beat (first claim wins)
+      const claimedSlot = new Set<string>(); // a structure slot is carried by at most ONE beat (first claim wins)
       return raw.map((b: Record<string, unknown>) => {
         const mi = Math.min(Math.max(parseInt(String(b.act ?? 1), 10) || 1, 1), acts.length) - 1;
         const refs = (Array.isArray(b.threads) ? b.threads as { ref?: string; role?: string }[] : [])
@@ -892,6 +904,9 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
         const establishes = [...new Set((Array.isArray(b.establishes) ? b.establishes as string[] : []).map(normKey).filter(Boolean))];
         const needs = [...new Set((Array.isArray(b.needs) ? b.needs as string[] : []).map(normKey).filter(Boolean))];
         const content: Record<string, unknown> = { summary: b.summary, connector: b.connector, polarity: b.polarity === "down" ? "down" : "up", threads: threadsKept };
+        // Structure slot: keep only template keys, one beat per slot (mirrors the tentpole first-claim rule).
+        const slot = normKey(b.slot);
+        if (slot && slotKeys.has(slot) && !claimedSlot.has(slot)) { claimedSlot.add(slot); content.slot = slot; }
         if (realizes.length) content.realizes = realizes;
         if (grounds.length) content.grounds_in = grounds;
         if (plays.length) content.plays = plays;
@@ -928,12 +943,18 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
       // gate. Run the shared engine's BEAT-NATIVE lints over the just-sanitized sheet. Only beat-stage rules:
       // the tree has no scenes yet, so scene/meter/tentpole-placement lints would false-positive or stay
       // silent — causality + game structure is what's actually decidable at this rung.
-      const BEAT_LINT_RULES = new Set(["uncaused_therefore", "empty_but", "beat_connector", "illegal_resolution", "unresolved_game"]);
+      const BEAT_LINT_RULES = new Set(["uncaused_therefore", "empty_but", "beat_connector", "illegal_resolution", "unresolved_game",
+        // Structure-slot rules are beat-native too (plan plane, no scenes needed) — a sheet that skipped the
+        // midpoint or parked the climax at 60% gets the same one bounded repair turn as a causality hole.
+        "slot_missing", "slot_misplaced", "slot_misordered", "slot_duplicate", "slot_unknown"]);
       // Existing accepted tree, minus any prior beats/scenes (the sheet REPLACES all beats; scenes don't exist
       // yet) — the causal/game context the beat lints validate against.
       const otherNodes: DnaNode[] = nodes.filter((n) => n.kind !== "beat" && n.kind !== "scene").map((n) => ({
         id: n.id, book_id: bookId, parent_id: n.parent_id, level: 0, kind: n.kind as NodeKind, position: n.position ?? 0,
-        content: (n.content ?? {}) as NodeContent,
+        // The pillar gets the RESOLVED structure key stamped on: structureLints activate on an explicit
+        // declaration (fail-quiet for legacy trees), but THIS pass definitely asked for the template — a
+        // sheet that ignored the slot instruction entirely must still flag slot_missing in the repair turn.
+        content: (n.kind === "pillar" && structure ? { ...(n.content ?? {}), structure: structure.key } : (n.content ?? {})) as NodeContent,
         authoring: { source: "user", locked: n.authoring?.locked ?? false, status: (n.authoring?.status as AuthoringStatus) ?? "accepted" }, chosen: null,
       }));
       // Lint a candidate sheet: materialise it as beat nodes under their acts, validate the whole tree, keep

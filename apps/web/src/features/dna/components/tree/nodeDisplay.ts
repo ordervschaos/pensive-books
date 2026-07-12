@@ -1,6 +1,6 @@
 // Pure display derivations over DnaNode — titles, field display strings, and the
 // prose-completion rollup. No React, no IO; everything here is (nodes) => value.
-import { isProseStale, type BeatContent, type CausalityRow, type DnaNode, type SceneContent } from "@/features/dna/lib/novelDna";
+import { isProseStale, STRUCTURE_TEMPLATES, type BeatContent, type CausalityRow, type DnaNode, type SceneContent } from "@/features/dna/lib/novelDna";
 import { editSpecs, NODE_SCHEMA, type EditSpec } from "@/features/dna/lib/dnaSchema";
 
 // ── Title extraction per kind (first meaningful field) ───────────────────────
@@ -24,6 +24,22 @@ export function nodeTitle(n: DnaNode): string {
     case "voice_profile": return s(c.style) || "voice profile";
     default: return "";
   }
+}
+
+// ── Structure-slot badge for beats ───────────────────────────────────────────
+// The named functional beat (hook / midpoint / climax…) made legible on the row — the tree reads like a
+// beat board. Labels resolve across ALL templates (keys are unique enough today; an unresolved key still
+// displays, underscores → spaces, so a slot never renders blank). Tooltip carries the slot's target % + craft.
+const SLOT_INFO = new Map(Object.values(STRUCTURE_TEMPLATES).flatMap((t) => t.slots.map((s) => [s.key, s] as const)));
+export function beatSlot(n: DnaNode): { label: string; hint: string } | null {
+  if (n.kind !== "beat") return null;
+  const key = String((n.content as BeatContent).slot ?? "").trim();
+  if (!key) return null;
+  const s = SLOT_INFO.get(key);
+  return {
+    label: (s?.label ?? key.replace(/_/g, " ")).replace(/^The /, ""),
+    hint: s ? `${s.label} (~${Math.round(s.at * 100)}% of the book) — ${s.craft}` : `structure slot "${key}" (not in any known template)`,
+  };
 }
 
 // ── Connector glyph for beats ────────────────────────────────────────────────

@@ -16,6 +16,42 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-12 — Slot badges on tree beat rows `[ship]`
+- **What:** The structure-template slot names (hook / midpoint / climax…) now render as a small
+  uppercase chip on each carrying beat's row in the tree — the tree reads like a beat board.
+  Hover = the slot's target % + craft line. Pure display: `beatSlot()` in nodeDisplay.ts resolves
+  labels across all templates; unresolved keys still display (underscores → spaces).
+- **Files/commits:** components/tree/nodeDisplay.ts, components/tree/TreeRow.tsx (uncommitted).
+- **PM impact:** appended to the Story structure templates row in STATE.md.
+
+## 2026-07-12 — Fix stale bridge gate: beat sheets no longer require pre-declared threads `[chore]`
+- **What:** Local dev bridge (`scripts/eval-bridge.mjs`, used when `VITE_EVAL_BRIDGE_URL` is set)
+  still hard-gated beat-sheet generation on `threads.length`, throwing "generate the threads
+  before the beat sheet." That check was removed from the edge fn (`dna-expand`) on 2026-07-02
+  when threads became derived/minted by the beat sheet itself, but the bridge — documented as a
+  special-case shim, not a kept-in-sync mirror — never got the update. Deleted the stale gate line
+  (did not port the edge fn's full mint-threads/structure/lint pipeline — out of scope for this
+  fix). Killed and restarted the running bridge process so the fix is live.
+- **Files/commits:** `scripts/eval-bridge.mjs` (uncommitted).
+- **PM impact:** none — dev-tooling bug fix, not a product-facing change.
+
+## 2026-07-12 — Story structure templates: opinionated 3-act agent `[ship]`
+- **What:** The agent now builds against K.M. Weiland's three-act / 8-beat structure by default,
+  as swappable data (strategy pattern), not prompt prose. `StructureTemplate` const (9 slots with
+  % positions + craft guidance-by-name) in both engine twins; `BeatContent.slot` marks the carrier
+  beat; `pillar.structure` picks the method ("none" opts out, absent = default at read time).
+  Beatsheet prompt lists the slots and demands each on exactly one beat; acts playbook fixes three
+  acts with template target_pct. Verify half: slot_missing/duplicate/misplaced/misordered/unknown
+  lints in validate() (fail-quiet for legacy trees) — also wired into the beat sheet's bounded
+  repair turn. Honors the removed-Freytag decision: the opinion is explicit and swappable, never
+  silent; other methods (Save the Cat…) = one more registry entry in both twins.
+- **Files/commits:** novelDna.ts + _shared/novel-dna.ts (twins), dnaSchema.ts + dna-schema.json,
+  dnaJourney.ts + _shared/dna-journey.ts, dna-expand/index.ts, book-agent/index.ts (digest),
+  novelDna.test.ts (+8), novelDna.parity.test.ts (structureBook fixture, 671 assertions) —
+  uncommitted on feat/ai-provider-switch. Deployed: dna-expand, book-agent, dna-chat, dna-decompose.
+- **PM impact:** strengthens M1 (The First Read) — the live full-book build re-exercise (Now #1)
+  will now generate against the template; watch slot lints in that run.
+
 
 ## 2026-07-12 — DNA tree: stop echoing summary/goal as the inline title `[chore]`
 - **What:** Act/scene/beat rows in the tree editor showed the same text twice — the inline title next to the kind badge duplicated the SUMMARY (beat) or fell back to GOAL (act/scene) when no distinct title was set. `nodeTitle()` now only uses each kind's real short-title field (blank for beat, which has none; goal/summary stay visible in the expanded row).
