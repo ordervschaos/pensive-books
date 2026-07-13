@@ -14,29 +14,23 @@
 //   client → POST { bookId, message }                → get-or-create thread → chain (authenticated)
 //   client → POST { runId, answer }                  → append tool_result → chain  (authenticated)
 //   self   → POST { runId, chain: true }              → one model call → …          (x-chain secret)
+
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { type Brief, briefContext } from "../_shared/brief.ts";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { callLLM, textFromLLM } from "../_shared/llm.ts";
 import { getRoleModels } from "../_shared/model-config.ts";
-// The pure engine + guided-journey derivation, edge twins of the web app's novelDna/dnaJourney (parity-locked
-// by novelDna.parity.test.ts). threadSystem re-runs these on the LIVE tree each chain link so the objective +
-// structural lints SENSE the current state instead of dead-reckoning from the author's message-time snapshot
-// (docs/agent-improvement-plan.md P1.2).
-import { analysisText, ledgerText, lintConfigForBrief, newId, OUTPUT_FIELDS, PARENT_KIND, scenesInOrder, SINGLETON_KINDS, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneContent, type ThreadRef } from "../_shared/novel-dna.ts";
-import { currentObjective, nextDraftTarget } from "../_shared/dna-journey.ts";
-// The content schema the agent must conform to — GENERATED from the web app's NODE_SCHEMA (single source of
-// truth), kept in sync by apps/web/.../dnaSchema.artifact.test.ts. Never hand-edit; edit NODE_SCHEMA + regen.
-import dnaSchema from "../_shared/dna-schema.json" with { type: "json" };
-// The agent's specialized playbooks (progressive disclosure, doc_1783663022711.md): a one-line index
-// rides in the system prompt, trigger-matched bodies inject per turn, read_skill covers missed triggers.
-import { AGENT_SKILLS, matchSkills, SKILLS_INDEX } from "../_shared/agent-skills.ts";
 import { serviceClient, userClient as createUserClient } from "../_shared/task.ts";
 import { reinvoke, isChainCall } from "../_shared/self-chain.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
-import { judgeProse } from "../_shared/mandate-gate.ts";
-import { judgeAgainstPlan, planHasContent, type PlanAxisVerdict, type ScenePlan } from "../_shared/plan-gate.ts";
+import { ASPECTS, ROW_COLS, type AgentProposal, type AgentStep, type Aspect, type Pending, type RunRow } from "./shared.ts";
+import { EAGER_ACK_SYSTEM, TITLE_SYSTEM } from "./prompts.ts";
+import { threadToolsFor } from "./tools.ts";
+import { toolResults } from "./exec-tools.ts";
+import { maybeInjectRenderVerify, VERIFY_SENTINEL } from "./verify.ts";
+import { threadSystem } from "./context.ts";
+import { proposeExpansion, proposeNodeOps, proposeOptions, proposeProseRender } from "./proposals.ts";
+
 
 const MAX_TURNS = 20;          // model calls per run — the runaway guard
 const AUTO_MAX_TURNS = 50;     // autonomous threads iterate change-by-change, so they get a higher ceiling
@@ -118,84 +112,7 @@ function trailingReadRun(steps: AgentStep[]): number {
   return n;
 }
 
-// ── Row shapes ──
-// 'decision' = an auto-mode creative fork the agent journaled via ask_author (question in `label`,
-// its stated options in `options`, `at` = when) — kept in the feed so the author can revisit forks
-// after an autonomous run (state change, not erasure — NORTH_STAR §6 rule 8).
-interface AgentStep { t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done" | "decision"; label: string; options?: string[]; at?: string }
-interface Pending {
-  tool_use_id: string;
-  question: string;
-  options?: string[];
-  // tool_results for read tool calls (read_node/search_nodes/…) issued in the SAME assistant turn as the
-  // ask — the answer message must carry results for every tool_use of that turn, so these ride along.
-  preResults?: unknown[];
-}
-// A node op over book_nodes — the DNA substrate's edit/add/delete/replace_children (mirrors lib/dnaChat.ts).
-interface NewSubtree { content: Record<string, unknown>; children?: NewSubtree[] }
-type NodeOp =
-  | { op: "edit"; id: string; content: Record<string, unknown> }
-  | { op: "add"; kind: string; parentId: string; content: Record<string, unknown> }
-  | { op: "delete"; id: string }
-  // Rebuild a level: delete the parent's existing non-locked `childKind` children (cascade), add `children` fresh.
-  | { op: "replace_children"; parentId: string; childKind: string; children: NewSubtree[] }
-  // Surgical prose patch: replace the FIRST occurrence of `find` in a scene's content.prose.text. The
-  // whole-text `edit` alternative made prose fixes unbatchable (each edit re-sends ~2.6k tokens of prose,
-  // so 8k max_tokens fit ~2 scenes — observed: the agent fixed ONE echo per turn). find/replace is the
-  // Claude Code Edit-tool shape: a dozen echo fixes now fit in one small proposal.
-  | { op: "replace_text"; id: string; find: string; replace: string };
 
-// A reviewable change the agent proposes against the DNA tree; the author applies it (applyNodeOps)
-// through the existing book_nodes write path (docs/agent-rail.md). One layer now: the DNA tree.
-// layer 'dna' = node ops the author applies to book_nodes. layer 'prose-render' = a request to (re)generate
-// scene prose; ops is empty and sceneIds names the scenes — the AUTHOR applies it and the prose streams in
-// their browser via the v2 pipeline (docs/agent-context-model.md). The agent never generates prose itself.
-interface RenderBrief { focus: string; mustHonor?: string[]; avoid?: string[] }
-interface AgentProposal { id: string; layer: "dna" | "prose-render" | "expansion"; summary: string; ops: NodeOp[]; sceneIds?: string[]; brief?: RenderBrief; nodeId?: string; target?: string }
-
-interface RunRow {
-  id: number;
-  book_id: number;
-  created_by: string | null;
-  kind: string; // 'thread' (the persistent omni-rail conversation) — the only kind created today
-  status: string;
-  transcript: unknown[];
-  steps: AgentStep[];
-  pending: Pending | null;
-  proposals: AgentProposal[] | null;
-  context_scope: Aspect[] | null; // thread scope (docs/agent-rail.md): null = whole book
-  context_analysis: string | null; // latest client-computed story analysis (backstop)
-  context_objective: string | null; // latest client-computed current journey objective (guided-flow anchor)
-  context_attached_ids: string[] | null; // the context tray: node ids the author attached as anchors
-  context_effort: "low" | "high" | null; // null = high (default)
-  context_auto: boolean | null; // auto-accept mode: run autonomously, never park on ask_author
-  turns: number;
-  cancel_requested: boolean;
-  title: string | null; // short label generated from the chat's first message (history rail); null = not yet named
-}
-const ROW_COLS = "id, book_id, created_by, kind, status, transcript, steps, pending, proposals, context_scope, context_analysis, context_objective, context_attached_ids, context_effort, context_auto, turns, cancel_requested, title";
-
-// Context filter aspects mirror the DNA tree's visual layers. null/[] scope = all.
-type Aspect = "seed" | "premise" | "cast_world" | "story" | "prose";
-const ASPECTS: Aspect[] = ["seed", "premise", "cast_world", "story", "prose"];
-
-// Which book_nodes kinds each aspect covers. Mirrors lib/agentThread.ts ASPECT_KINDS.
-const ASPECT_KINDS: Record<Aspect, string[]> = {
-  seed: ["seed"],
-  premise: ["premise"],
-  cast_world: ["pillar", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "meter", "voice_profile"],
-  story: ["act", "beat", "scene"],
-  prose: ["scene"],
-};
-// The set of node kinds in scope (null/[] = every kind). Used to filter context AND fence which nodes
-// the agent may write ops against.
-function scopedKinds(scope: Aspect[] | null): Set<string> | null {
-  if (!scope || scope.length === 0) return null;
-  const s = new Set<string>();
-  for (const a of scope) for (const k of ASPECT_KINDS[a]) s.add(k);
-  return s;
-}
-const ALL_NODE_KINDS = ["seed", "premise", "pillar", "act", "beat", "scene", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "meter", "voice_profile"];
 
 // Self-chain: re-invoke ourselves to drive the run's next turn (the durable loop's step edge). No-op
 // outside the edge runtime (local/tests), where EdgeRuntime is undefined.
@@ -363,6 +280,27 @@ Deno.serve(async (req: Request) => {
     return json({ error: String((e as Error)?.message ?? e).slice(0, 500) }, 500);
   }
 });
+
+// tool_result blocks for a turn's tool_uses: `message` for the terminal call, "ok" for its siblings —
+// GPT requires a result for EVERY tool_call in an assistant message (Claude closes them implicitly).
+// The all-"ok" case is ackResults() inside advance().
+// deno-lint-ignore no-explicit-any
+const ackWith = (toolUses: any[], callId: string, message: string) =>
+  toolUses.map((t) => ({ type: "tool_result", tool_use_id: t.id, content: t.id === callId ? message : "ok" }));
+
+// A propose_* tool's input was rejected: hand the model the reason as the failing call's tool_result
+// (its sibling reads still execute), persist, and chain so it can correct and retry next turn.
+async function rejectAndChain(
+  service: SupabaseClient, runId: number, bookId: number,
+  // deno-lint-ignore no-explicit-any
+  toolUses: any[], steps: AgentStep[], transcript: unknown[],
+  callId: string, message: string, auto: boolean,
+) {
+  const results = await toolResults(service, bookId, toolUses, steps, { [callId]: message }, auto);
+  transcript.push({ role: "user", content: results });
+  await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
+  chain(runId);
+}
 
 // ── One chain link: one Claude call, execute its tool calls, persist, chain or park ──
 async function advance(service: SupabaseClient, apiKey: string, runId: number) {
@@ -541,13 +479,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
           // now, then resumes the run (the autoContinue call). One change per turn — the agent's NEXT turn
           // reads the UPDATED tree, so each change is visible before it proposes the next. The tool_result
           // tells it the change landed so it either continues or finishes (a real conclusion, not a dead stop).
-          const ack = toolUses.map((t) => ({
-            type: "tool_result", tool_use_id: t.id,
-            content: t.id === opsCall.id
-              ? "✓ Applied to the tree (autonomous mode — no review step). Your next turn will show the updated tree. If the request needs more, propose the next change — batching every remaining INDEPENDENT edit into one propose_node_ops call — or call finish with a one-line summary to conclude."
-              : "ok",
-          }));
-          transcript.push({ role: "user", content: ack });
+          transcript.push({ role: "user", content: ackWith(toolUses, opsCall.id, "✓ Applied to the tree (autonomous mode — no review step). Your next turn will show the updated tree. If the request needs more, propose the next change — batching every remaining INDEPENDENT edit into one propose_node_ops call — or call finish with a one-line summary to conclude.") });
           await service.from("book_agent_runs").update({ status: "idle", transcript, steps, proposals }).eq("id", runId);
           return;
         }
@@ -556,12 +488,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
           .update({ status: "idle", transcript, steps, proposals }).eq("id", runId);
         return; // the agent's narration is the reply; the proposal waits for the author
       }
-      const results = await toolResults(service, row.book_id, toolUses, steps, {
-        [opsCall.id]: `The change was rejected: ${outcome.error} Fix it and call propose_node_ops again, or just reply.`,
-      }, auto);
-      transcript.push({ role: "user", content: results });
-      await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      chain(runId);
+      await rejectAndChain(service, runId, row.book_id, toolUses, steps, transcript, opsCall.id, `The change was rejected: ${outcome.error} Fix it and call propose_node_ops again, or just reply.`, auto);
       return;
     }
 
@@ -575,21 +502,13 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       if (outcome.ok) {
         steps.push({ t: "plan", label: outcome.proposal.summary });
         const proposals = [...(row.proposals ?? []), outcome.proposal];
-        const ack = auto
-          ? `✓ Render STAGED (autonomous mode). The author's browser will apply it — (re)generating the scene prose — and the result shows on your NEXT turn (do not assume it's already written this turn). Continue if more is needed, or call finish.`
-          : null;
-        transcript.push({ role: "user", content: ack
-          ? toolUses.map((t) => ({ type: "tool_result", tool_use_id: t.id, content: t.id === renderCall.id ? ack : "ok" }))
+        transcript.push({ role: "user", content: auto
+          ? ackWith(toolUses, renderCall.id, `✓ Render STAGED (autonomous mode). The author's browser will apply it — (re)generating the scene prose — and the result shows on your NEXT turn (do not assume it's already written this turn). Continue if more is needed, or call finish.`)
           : ackResults(toolUses.map((t) => t.id)) });
         await service.from("book_agent_runs").update({ status: "idle", transcript, steps, proposals }).eq("id", runId);
         return; // the proposal waits for the author to apply (the prose render runs client-side)
       }
-      const results = await toolResults(service, row.book_id, toolUses, steps, {
-        [renderCall.id]: `The render request was rejected: ${outcome.error} Fix it and call propose_prose_render again, or just reply.`,
-      }, auto);
-      transcript.push({ role: "user", content: results });
-      await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      chain(runId);
+      await rejectAndChain(service, runId, row.book_id, toolUses, steps, transcript, renderCall.id, `The render request was rejected: ${outcome.error} Fix it and call propose_prose_render again, or just reply.`, auto);
       return;
     }
 
@@ -603,21 +522,13 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       if (outcome.ok) {
         steps.push({ t: "plan", label: outcome.proposal.summary });
         const proposals = [...(row.proposals ?? []), outcome.proposal];
-        const ack = auto
-          ? `✓ Expansion STAGED (autonomous mode). The author's browser will run the engine and apply the result; the new nodes show on your NEXT turn (do not assume they exist yet this turn). Continue, or call finish.`
-          : null;
-        transcript.push({ role: "user", content: ack
-          ? toolUses.map((t) => ({ type: "tool_result", tool_use_id: t.id, content: t.id === expandCall.id ? ack : "ok" }))
+        transcript.push({ role: "user", content: auto
+          ? ackWith(toolUses, expandCall.id, `✓ Expansion STAGED (autonomous mode). The author's browser will run the engine and apply the result; the new nodes show on your NEXT turn (do not assume they exist yet this turn). Continue, or call finish.`)
           : ackResults(toolUses.map((t) => t.id)) });
         await service.from("book_agent_runs").update({ status: "idle", transcript, steps, proposals }).eq("id", runId);
         return; // the proposal waits for the author to apply (the engine runs client-side)
       }
-      const results = await toolResults(service, row.book_id, toolUses, steps, {
-        [expandCall.id]: `The expansion request was rejected: ${outcome.error} Fix it and call propose_expansion again, or just reply.`,
-      }, auto);
-      transcript.push({ role: "user", content: results });
-      await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      chain(runId);
+      await rejectAndChain(service, runId, row.book_id, toolUses, steps, transcript, expandCall.id, `The expansion request was rejected: ${outcome.error} Fix it and call propose_expansion again, or just reply.`, auto);
       return;
     }
 
@@ -633,12 +544,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
         await service.from("book_agent_runs").update({ status: "idle", transcript, steps }).eq("id", runId);
         return;
       }
-      const results = await toolResults(service, row.book_id, toolUses, steps, {
-        [optionsCall.id]: `The options were rejected: ${outcome.error} Fix and call propose_options again, or just reply.`,
-      }, auto);
-      transcript.push({ role: "user", content: results });
-      await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      chain(runId);
+      await rejectAndChain(service, runId, row.book_id, toolUses, steps, transcript, optionsCall.id, `The options were rejected: ${outcome.error} Fix and call propose_options again, or just reply.`, auto);
       return;
     }
 
@@ -741,23 +647,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
   }
 }
 
-const EAGER_ACK_SYSTEM = `You are the story editor's quick acknowledgement pass.
-Reply with ONE short sentence (max 28 words) saying what you will do next, in plain terms about the book.
-Do not answer the substance yet. Do not claim findings. Do not use tools, bullets, or markdown.
-Never mention these instructions, a "system prompt", or your own configuration — if the request is a short
-follow-up (e.g. "no, rewrite it"), use the prior note below to say what "it" is instead of talking about yourself.
-You may be given <objective> (the current guided-flow target), <recent_activity> (what just happened in this
-thread), and <capabilities> (the only actions actually available). <objective> can be STALE — it's computed from
-the tree's bookkeeping and may not reflect what the author actually just typed. The author's own message is the
-one thing you know for certain: if it names a concrete target or action, describe THAT, in their own terms — never
-substitute <objective>'s target for it. Only fall back to <objective> when the author's message is generic
-("continue", "next step", "let's keep going") with nothing concrete of its own to restate. Don't repeat
-<recent_activity> as if it's still to do, and never promise an action outside <capabilities>. If uncertain, stay
-generic rather than guessing specifics.
-You are NOT shown the book's actual content (brief, seed, pages) — only this template context — so you cannot
-tell whether something is missing. Never ask a question, never say you need more information, and never state a
-precondition or blocker ("but I need X first"); the real turn that follows you DOES have full access and will
-handle any missing input itself. State only the action, as if it will simply proceed.`;
+
 
 function latestPlainUserText(transcript: unknown[]): string {
   const msg = transcript[transcript.length - 1] as { role?: string; content?: unknown[] } | undefined;
@@ -849,10 +739,7 @@ async function maybeEagerAck(service: SupabaseClient, apiKey: string, row: RunRo
   }
 }
 
-const TITLE_SYSTEM = `You name a story-editor chat from its opening message, so the author can find it later in a list.
-Reply with ONLY a title: 2 to 6 words, Title Case, no quotes, no trailing punctuation, no markdown.
-Name the subject or task the message is about ("Sharpen the midpoint reversal", "Idris's slave-papers scene"),
-not the author or the act of chatting. If the message is generic ("continue", "next step"), reply: Continue The Draft.`;
+
 
 // Name a fresh chat from its first message, once. Runs off the response path (fire-and-forget) so a slow or
 // failed title never delays the author's turn. Guarded on title being empty, so it fires only on the opening
@@ -891,286 +778,7 @@ async function maybeTitleThread(service: SupabaseClient, apiKey: string, model: 
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Execute a turn's non-terminal tool calls (read_node/get_schema/search_nodes/check_against_contract;
-// unknown tools get an error result) and return the tool_result blocks, in tool order. `overrides` injects
-// a prebuilt result for a given tool_use id. Independent calls FAN OUT concurrently (Promise.all) — the
-// system prompt tells the model its reads run in parallel, so a batched turn must not pay for them serially
-// (check_against_contract is an LLM judge call; two of them back-to-back used to double a turn's wall
-// clock). Steps append in tool order AFTER the fan-out, so the visible feed stays deterministic.
-// deno-lint-ignore no-explicit-any
-async function toolResults(
-  service: SupabaseClient,
-  bookId: number,
-  // deno-lint-ignore no-explicit-any
-  toolUses: any[],
-  steps: AgentStep[],
-  overrides: Record<string, string> = {},
-  _auto = false,
-): Promise<unknown[]> {
-  const outs = await Promise.all(toolUses.map((t) => execTool(service, bookId, t, overrides)));
-  for (const o of outs) if (o.step) steps.push(o.step);
-  return outs.map((o) => o.result);
-}
 
-// One tool call → its tool_result block (+ the feed step it should log, if any). Must never throw:
-// every failure path returns an is_error result the model can react to.
-// deno-lint-ignore no-explicit-any
-async function execTool(
-  service: SupabaseClient,
-  bookId: number,
-  // deno-lint-ignore no-explicit-any
-  t: any,
-  overrides: Record<string, string>,
-): Promise<{ result: unknown; step?: AgentStep }> {
-  if (overrides[t.id] != null) {
-    return { result: { type: "tool_result", tool_use_id: t.id, content: overrides[t.id], is_error: true } };
-  }
-  if (t.name === "read_node") {
-    const id = String((t.input as { id?: string })?.id ?? "");
-    // The node in full, PLUS its position: ancestor path (what an edit must honor as fixed) and
-    // children one level down (what an edit stales) — a read hands back everything an edit needs
-    // except the craft (which rides as a skill). One whole-book minimal fetch serves both.
-    const [{ data: node }, { data: all }] = await Promise.all([
-      service.from("book_nodes").select("id, kind, content, authoring, book_id, parent_id").eq("id", id).maybeSingle(),
-      service.from("book_nodes").select("id, parent_id, kind, position, content").eq("book_id", bookId),
-    ]);
-    if (!node || (node as { book_id?: number }).book_id !== bookId) {
-      return { result: { type: "tool_result", tool_use_id: t.id, content: `No node with id ${id} in this book.`, is_error: true } };
-    }
-    const n = node as { id: string; kind: string; content: Record<string, unknown>; authoring: { locked?: boolean }; parent_id: string | null };
-    const rows = (all ?? []) as { id: string; parent_id: string | null; kind: string; position: number; content: Record<string, unknown> | null }[];
-    const rowById = new Map(rows.map((r) => [r.id, r]));
-    const kids = rows.filter((r) => r.parent_id === id).sort((a, b) => a.position - b.position);
-    const parts: string[] = [n.kind];
-    for (let cur = n.parent_id ? rowById.get(n.parent_id) : undefined; cur; cur = cur.parent_id ? rowById.get(cur.parent_id) : undefined) {
-      parts.unshift(`${cur.kind} “${nodeHandle(cur.content)}”`);
-      if (parts.length > 10) break; // cycle guard
-    }
-    const childLines = kids.map((k) => `  - [${k.id}] ${k.kind}: ${nodeHandle(k.content)}`).join("\n");
-    const schema = schemaFor([n.kind]); // hand back the kind's field schema so an edit uses the right keys
-    return {
-      step: { t: "read", label: `Read ${n.kind} “${nodeHandle(n.content)}” in full.` },
-      result: {
-        type: "tool_result", tool_use_id: t.id,
-        content: `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}\npath: ${parts.join(" › ")}\n${JSON.stringify(n.content)}` + (childLines ? `\nchildren (an edit here STALES them):\n${childLines}` : "") + (schema ? `\n\n${schema}` : ""),
-      },
-    };
-  }
-  if (t.name === "read_skill") {
-    const name = String((t.input as { name?: string })?.name ?? "").trim();
-    const skill = AGENT_SKILLS.find((s) => s.name === name);
-    if (!skill) {
-      return { result: { type: "tool_result", tool_use_id: t.id, content: `No skill named "${name}". Available: ${AGENT_SKILLS.map((s) => s.name).join(", ")}.`, is_error: true } };
-    }
-    return {
-      step: { t: "read", label: `Loaded the ${name} playbook.` },
-      result: { type: "tool_result", tool_use_id: t.id, content: `<skill name="${skill.name}">\n${skill.body}\n</skill>` },
-    };
-  }
-  if (t.name === "get_schema") {
-    const kinds = (Array.isArray((t.input as { kinds?: unknown })?.kinds) ? (t.input as { kinds: unknown[] }).kinds : [])
-      .filter((k): k is string => typeof k === "string");
-    const schema = schemaFor(kinds);
-    return {
-      result: schema
-        ? { type: "tool_result", tool_use_id: t.id, content: schema }
-        : { type: "tool_result", tool_use_id: t.id, content: `No schema for ${JSON.stringify(kinds)}. Valid kinds: ${Object.keys(SCHEMA_BY_KIND).join(", ")}.`, is_error: true },
-    };
-  }
-  if (t.name === "search_nodes") {
-    // The agent's grep: per-FIELD substring match over EVERY node's content (incl. scene prose, which the
-    // digest drops). ~200 nodes/book — fetch all and match in JS; only id/kind/handle/field/snippet go back.
-    const q = String((t.input as { query?: string })?.query ?? "").trim();
-    if (!q) {
-      return { result: { type: "tool_result", tool_use_id: t.id, content: "Provide a non-empty query string.", is_error: true } };
-    }
-    const { data: rows } = await service
-      .from("book_nodes").select("id, kind, content").eq("book_id", bookId);
-    const needle = q.toLowerCase();
-    const hits: string[] = [];
-    let more = 0;
-    // prose.text is unwrapped one level so its snippet stays plain text; other nested values fall back to a
-    // stringified sub-value (no deep recursion).
-    for (const r of (rows ?? []) as { id: string; kind: string; content: Record<string, unknown> | null }[]) {
-      for (const [field, value] of Object.entries(r.content ?? {})) {
-        let text: string;
-        if (typeof value === "string") text = value;
-        else if (field === "prose" && value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string") text = (value as { text: string }).text;
-        else if (value && typeof value === "object") text = JSON.stringify(value);
-        else continue;
-        const idx = text.toLowerCase().indexOf(needle);
-        if (idx === -1) continue;
-        if (hits.length >= 30) { more++; continue; }
-        const start = Math.max(0, idx - 60);
-        const end = Math.min(text.length, idx + needle.length + 60);
-        const snippet = (start > 0 ? "…" : "") + text.slice(start, end).replace(/\s+/g, " ") + (end < text.length ? "…" : "");
-        hits.push(`[${r.id}] ${r.kind} “${nodeHandle(r.content)}” — ${field}: “${snippet}”`);
-      }
-    }
-    return {
-      step: { t: "read", label: `Searched for “${q}” (${hits.length + more} hit${hits.length + more === 1 ? "" : "s"}).` },
-      result: {
-        type: "tool_result", tool_use_id: t.id,
-        content: hits.length
-          ? `${hits.length + more} match(es) for "${q}"${more ? ` (showing first 30)` : ""} — read_node any [id] for full content:\n${hits.join("\n")}`
-          : `No nodes match "${q}".`,
-      },
-    };
-  }
-  if (t.name === "check_against_contract") {
-    const id = String((t.input as { id?: string })?.id ?? "");
-    const { data: node } = await service
-      .from("book_nodes").select("id, kind, content, book_id").eq("id", id).maybeSingle();
-    if (!node || (node as { book_id?: number }).book_id !== bookId) {
-      return { result: { type: "tool_result", tool_use_id: t.id, content: `No node with id ${id} in this book.`, is_error: true } };
-    }
-    const n = node as { id: string; kind: string; content: SceneContent };
-    const proseText = (n.content?.prose?.text ?? "").trim();
-    if (n.kind !== "scene") {
-      return { result: { type: "tool_result", tool_use_id: t.id, content: `Node ${id} is a ${n.kind}, not a scene — only scene prose can be checked against the contract.`, is_error: true } };
-    }
-    if (!proseText) {
-      return { result: { type: "tool_result", tool_use_id: t.id, content: `Scene ${id} has no prose yet (content.prose.text is empty). Render or write the scene before checking it.`, is_error: true } };
-    }
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) {
-      return { result: { type: "tool_result", tool_use_id: t.id, content: "Contract check unavailable: ANTHROPIC_API_KEY not configured.", is_error: true } };
-    }
-    const check = ((t.input as { check?: string })?.check ?? "both");
-    const doPlan = check !== "mandate", doMandate = check !== "plan";
-    const { agent: model } = await getRoleModels();
-    const meta = { fn: "book-agent-contract", bookId, nodeId: n.id, operation: "check-contract", taskTable: "book_agent_runs", taskId: null, userId: null };
-    try {
-      // The two judges are independent LLM calls — run them together.
-      const [planRes, mandateBody] = await Promise.all([
-        doPlan ? planConformanceSummary(service, apiKey, model, n.id, n.content, "book-agent-contract", bookId) : Promise.resolve(null),
-        doMandate
-          ? (async () => {
-            const { data: book } = await service.from("books").select("brief").eq("id", bookId).maybeSingle();
-            const brief = ((book as { brief?: Brief } | null)?.brief ?? {}) as Brief;
-            const axes = await judgeProse(apiKey, model, brief, proseText, meta);
-            return axes.map((a) => `  ${a.axis}: ${a.verdict.toUpperCase()} — ${a.detail}${a.evidence ? ` (e.g. "${a.evidence}")` : ""}`).join("\n");
-          })()
-          : Promise.resolve(null),
-      ]);
-      const sections: string[] = [];
-      if (doPlan) sections.push(`PLAN CONFORMANCE (does the prose deliver the scene's own plan?):\n${planRes?.summary ?? "  (no prose to check)"}`);
-      if (doMandate) sections.push(`MANDATE CONFORMANCE (does the prose honor the brief?):\n${mandateBody || "  (judge returned no axes — inspect by hand)"}`);
-      return {
-        step: { t: "read", label: `Checked scene “${nodeHandle(n.content as Record<string, unknown>)}” against ${check === "both" ? "its plan + the brief" : check === "plan" ? "its plan" : "the brief"}.` },
-        result: { type: "tool_result", tool_use_id: t.id, content: sections.join("\n\n") || "No checks ran — inspect by hand." },
-      };
-    } catch (e) {
-      return { result: { type: "tool_result", tool_use_id: t.id, content: `Contract check failed: ${String((e as Error)?.message ?? e)}`, is_error: true } };
-    }
-  }
-  return { result: { type: "tool_result", tool_use_id: t.id, content: `Unknown tool ${t.name}.`, is_error: true } };
-}
-
-// §v1 fix (docs/agent-improvement-remaining.md): a beat's threads sometimes get minted verbatim onto EVERY
-// child scene instead of split (confirmed on book 1229 — two sibling scenes carried byte-identical
-// payoff-role refs). A "payoff" is a promise paid ONCE; judging every duplicate-holding sibling against it
-// FAILs the ones that don't actually deliver it, and the agent learns to dismiss verify (alarm fatigue,
-// partially defeating P2.3). Scope payoff judgment to the LAST scene (book reading order) that still carries
-// a given ref — earlier scenes sharing it are a stale copy, not a second obligation, so drop it from their plan.
-async function scopePayoffsToLatestScene(
-  service: SupabaseClient, bookId: number, sceneId: string, threadRefs: ThreadRef[],
-): Promise<ThreadRef[]> {
-  const payoffRefs = new Set(threadRefs.filter((r) => r?.role === "payoff" && r.ref).map((r) => r.ref));
-  if (!payoffRefs.size) return threadRefs;
-  const { data: allNodes } = await service.from("book_nodes")
-    .select("id, book_id, parent_id, level, kind, position, content, authoring")
-    .eq("book_id", bookId);
-  if (!allNodes?.length) return threadRefs;
-  const order = scenesInOrder(allNodes as DnaNode[]);
-  const selfIdx = order.findIndex((n) => n.id === sceneId);
-  if (selfIdx < 0) return threadRefs;
-  const laterHasPayoff = new Set<string>();
-  for (const later of order.slice(selfIdx + 1)) {
-    for (const t of (later.content as SceneContent)?.threads ?? []) {
-      if (t?.role === "payoff" && t.ref && payoffRefs.has(t.ref)) laterHasPayoff.add(t.ref);
-    }
-  }
-  return laterHasPayoff.size ? threadRefs.filter((r) => !(r.role === "payoff" && laterHasPayoff.has(r.ref))) : threadRefs;
-}
-
-// Build a scene's PLAN SLICE from its DNA edges (resolving thread ids → names/promises so the judge reads the
-// promise, not a hash) and judge its prose against it (P2.2). Shared by the check_against_contract tool and the
-// P2.3 auto-verify. Returns null when the scene has no prose; `{axes:[], summary}` when it has no structural
-// plan; else the judged axes + an indented summary. `fn` labels the caller in ai_calls.
-async function planConformanceSummary(
-  service: SupabaseClient, apiKey: string, model: string, sceneId: string, content: SceneContent | null | undefined, fn: string, bookId: number,
-): Promise<{ axes: PlanAxisVerdict[]; summary: string } | null> {
-  const c = (content ?? {}) as SceneContent;
-  const proseText = (c.prose?.text ?? "").trim();
-  if (!proseText) return null;
-  const rawThreadRefs = (Array.isArray(c.threads) ? c.threads : []).filter((r): r is ThreadRef => !!r?.ref);
-  const threadRefs = await scopePayoffsToLatestScene(service, bookId, sceneId, rawThreadRefs);
-  const threadIds = threadRefs.map((r) => r.ref);
-  const { data: threadNodes } = threadIds.length
-    ? await service.from("book_nodes").select("id, content").in("id", threadIds)
-    : { data: [] as { id: string; content: Record<string, unknown> }[] };
-  const tById = new Map((threadNodes ?? []).map((tn) => [tn.id, tn.content as { name?: string; promise?: string }]));
-  const plan: ScenePlan = {
-    goal: c.goal, outcome: c.outcome,
-    valueShift: c.value_shift ? { value: c.value_shift.value, from: c.value_shift.from, to: c.value_shift.to, polarity: c.value_shift.polarity } : undefined,
-    establishes: c.establishes, needs: c.needs,
-    threads: threadRefs.map((r) => ({ name: tById.get(r.ref)?.name ?? "(unnamed thread)", promise: tById.get(r.ref)?.promise, role: r.role })),
-    direction: c.sketch?.direction,
-  };
-  if (!planHasContent(plan)) return { axes: [], summary: "  this scene has no structural plan (no value_shift / establishes / threads) to check against." };
-  const axes = await judgeAgainstPlan(apiKey, model, plan, proseText, { fn, bookId, nodeId: sceneId, operation: "plan-conformance", taskTable: "book_agent_runs", taskId: null, userId: null });
-  const summary = axes.map((a) => `  ${a.field}: ${a.verdict.toUpperCase()} — ${a.detail}${a.evidence ? ` (e.g. "${a.evidence}")` : ""}`).join("\n");
-  return { axes, summary };
-}
-
-// Marks the injected auto-verify block so a transient re-chain of the same turn doesn't append it twice.
-const VERIFY_SENTINEL = "🔎 AUTO-VERIFY";
-
-// P2.3 — enforced render→verify. In AUTO mode, right after an APPLIED prose render (the render was the prior
-// assistant turn; the client has since written the prose and resumed us), judge the rendered scene(s) against
-// their OWN plan and INJECT the verdict into the transcript before this turn's model call — so verify is a
-// STRUCTURAL step the cheap model can't skip (it was only a line in the objective recipe before) and the model
-// is told to FIX any fail before moving on. Returns the augmented { transcript, steps } (persisted) or the
-// originals. Best-effort: any failure returns the originals unchanged so the auto loop never breaks.
-async function maybeInjectRenderVerify(
-  service: SupabaseClient, apiKey: string, model: string, row: RunRow,
-): Promise<{ transcript: unknown[]; steps: AgentStep[] }> {
-  const fallback = { transcript: row.transcript, steps: row.steps };
-  try {
-    // deno-lint-ignore no-explicit-any
-    const transcript = row.transcript as { role: string; content: any[] }[];
-    const lastAssistant = [...transcript].reverse().find((m) => m.role === "assistant");
-    const renderUse = lastAssistant?.content?.find?.((b) => b.type === "tool_use" && b.name === "propose_prose_render");
-    if (!renderUse) return fallback;
-    const sceneIds = (Array.isArray(renderUse.input?.sceneIds) ? renderUse.input.sceneIds : [])
-      .filter((s: unknown): s is string => typeof s === "string").slice(0, 3); // bound cost: at most 3 scenes/turn
-    if (!sceneIds.length) return fallback;
-    const lastMsg = transcript[transcript.length - 1];
-    if (!lastMsg || lastMsg.role !== "user" || !Array.isArray(lastMsg.content)) return fallback;
-    // Idempotency: skip if we already appended a verdict to this turn's ack (a transient call retry re-runs advance).
-    if (lastMsg.content.some((b) => b.type === "text" && String(b.text ?? "").startsWith(VERIFY_SENTINEL))) return fallback;
-
-    // One judge call per scene, all independent — run them together (this happens BEFORE the turn's
-    // model call, so serial judges here added straight to the author's perceived latency).
-    const blocks = (await Promise.all(sceneIds.map(async (id: string) => {
-      const { data: sc } = await service.from("book_nodes").select("content").eq("id", id).maybeSingle();
-      const content = (sc as { content?: SceneContent } | null)?.content;
-      const res = await planConformanceSummary(service, apiKey, model, id, content, "book-agent-autoverify", row.book_id);
-      if (!res || !res.axes.length) return null; // no prose written yet, or no structural plan → nothing to enforce
-      return `Scene [${id}] “${nodeHandle(content as Record<string, unknown>)}”:\n${res.summary}`;
-    }))).filter((b): b is string => !!b);
-    if (!blocks.length) return fallback;
-    const text = `${VERIFY_SENTINEL} (plan conformance — the server checked the scene(s) you just rendered against their own plan):\n\n${blocks.join("\n\n")}\n\nIf any axis FAILED, fix that scene FIRST — propose_prose_render again with a corrective brief, or propose_node_ops for a small wording fix — before rendering the next scene. If all PASSED, continue.`;
-    const augmented = transcript.map((m, i) => i === transcript.length - 1 ? { ...m, content: [...m.content, { type: "text", text }] } : m);
-    const steps = [...row.steps, { t: "read", label: "Auto-verified the rendered scene against its plan." } as AgentStep];
-    await service.from("book_agent_runs").update({ transcript: augmented, steps }).eq("id", row.id);
-    return { transcript: augmented, steps };
-  } catch (e) {
-    console.error(`book-agent auto-verify skipped (run ${row.id}):`, e);
-    return fallback;
-  }
-}
 
 // Request-time cache breakpoints (never stored in the row, so they don't accumulate past the API's
 // limit of 4): one on the big first user message, one on the last block of the latest message —
@@ -1235,751 +843,3 @@ function withBookState(msgs: unknown[], state: string, task = ""): unknown[] {
   return msgs;
 }
 
-// ── Tools shared across every thread (ask_author/finish are control-flow, not DNA-specific) ──────
-const SHARED_TOOLS = [
-  {
-    name: "ask_author",
-    description: "Ask the author ONE creative decision question. Offer 2–4 concrete options when you can (put your recommendation first, marked '(recommended)'). The run pauses until they answer — so batch your thinking and ask only what genuinely changes the plan. At most 3 questions per run; never ask for permission to proceed.",
-    input_schema: {
-      type: "object",
-      properties: {
-        question: { type: "string", description: "The decision you need from the author, in one or two sentences." },
-        options: { type: "array", items: { type: "string" }, description: "2–4 concrete suggestions the author can pick from. They can always answer in their own words instead." },
-      },
-      required: ["question"],
-    },
-  },
-  {
-    name: "finish",
-    description: "End your turn without proposing a change — when the author's ask is answered by discussion alone, or (in autonomous mode) once every requested change has been made.",
-    input_schema: {
-      type: "object",
-      properties: { report: { type: "string", description: "A short honest summary of what you found/did." } },
-      required: ["report"],
-    },
-  },
-  {
-    name: "read_skill",
-    description: `Load one of the specialized playbooks listed in the system prompt's Skills index (${AGENT_SKILLS.map((s) => s.name).join(", ")}) — the full technique for that job. Call it when your turn involves that job and its body is NOT already injected in the latest message's <skill_briefs>. It's a read: batch it in the SAME turn as your read_node/search_nodes calls.`,
-    input_schema: {
-      type: "object",
-      properties: { name: { type: "string", description: "The skill's name from the Skills index." } },
-      required: ["name"],
-    },
-  },
-];
-
-// ── Thread mode = the DNA omni-rail (docs/agent-rail.md) ──────────────────────
-// The agent holds the book's DNA tree (book_nodes), discusses it, and proposes node ops the author
-// reviews and applies. No context fence: it sees + may write the whole book (scope is forced null,
-// docs/agent-context-model.md); the scope plumbing below is inert until/unless a fence returns.
-interface DnaNodeRow { id: string; parent_id: string | null; kind: string; level: number; position: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string } | null; proposals?: { id: string; content: Record<string, unknown>; note?: string }[] | null }
-
-// A short human handle for a node (mirror of lib/dnaChat nodeLabel) for read summaries + step labels.
-function nodeHandle(content: Record<string, unknown> | null | undefined): string {
-  const c = content ?? {};
-  const h = c.name ?? c.title ?? c.logline ?? c.summary ?? c.goal;
-  return typeof h === "string" && h.trim() ? h.trim().slice(0, 60) : "(untitled)";
-}
-
-// ── Tree digest (docs/agent-context-model.md) ────────────────────────────────
-// The system prompt ships the WHOLE tree every turn; dumping each node's full content (a beat's paragraph
-// summary, every foundation field) is the bulk of the tokens. Instead each node shows a DIGEST: its
-// handle/gist plus, for structure, its causal + meter SPINE (connector, needs, establishes, readings) —
-// the relational glue an editor reasons over (e.g. a beat with no `connector`/`needs` reads as floating).
-// Full content (the whole summary, a character's wound/lie, a scene's prose) is one read_node away.
-const DIGEST_FIELDS: Record<string, string[]> = {
-  seed: ["logline"],
-  premise: ["dramatic_question"],
-  pillar: ["controlling_idea"],
-  character: ["name", "role", "tag"],
-  relationship: ["a", "b", "bond"],
-  world_fact: ["name", "rule", "mechanism"],
-  location: ["name", "mood"],
-  thread: ["name", "kind", "promise"],
-  game: ["name", "win_condition", "lose_condition"],
-  tentpole: ["name", "summary"],
-  meter: ["name", "kind"],
-  voice_profile: ["pov", "tense", "style"],
-  act: ["title", "goal", "target_pct", "turning_point"],
-  beat: ["connector", "polarity", "slot", "needs", "establishes", "threads", "grounds_in", "realizes", "plays", "resolves", "readings"],
-  scene: ["goal", "value_shift", "pov", "loc", "needs", "establishes", "grounds_in", "readings", "sketch"],
-};
-
-// Pick only the digest fields that carry a value (drop null/empty so an ABSENT spine field — a beat with
-// no `connector`/`needs` — reads clearly as missing rather than hiding inside a full dump).
-function pickFields(content: Record<string, unknown> | null | undefined, fields: string[]): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const f of fields) {
-    const v = content?.[f];
-    if (v == null) continue;
-    if (typeof v === "string" && !v.trim()) continue;
-    if (Array.isArray(v) && v.length === 0) continue;
-    out[f] = v;
-  }
-  return out;
-}
-
-// First sentence (≤180 chars) of a beat's summary — its paragraph is too long to ship in full every turn.
-function gistLine(content: Record<string, unknown> | null | undefined): string {
-  const s = content?.summary;
-  if (typeof s !== "string" || !s.trim()) return "";
-  const t = s.trim();
-  const m = t.match(/^[\s\S]*?[.!?](\s|$)/);
-  let first = (m ? m[0] : t).trim();
-  if (first.length > 180) first = first.slice(0, 179) + "…";
-  return first;
-}
-
-// Scene drafted marker — the one question a "draft the book" run asks every turn (is this scene next?),
-// unanswerable from goal/value_shift/pov alone. content.prose is nested so DIGEST_FIELDS/pickFields skip it.
-function draftedMarker(content: Record<string, unknown> | null | undefined): string {
-  const words = (content?.prose as { words?: unknown } | undefined)?.words;
-  return typeof words === "number" && words > 0 ? `prose: "${words.toLocaleString()}w"` : "undrafted";
-}
-
-// One-line digest of a node: handle/gist + compact spine (prose + verbose fields dropped; read_node for full).
-function digestNode(kind: string, content: Record<string, unknown> | null | undefined): string {
-  const fields = DIGEST_FIELDS[kind];
-  const spine = fields ? pickFields(content, fields) : (content ?? {});
-  const gist = kind === "beat" ? gistLine(content) : "";
-  const json = Object.keys(spine).length ? JSON.stringify(spine) : "";
-  const drafted = kind === "scene" ? draftedMarker(content) : "";
-  return [gist, json, drafted].filter(Boolean).join(" · ") || nodeHandle(content);
-}
-
-const THREAD_DNA_TOOLS = [
-  {
-    name: "propose_prose_render",
-    description: "Request that the book's prose pipeline (re)generate the FULL prose for one or more scenes — use this whenever the author asks you to write or rewrite a scene's prose from scratch. You do NOT generate the prose yourself: full prose generation is a long, browser-streamed render the author runs (it can't run inside this turn), so this stages a reviewable 'render prose' request the author applies — it then streams in their browser, in the book's voice, with full continuity. The pipeline already has the voice, the mandate, and a continuity digest of every prior page; your job is to ADD what it can't compute — so before you call this, investigate: read the scene's beat and the previous page(s), grep (search_nodes) for the specific threads/objects/facts THIS page must honor, and pass them in `brief`. Pass the scene node id(s) (reading order), a one-line summary, and the curated `brief`. For SMALL wording fixes to EXISTING prose, use propose_node_ops to edit content.prose.text directly instead — only use this for full (re)generation. This records the request and ENDS your turn.",
-    input_schema: {
-      type: "object",
-      properties: {
-        summary: { type: "string", description: "One line: which scene(s) and why you're (re)generating their prose." },
-        sceneIds: { type: "array", items: { type: "string" }, description: "The scene node id(s) to (re)generate prose for, in reading order." },
-        brief: {
-          type: "object",
-          description: "OPTIONAL but strongly preferred: your curated, verbatim guidance for this page — injected on top of the pipeline's own context. Only include what you actually retrieved by reading/grepping; do not invent. Omit entirely if you have nothing beyond the plan to add.",
-          properties: {
-            focus: { type: "string", description: "One line: what this page is really ABOUT — the beat's turn in your read." },
-            mustHonor: { type: "array", items: { type: "string" }, description: "Specific continuity that has to land, in your words: named objects, prior promises, a character's state or idiolect you pulled via read_node/search_nodes. e.g. 'Mara still carries the brass keyring she pocketed in ch.1'." },
-            avoid: { type: "array", items: { type: "string" }, description: "Things NOT to repeat or contradict, beyond generic anti-repetition: e.g. 'the rain stopped last page — do not re-describe it'." },
-          },
-        },
-      },
-      required: ["summary", "sceneIds"],
-    },
-  },
-  {
-    name: "check_against_contract",
-    description: "Judge a scene's PROSE against its contract — TWO complementary checks: (1) PLAN conformance — does the prose deliver the scene's OWN plan (its planned value_shift, the state keys its causal edges say it must `establishes`/`needs`, its thread work)? This is the scene doing its structural job so later scenes can rely on it. (2) MANDATE conformance — does it honor the book's brief (genre, heat, success criteria)? Pass the scene node's id; the scene must already have prose (content.prose.text) — if empty, propose_prose_render first. `check` selects which: 'plan' (default 'both'), 'mandate', or 'both'. Returns per-axis verdicts (pass / partial / fail) with evidence. Read the scene first if you haven't.",
-    input_schema: { type: "object", properties: { id: { type: "string", description: "The scene node's id." }, check: { type: "string", enum: ["plan", "mandate", "both"], description: "Which contract to check: 'plan' (the scene's own DNA plan), 'mandate' (the brief), or 'both' (default)." } }, required: ["id"] },
-  },
-  {
-    name: "read_node",
-    description: "Read one DNA node's FULL content by id — its complete fields (a beat's whole summary, a character's wound/lie/idiolect, a scene's prose content.prose.text), the schema for its kind, and a one-line summary of its children. The tree you're given is a DIGEST (handle/gist + causal spine); use this to pull a node's full detail before judging or rewriting it.",
-    input_schema: { type: "object", properties: { id: { type: "string", description: "The node's id from the tree." } }, required: ["id"] },
-  },
-  {
-    name: "get_schema",
-    description: "Get the EXACT content field schema for one or more node kinds (e.g. beat, scene, character) — the required keys, allowed values, and id-ref types. Call this before you WRITE a node's content with propose_node_ops or propose_options (add / edit / replace_children) when you don't already have the schema in hand, so you use the right field names — wrong keys silently orphan the data.",
-    input_schema: { type: "object", properties: { kinds: { type: "array", items: { type: "string" }, description: "The node kind(s) you're about to write, e.g. [\"beat\"] or [\"act\",\"beat\",\"scene\"] for a rebuild." } }, required: ["kinds"] },
-  },
-  {
-    name: "search_nodes",
-    description: "Full-text search across ALL the book's DNA nodes — every field of every node's content, INCLUDING scene prose (which the tree digest does NOT show). Returns matching node ids with a snippet around each hit, so you can FIND where something appears — a character name, a motif word, an echoed line, a phrase in the prose — and then read_node the ones you want in full. This is your grep: use it to gain context the digest doesn't carry (e.g. 'where is the keyring mentioned?', 'is this line echoed in the prose?', 'which scenes name Lena?').",
-    input_schema: { type: "object", properties: { query: { type: "string", description: "Case-insensitive text to search for — a name, motif word, or short phrase." } }, required: ["query"] },
-  },
-  {
-    name: "propose_node_ops",
-    description: "Propose a concrete change to the DNA tree the author reviews before it's applied: edit / add / delete / replace_children / replace_text ops on nodes by their real ids. This records the proposal and ENDS your turn — narrate what you're changing and why just before calling it. Never touch a LOCKED node. To REBUILD a whole level (replace all acts, or all beats under an act), use replace_children — NOT a pile of `add` ops, which would duplicate what's already there. To RENAME a character/location/world_fact/thread EVERYWHERE it's mentioned (the author says 'rename X to Y', 'call her Y from now on'), issue ONE `edit` op on that entity's own node setting `content.name` to the new name — {op:'edit', id: <entity node>, content:{name:'Y'}}. A database trigger (propagate_character_rename) automatically fans that rename into every other node's prose across the whole book in the same write. Do NOT enumerate scenes and loop replace_text for this — that turns a 1-op rename into dozens of calls chasing verbatim text. For SMALL wording fixes to a scene's EXISTING prose (an echoed phrase, an em-dash, one sentence) that are NOT a systemic rename, use replace_text — {op:'replace_text', id, find, replace} swaps the FIRST occurrence of `find` in that scene's prose. NEVER resend a whole prose text via `edit` for a small fix: replace_text ops are tiny, so DOZENS of prose fixes across many scenes fit in ONE proposal — batch them all. `find` must match the current prose exactly (copy it from a search_nodes snippet or read_node); include enough surrounding words to be unambiguous. PATCH AT THE SMALLEST SELF-CONTAINED UNIT — usually the whole clause or sentence containing the flaw, not the bare phrase — so the replacement reads grammatically in place and keeps the paragraph's rhythm; restructuring around a removed em-dash especially needs the full clause. If you haven't seen the sentence around the target (a snippet shows only ±60 chars), read_node the scene before patching.",
-    input_schema: {
-      type: "object",
-      properties: {
-        summary: { type: "string", description: "One line: what this change does." },
-        ops: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              op: { type: "string", enum: ["edit", "add", "delete", "replace_children", "replace_text"] },
-              id: { type: "string", description: "edit/delete/replace_text: the existing node id (replace_text: a scene)." },
-              kind: { type: "string", description: "add: the new node's kind (character|relationship|tentpole|world_fact|thread|game|act|beat|scene|voice_profile)." },
-              parentId: { type: "string", description: "add / replace_children: the existing parent node's id (e.g. the pillar, whose act children are the acts)." },
-              childKind: { type: "string", description: "replace_children: which child kind to rebuild (e.g. 'act' to replace all acts, 'beat' to replace an act's beats)." },
-              content: { type: "object", description: "edit: the fields to merge. add: the new node's content. Use the exact field names from the schema given.", additionalProperties: true },
-              children: { type: "array", description: "replace_children: the NEW children as a nested tree — each { content, children? }; nesting follows the ladder (act→beat→scene). Every existing non-locked child of childKind is deleted first, so the rebuild never duplicates.", items: { type: "object", additionalProperties: true } },
-              find: { type: "string", description: "replace_text: the exact text to find in the scene's prose (first occurrence is replaced). Must match the current text verbatim; include surrounding words for uniqueness." },
-              replace: { type: "string", description: "replace_text: the replacement text." },
-            },
-            required: ["op"],
-          },
-        },
-      },
-      required: ["summary", "ops"],
-    },
-  },
-  {
-    name: "propose_expansion",
-    description: "Delegate a structural pass to the book's specialized generation engine instead of authoring it yourself: the PREMISE from the accepted logline (target 'premise'), the GLOBAL beat sheet (target 'beatsheet'), a beat's SCENES (target 'scenes'), the compiled brief CONTRACT (target 'contract'), or ONE scene's SKETCH (target 'sketch'). Use this — NOT propose_node_ops — for these passes. 'premise' derives a priced dramatic question plus 3-5 internal shape movements from the BRIEF + accepted LOGLINE — pass the SEED node's id. 'beatsheet' generates ALL beats across every act in one causal pass — pass the PILLAR node's id. 'scenes' breaks ONE beat into scenes — pass that BEAT node's id. 'contract' compiles the brief's genre/audience/tone into derived promises — pass the PILLAR node's id. 'sketch' generates ONE scene's TREATMENT — pass that SCENE node's id before rendering prose when it lacks a fresh sketch. If the author gave you specific steering for this pass (an angle, a constraint, something to emphasize or avoid), pass it in `brief` — don't just let it evaporate into the summary line. This stages a reviewable 'expand' request the author applies; the engine then runs and its result lands in the tree. ENDS your turn.",
-    input_schema: {
-      type: "object",
-      properties: {
-        summary: { type: "string", description: "One line: what you're expanding and why (e.g. 'generate the global beat sheet', 'break beat 3 into scenes', 'sketch the treatment for scene 2')." },
-        nodeId: { type: "string", description: "For 'premise': the SEED node's id. For 'beatsheet' and 'contract': the PILLAR node's id. For 'scenes': the BEAT node's id. For 'sketch': the SCENE node's id." },
-        target: { type: "string", enum: ["premise", "beatsheet", "scenes", "contract", "sketch"], description: "'premise' = derive premise from brief + logline (nodeId = seed); 'beatsheet' = all beats across acts (nodeId = pillar); 'scenes' = one beat's scenes (nodeId = beat); 'contract' = compile genre promises (nodeId = pillar); 'sketch' = one scene's treatment (nodeId = scene)." },
-        brief: {
-          type: "object",
-          description: "OPTIONAL: the author's own steering for THIS pass — an angle, emphasis, or constraint they stated, verbatim in your words. Omit if they gave you nothing beyond 'do it'.",
-          properties: {
-            focus: { type: "string", description: "One line: what this pass should particularly emphasize or aim at, per the author." },
-            mustHonor: { type: "array", items: { type: "string" }, description: "Specific things the author said this MUST include or respect." },
-            avoid: { type: "array", items: { type: "string" }, description: "Specific things the author said to avoid." },
-          },
-        },
-      },
-      required: ["nodeId", "target"],
-    },
-  },
-  {
-    name: "propose_options",
-    description: "Offer the author 2–4 ALTERNATIVE versions of ONE node's content to choose among (the options picker). Use this when the author asks for options/alternatives, or to break a node out of its one obvious 'modal' version. Each option is a COMPLETE content object for that node's kind (the exact field names from the schema, like an edit's content). The options must be meaningfully different FROM EACH OTHER — but every option MUST HONOR the node's ancestors as FIXED: a child elaborates what's above it (the logline, then the premise), it never rewrites it. Premise options keep the logline's protagonist / inciting incident / goal / obstacle / stakes fixed and vary only the priced dramatic question plus internal shape movements. NEVER reshape an ancestor's story into a different book, and never offer near-duplicates. This stages the options ON the node (the author picks one in the tree) and ENDS your turn. For a SINGLE revision, use propose_node_ops (edit) instead. Only target a non-locked node.\n\nCREATING A NEW NODE WITH OPTIONS (premise shortcut): When the premise node doesn't exist yet, skip the two-step propose_expansion→apply cycle: pass kind=\"premise\" and parentId=<seed-node-id> WITHOUT nodeId. This mints the premise node and stages your 2–4 candidates on it in one step — the author picks one in the tree.",
-    input_schema: {
-      type: "object",
-      properties: {
-        nodeId: { type: "string", description: "The existing node id to generate alternatives for. Omit (with kind + parentId) to create a new premise node and stage options on it in one step." },
-        kind: { type: "string", description: "When creating a new node: the kind to create (e.g. 'premise'). Must be a valid node kind. Use with parentId, without nodeId." },
-        parentId: { type: "string", description: "When creating a new node: the parent node's id (e.g. the seed node's id for a new premise). Use with kind, without nodeId." },
-        note: { type: "string", description: "One line: the axis the options vary along (e.g. 'three takes on the dramatic question's price')." },
-        options: {
-          type: "array",
-          description: "2–4 alternative content objects for this node's kind — each a complete value, meaningfully different from the others.",
-          items: { type: "object", additionalProperties: true },
-        },
-      },
-      required: ["options"],
-    },
-  },
-];
-
-// The thread tool belt: ask_author + finish always; the DNA tools (the per-op kind fence does the
-// fine-grained gating when a scope is set). null/[] scope = all.
-function threadToolsFor(_scope: Aspect[] | null): unknown[] {
-  return [...SHARED_TOOLS, ...THREAD_DNA_TOOLS];
-}
-
-const CONTENT_SCHEMAS = dnaSchema.promptGuide;
-
-// Schema-on-demand: the full CONTENT_SCHEMAS block is ~2k chars of every kind's field list. Rather than
-// ship it every turn, we serve the relevant kind's schema when the agent reads or writes a node
-// (read_node result + the get_schema tool). promptGuide is a legend line followed by one `- <kind> → …`
-// bullet per kind; split it so we can hand back just the kinds in play.
-const SCHEMA_LINES = CONTENT_SCHEMAS.split("\n");
-const SCHEMA_HEADER = SCHEMA_LINES[0];
-const SCHEMA_BY_KIND: Record<string, string> = {};
-for (const line of SCHEMA_LINES) {
-  const m = line.match(/^- (\w+) →/);
-  if (m) SCHEMA_BY_KIND[m[1]] = line;
-}
-// The exact field schema for one or more kinds (legend + the matching bullets), or "" if none match.
-function schemaFor(kinds: string[]): string {
-  const lines = [...new Set(kinds)].map((k) => SCHEMA_BY_KIND[k]).filter(Boolean);
-  return lines.length ? `${SCHEMA_HEADER}\n${lines.join("\n")}` : "";
-}
-
-const SYSTEM_THREAD = `## Role
-
-You are a sharp, warm developmental STORY EDITOR — the author's single AI collaborator for the whole book, in conversation in the studio's right-hand rail.
-
-You hold the book's DNA TREE: premise → foundations (pillar, cast, world, tentpoles, voice) → structure (acts, beats, threads) → scenes → prose. You see the WHOLE book and may touch any node (except LOCKED ones); the author anchors your attention by attaching nodes, but never fences you out of the rest. The tree (given in the \`<book_state>\` block at the end of the latest user message, refreshed every turn) is a DIGEST — each node shows its handle/gist plus, for structure, its causal + meter spine (connector, needs, establishes, readings). When a node's full detail matters — a beat's whole summary, a character's wound/lie, a scene's prose — read_node it before judging or rewriting. To FIND where something appears across the whole book — a name, a motif, an echoed line, a phrase in the prose the digest doesn't show — use search_nodes, then read_node the hits.
-
-## Task discipline
-
-Each turn, the author's LATEST message — restated in the \`<task>\` block at the very end — IS your job. Do exactly that. Everything else in \`<book_state>\` (the objective, the story-analysis lints, the between-scenes ledger, the tree) is REFERENCE that informs HOW you do it; none of it is a task by itself. When the ask and the ambient state pull in different directions (the author asks you to render a scene while lints flag other scenes), the ask wins — flag the other issue in at most ONE sentence and offer to handle it next turn. Never answer a concrete ask by doing the objective's next step instead, and never reply with a mere acknowledgment of pending work — perform the asked work THIS turn.
-
-## What you can do
-
-1. DISCUSS — answer, summarize, pressure-test. Reply in plain markdown prose and just end your turn (no tool needed). Be concrete, grounded in the real tree, referencing nodes by their [id]. When a node has PENDING OPTIONS and the author asks which is strongest, just RECOMMEND one in prose (name its option number + a one-line reason tied to the brief) — committing the pick is theirs, in the tree.
-2. CHANGE THE TREE — when the author asks for a change (or agrees to one), call propose_node_ops with edit/add/delete ops over the real ids. The author reviews the diff and applies it; descendants of an edited node go stale and are regenerated later. NEVER touch a LOCKED node. Don't propose unless asked — talk first. EDIT AS A SYSTEM: every edit needs the kind's CRAFT (its skill), its SCHEMA (exact field names), and the node's POSITION (ancestors it must honor as fixed, descendants your edit stales). A node's fields COHERE — when you change a load-bearing field, re-derive its coupled fields in the SAME edit (premise: the shape's final movement must answer the dramatic_question; character: wound→lie→want→need; scene: goal→conflict→outcome→value_shift). Never patch one half of a coupled pair and leave the other stale.
-3. OFFER OPTIONS — when the author asks for alternatives, call propose_options with the node's [id] and 2–4 COMPLETE content objects (skill: options-craft). Choose-among-N only; a single revision is propose_node_ops.
-4. PROSE — you never generate prose yourself. A scene's FULL prose (write or rewrite) = propose_prose_render, a browser-streamed render the author applies; sketch the scene first (propose_expansion, target 'sketch') when it has no fresh sketch, and curate the render brief from real reads (skill: render-brief). SMALL wording fixes to existing prose = propose_node_ops with replace_text ops (skill: prose-patch). Judging existing prose = check_against_contract plus your OWN concrete editorial read (skill: editorial-read). Rebuilding a whole spine level = ONE replace_children op, never a pile of adds (skill: rebuild-level). INVARIANTS: never hand-write or replace a scene's FULL prose via edit — a render that keeps returning stale text is a pipeline problem to re-request or flag, never bypass it by writing the scene yourself.
-5. ENGINE PASSES — never author these by hand: PREMISE = propose_options with kind='premise' + parentId=<seed id> (mints the node, stages 2–4 candidates; skills: premise-craft + options-craft); BEAT SHEET = propose_expansion(pillar, 'beatsheet') once acts exist; SCENES = propose_expansion(beat, 'scenes'); SKETCH = propose_expansion(scene, 'sketch'); CONTRACT = propose_expansion(pillar, 'contract'). Pass the author's steering in the \`brief\` param whenever they gave you more than "generate it". You still author the logline, pillar, cast, and acts yourself.
-
-## Node kinds
-
-seed, premise, pillar; foundations — character, relationship, world_fact, location, thread, game, tentpole, meter, voice_profile; structure — act, beat, scene. Before you WRITE a node's content (add / edit / replace_children), get the kind's EXACT field names with get_schema (read_node also returns them) — wrong keys silently orphan data.
-
-## Skills
-
-Specialized playbooks exist for the jobs below. When the ask matches one, its body is usually pre-injected in the latest message's \`<skill_briefs>\` block — follow it. If your turn involves one of these jobs and its body is NOT injected, call read_skill with its name (it's a read — batch it with your other reads in the same turn):
-${SKILLS_INDEX}
-
-## Guided flow
-
-When a \`<current_objective>\` block is given, that's the one step to lead the author through next — the lowest unfinished rung of the book's DNA. If the author asks "what's next?", opens a fresh thread, or has no specific ask, drive THAT objective: do the step's recipe, then let the next message advance it. Don't march ahead to later rungs unprompted. But this is an anchor, not a leash — if the author steers somewhere else, follow them.
-
-## Teach as you go
-
-You are also the author's GUIDE — assume they may be new to story craft, and make sure they leave each rung knowing why it exists. The FIRST time a journey rung comes up in a chat (logline, premise, pillar, contract, cast, acts, beats, scenes, prose render, promise ledger), open with one or two plain sentences before acting: what the thing is, and why the book needs it before the next rung can stand on it. Define a craft term the first time you use it (e.g. "a beat — one causal event in the chain"). Two sentences, then do the work — never a lecture, never re-explain a concept the chat already covered. If the author has NO story idea yet (empty brief idea / blank seed), don't demand one: interview them lightly (a genre, a feeling, a scene they can't shake) or pitch 3–4 distinct directions yourself in plain prose, converge on one they like, and only then shape it into logline options with propose_options.
-
-## Working efficiently
-
-Your read tools run in PARALLEL: issue ALL the read_node / search_nodes / get_schema / read_skill calls a turn needs in the SAME turn — never serially, unless a read genuinely depends on another read's result. Batch INDEPENDENT edits into ONE propose_node_ops call (\`ops\` is an array; cap ~6-8 ops). For many scattered fixes, work in handfuls per turn — read a few, propose their fixes, continue next turn — never sweep-read everything first to build a complete inventory (it outgrows the context window and never converges).
-
-## Style
-
-Be tight. Don't propose changes the author didn't ask for; when they're just talking, just talk.`;
-
-// Keep only { content, children } from a model-proposed subtree (drop stray op/kind/id fields the model
-// may emit), recursively — the shape applyNodeOps expects for a replace_children rebuild.
-function sanitizeSubtree(subs: unknown[]): NewSubtree[] {
-  const out: NewSubtree[] = [];
-  for (const s of Array.isArray(subs) ? subs : []) {
-    if (!s || typeof s !== "object") continue;
-    const sub = s as { content?: Record<string, unknown>; children?: unknown[] };
-    if (!sub.content || typeof sub.content !== "object") continue;
-    const kids = Array.isArray(sub.children) ? sanitizeSubtree(sub.children) : [];
-    out.push(kids.length ? { content: sub.content, children: kids } : { content: sub.content });
-  }
-  return out;
-}
-
-// Validate proposed ops against the LIVE tree + the scope fence; build the reviewable proposal. Mirrors
-// dna-chat's parser: ids must exist, never LOCKED, add-kinds valid, and every touched kind in scope.
-async function proposeNodeOps(
-  service: SupabaseClient,
-  bookId: number,
-  scope: Aspect[] | null,
-  input: { summary?: string; ops?: unknown[] },
-): Promise<{ ok: true; proposal: AgentProposal } | { ok: false; error: string }> {
-  // content rides along for replace_text's find-string check; other ops don't read it.
-  const { data: rows } = await service.from("book_nodes").select("id, kind, authoring, content").eq("book_id", bookId);
-  const nodes = (rows ?? []) as { id: string; kind: string; authoring: { locked?: boolean } | null; content: Record<string, unknown> | null }[];
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const kinds = scopedKinds(scope); // null = all kinds allowed
-  const allowed = (kind: string) => !kinds || kinds.has(kind);
-
-  const ops: NodeOp[] = [];
-  const badFinds: string[] = []; // replace_text ops whose find string isn't in the live prose — name them so the model corrects
-  for (const raw of Array.isArray(input.ops) ? input.ops : []) {
-    const o = raw as { op?: string; id?: string; kind?: string; childKind?: string; parentId?: string; content?: Record<string, unknown>; children?: unknown[]; find?: string; replace?: string };
-    if (o.op === "edit" && o.id && byId.has(o.id) && !byId.get(o.id)!.authoring?.locked && allowed(byId.get(o.id)!.kind) && o.content) {
-      // Output fields (confusion_flags, observed_shape_fit, observed_craft, prose, …) are written BY the reads
-      // (Cold Read / Shape Read / Editor's Read / prose render) — never a direct plan edit. Caught live 2026-07-09:
-      // the agent, unable to fix a scene's actual prose inconsistency, cleared the scene's confusion_flags to []
-      // instead — deleting the evidence rather than the problem, so the lint vanished while the prose stayed broken.
-      const blockedKeys = Object.keys(o.content).filter((k) => (OUTPUT_FIELDS as readonly string[]).includes(k));
-      if (blockedKeys.length) {
-        badFinds.push(`[${o.id}] edit touches read-output field(s) "${blockedKeys.join('", "')}" — these are written by the reads (Cold Read/Shape Read/Editor's Read/prose render), never edited directly. Fix the underlying content instead (prose via replace_text/propose_prose_render, structure via other fields) — the flag clears itself next time that read runs.`);
-        continue;
-      }
-      ops.push({ op: "edit", id: o.id, content: o.content });
-    } else if (o.op === "delete" && o.id && byId.has(o.id) && !byId.get(o.id)!.authoring?.locked && allowed(byId.get(o.id)!.kind)) {
-      ops.push({ op: "delete", id: o.id });
-    } else if (o.op === "add" && o.parentId && byId.has(o.parentId) && o.kind && ALL_NODE_KINDS.includes(o.kind) && allowed(o.kind) && o.content) {
-      ops.push({ op: "add", kind: o.kind, parentId: o.parentId, content: o.content });
-    } else if (o.op === "replace_children" && o.parentId && byId.has(o.parentId) && !byId.get(o.parentId)!.authoring?.locked && o.childKind && ALL_NODE_KINDS.includes(o.childKind) && allowed(o.childKind) && Array.isArray(o.children) && o.children.length) {
-      const children = sanitizeSubtree(o.children);
-      if (children.length) ops.push({ op: "replace_children", parentId: o.parentId, childKind: o.childKind, children });
-    } else if (o.op === "replace_text" && o.id && typeof o.find === "string" && o.find.length && typeof o.replace === "string") {
-      const node = byId.get(o.id);
-      if (!node || node.authoring?.locked || node.kind !== "scene" || !allowed(node.kind)) {
-        badFinds.push(`[${o.id}] is not an editable scene`);
-        continue;
-      }
-      // Verify against the LIVE prose so a stale/typo'd find bounces back to the model NOW (with the scene
-      // named), instead of silently no-opping at apply time.
-      const prose = String(((node.content as { prose?: { text?: unknown } } | null)?.prose?.text ?? ""));
-      if (!prose.includes(o.find)) {
-        badFinds.push(`"${o.find.slice(0, 60)}" not found in scene [${o.id}]`);
-        continue;
-      }
-      ops.push({ op: "replace_text", id: o.id, find: o.find, replace: o.replace });
-    }
-  }
-  if (ops.length === 0) {
-    const findNote = badFinds.length ? ` replace_text failures: ${badFinds.join("; ")}. The find string must match the CURRENT prose exactly — search_nodes shows the live text.` : "";
-    return { ok: false, error: (kinds ? `No valid ops — every op must target a non-locked node whose kind is in scope (${scope!.join(", ")}), or add a child of one.` : "No valid ops — reference real, non-locked node ids.") + findNote };
-  }
-  if (badFinds.length) {
-    // Some ops were fine but these weren't — fail the whole proposal so nothing half-lands silently.
-    return { ok: false, error: `Some replace_text ops don't match the live prose: ${badFinds.join("; ")}. Fix the find strings (they must match the CURRENT text exactly) and resend ALL the ops.` };
-  }
-  return { ok: true, proposal: { id: crypto.randomUUID(), layer: "dna", summary: String(input.summary ?? "Proposed change").trim() || "Proposed change", ops } };
-}
-
-// Validate a prose-render request: every id must be a real, non-locked SCENE in this book. Builds the
-// reviewable proposal (layer 'prose-render', no ops). The author applies it and the prose streams in their
-// browser via the v2 pipeline — the agent never renders prose in-worker (docs/agent-context-model.md).
-// Shape the agent's free-form brief into the stored RenderBrief: verbatim strings (we keep the agent's own
-// words, per the design), just trimmed + bounded so a runaway tool call can't bloat the proposal. Returns
-// undefined when there's nothing usable, so a no-brief render behaves exactly as before.
-function sanitizeBrief(raw: unknown): RenderBrief | undefined {
-  if (!raw || typeof raw !== "object") return undefined;
-  const r = raw as { focus?: unknown; mustHonor?: unknown; avoid?: unknown };
-  const line = (x: unknown) => (typeof x === "string" ? x.trim() : "");
-  const list = (x: unknown) => (Array.isArray(x) ? x.map(line).filter(Boolean).slice(0, 12) : []);
-  const focus = line(r.focus).slice(0, 400);
-  const mustHonor = list(r.mustHonor);
-  const avoid = list(r.avoid);
-  if (!focus && !mustHonor.length && !avoid.length) return undefined;
-  return { focus, ...(mustHonor.length ? { mustHonor } : {}), ...(avoid.length ? { avoid } : {}) };
-}
-
-async function proposeProseRender(
-  service: SupabaseClient,
-  bookId: number,
-  input: { summary?: string; sceneIds?: unknown; brief?: unknown },
-): Promise<{ ok: true; proposal: AgentProposal } | { ok: false; error: string }> {
-  const { data: rows } = await service.from("book_nodes").select("id, kind, authoring").eq("book_id", bookId);
-  const byId = new Map(((rows ?? []) as { id: string; kind: string; authoring: { locked?: boolean } | null }[]).map((n) => [n.id, n]));
-  const ids = Array.isArray(input.sceneIds) ? input.sceneIds.filter((x): x is string => typeof x === "string") : [];
-  const sceneIds: string[] = [];
-  for (const id of ids) {
-    const n = byId.get(id);
-    if (n && n.kind === "scene" && !n.authoring?.locked && !sceneIds.includes(id)) sceneIds.push(id);
-  }
-  if (sceneIds.length === 0) return { ok: false, error: "No valid scene ids — propose_prose_render targets real, non-locked SCENE nodes by their [id]." };
-  return { ok: true, proposal: { id: crypto.randomUUID(), layer: "prose-render", summary: String(input.summary ?? "Render prose").trim() || "Render prose", ops: [], sceneIds, brief: sanitizeBrief(input.brief) } };
-}
-
-// Stage an 'expansion' request: the dna-expand engine (client-side, on Apply) generates the beat sheet or a
-// beat's scenes. We only VALIDATE the target here (node exists, not locked, right kind for the target); the
-// engine does the real work + persistence in the browser (generateExpansionOps → applyNodeOps). 'beatsheet'
-// needs the pillar (and acts to hang beats under); 'scenes' needs a beat.
-async function proposeExpansion(
-  service: SupabaseClient,
-  bookId: number,
-  input: { summary?: string; nodeId?: string; target?: string; brief?: unknown },
-): Promise<{ ok: true; proposal: AgentProposal } | { ok: false; error: string }> {
-  const target = String(input.target ?? "").trim();
-  if (target !== "premise" && target !== "beatsheet" && target !== "scenes" && target !== "contract" && target !== "sketch") {
-    return { ok: false, error: `Unknown target "${target}" — propose_expansion only handles 'premise' (nodeId = seed), 'beatsheet' (nodeId = pillar), 'scenes' (nodeId = beat), 'contract' (nodeId = pillar), or 'sketch' (nodeId = scene).` };
-  }
-  const { data: rows } = await service.from("book_nodes").select("id, kind, authoring").eq("book_id", bookId);
-  const nodes = (rows ?? []) as { id: string; kind: string; authoring: { locked?: boolean } | null }[];
-  const node = nodes.find((n) => n.id === input.nodeId);
-  if (!node) return { ok: false, error: `No node with id ${input.nodeId}.` };
-  if (node.authoring?.locked) return { ok: false, error: `Node ${input.nodeId} is LOCKED — unlock it before expanding.` };
-  if (target === "premise") {
-    if (node.kind !== "seed") return { ok: false, error: `'premise' expands the SEED/logline — pass the seed node's id, not a ${node.kind}.` };
-  }
-  if (target === "beatsheet") {
-    if (node.kind !== "pillar") return { ok: false, error: `'beatsheet' expands the PILLAR (all acts at once) — pass the pillar node's id, not a ${node.kind}.` };
-    if (!nodes.some((n) => n.kind === "act")) return { ok: false, error: "There are no acts yet — author the acts first (propose_node_ops), then generate the beat sheet." };
-  }
-  if (target === "scenes" && node.kind !== "beat") {
-    return { ok: false, error: `'scenes' breaks ONE beat into scenes — pass a beat node's id, not a ${node.kind}.` };
-  }
-  if (target === "contract" && node.kind !== "pillar") {
-    return { ok: false, error: `'contract' compiles the brief onto the PILLAR — pass the pillar node's id, not a ${node.kind}.` };
-  }
-  if (target === "sketch" && node.kind !== "scene") {
-    return { ok: false, error: `'sketch' generates ONE scene's treatment — pass a scene node's id, not a ${node.kind}.` };
-  }
-  const label = target === "premise" ? "Derive the premise" : target === "beatsheet" ? "Generate the global beat sheet" : target === "contract" ? "Compile the brief's contract" : target === "sketch" ? "Sketch the scene's treatment" : "Break the beat into scenes";
-  return { ok: true, proposal: { id: crypto.randomUUID(), layer: "expansion", summary: String(input.summary ?? label).trim() || label, ops: [], nodeId: node.id, target, brief: sanitizeBrief(input.brief) } };
-}
-
-// Stage 2–4 alternative content objects ON a node as pickable options (the options/picker channel). The
-// candidates write to book_nodes.proposals; the author commits one in the tree (chooseProposal). Gated by
-// the same live-tree + scope + lock fence as proposeNodeOps — this only stages, it never commits.
-//
-// CREATION SHORTCUT: when `nodeId` is absent/unknown but `kind` and `parentId` are provided, a new node
-// of that kind is created (draft, source=ai) and the options are staged on it immediately — one step.
-// This is used for spine singletons like 'premise' that don't exist yet: the agent skips the separate
-// propose_expansion → author-apply → propose_options cycle and surfaces all alternatives in one turn.
-async function proposeOptions(
-  service: SupabaseClient,
-  bookId: number,
-  scope: Aspect[] | null,
-  input: { nodeId?: string; kind?: string; parentId?: string; note?: string; options?: unknown[] },
-): Promise<{ ok: true; handle: string; count: number } | { ok: false; error: string }> {
-  const { data: rows } = await service.from("book_nodes").select("id, parent_id, kind, level, position, content, authoring").eq("book_id", bookId);
-  const nodes = (rows ?? []) as { id: string; parent_id: string | null; kind: string; level: number; position: number; content: Record<string, unknown> | null; authoring: { locked?: boolean } | null }[];
-  const kinds = scopedKinds(scope);
-  const objects = (Array.isArray(input.options) ? input.options : []).filter((o) => o && typeof o === "object" && !Array.isArray(o)) as Record<string, unknown>[];
-  if (objects.length < 2) return { ok: false, error: "Offer at least 2 distinct option objects (2–4)." };
-  const note = input.note?.trim();
-  const proposals = objects.slice(0, 4).map((content) => ({ id: crypto.randomUUID(), content, ...(note ? { note } : {}), source: "options" }));
-
-  let node = nodes.find((n) => n.id === input.nodeId);
-
-  // ── Creation shortcut: mint a new node for this kind under parentId ──
-  // Used when the premise (or another spine singleton) doesn't exist yet — avoids the two-step
-  // propose_expansion→apply→propose_options cycle by creating + staging options in one server turn.
-  if (!node && input.kind && input.parentId) {
-    const targetKind = input.kind as string;
-    const parentId = input.parentId as string;
-    const parentNode = nodes.find((n) => n.id === parentId);
-    if (!parentNode) return { ok: false, error: `No parent node with id ${parentId}.` };
-    if (!ALL_NODE_KINDS.includes(targetKind)) return { ok: false, error: `Unknown kind "${targetKind}".` };
-    if (kinds && !kinds.has(targetKind)) return { ok: false, error: `Kind "${targetKind}" is not in scope (${scope!.join(", ")}).` };
-    // STRUCTURAL GUARDRAILS — this shortcut writes book_nodes directly, bypassing the client validateOps gate,
-    // so it must enforce the same invariants or it re-creates the nested-seed / duplicate-premise deviation.
-    const want = PARENT_KIND[targetKind as NodeKind];
-    if (want === null) return { ok: false, error: `${targetKind} is the tree root — it can't be created under another node.` };
-    if (parentNode.kind !== want) return { ok: false, error: `${targetKind} must hang off ${want}, not ${parentNode.kind}.` };
-    if (SINGLETON_KINDS.includes(targetKind as NodeKind) && nodes.some((n) => n.kind === targetKind))
-      return { ok: false, error: `A ${targetKind} already exists — only one per book. Edit it (or offer options ON it) instead of creating a second.` };
-    // Existing siblings of this kind — position after the last one (or 0 if none).
-    const siblings = nodes.filter((n) => n.parent_id === parentId && n.kind === targetKind);
-    const position = siblings.length ? Math.max(...siblings.map((n) => n.position)) + 1 : 0;
-    // Mint an n_-prefixed id like every other write path (newId), not a raw UUID — a stray UUID id in the tree
-    // was the fingerprint that this bypass path had written a malformed node.
-    const nodeId = newId();
-    const { error: insErr } = await service.from("book_nodes").insert({
-      id: nodeId,
-      book_id: bookId,
-      parent_id: parentId,
-      kind: targetKind,
-      level: parentNode.level + 1,
-      position,
-      content: {},
-      authoring: { status: "draft", source: "ai" },
-      proposals,
-    });
-    if (insErr) return { ok: false, error: insErr.message };
-    return { ok: true, handle: targetKind, count: proposals.length };
-  }
-
-  if (!node) return { ok: false, error: `No node with id ${input.nodeId}. To create a new node with options, pass kind and parentId instead.` };
-  if (node.authoring?.locked) return { ok: false, error: `Node ${input.nodeId} is LOCKED — unlock it before offering options.` };
-  if (kinds && !kinds.has(node.kind)) return { ok: false, error: `Node ${input.nodeId} is a ${node.kind}, not in scope (${scope!.join(", ")}).` };
-  const { error } = await service.from("book_nodes").update({ proposals }).eq("id", node.id);
-  if (error) return { ok: false, error: error.message };
-  return { ok: true, handle: nodeHandle(node.content), count: proposals.length };
-}
-
-// The thread's prompt in TWO parts (prompt-cache prefix discipline): `instructions` is the byte-stable
-// system prompt (role + mode lines — identical across a run's turns, so the cache prefix survives), and
-// `bookState` is the volatile grounding — the CURRENT DNA tree digest, objective, analysis, ledger —
-// rebuilt every call so ids stay fresh as the author edits. bookState is injected request-time at the END
-// of the latest user message (withBookState), never persisted and never in the system prompt: in auto mode
-// the tree changes after every apply, and carrying it at position 0 invalidated the whole cached prefix
-// (system + entire transcript) on every turn. Each node is a DIGEST — handle/gist + causal spine, full
-// content via read_node (see digestNode).
-async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null, authorAsk = ""): Promise<{ instructions: string; bookState: string; groundingLabels: string[] }> {
-  const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
-  const b = book as { name?: string; brief?: Brief } | null;
-  const { data: rows } = await service
-    .from("book_nodes").select("id, parent_id, kind, level, position, content, authoring, proposals").eq("book_id", bookId);
-  const nodes = (rows ?? []) as DnaNodeRow[];
-  const kinds = scopedKinds(scope); // null = all
-  const totalScenes = nodes.filter((n) => n.kind === "scene").length;
-  const totalBeats = nodes.filter((n) => n.kind === "beat").length;
-
-  const serialize = (n: DnaNodeRow, inScope: boolean, seqIdx?: number): string => {
-    if (!inScope) return `[${n.id}] L${n.level} ${n.kind}: <hidden>`;
-    // Beats and scenes carry their 1-based reading-order number (matching the UI's tree badge + timeline
-    // strip), so the agent names a node by the SAME number the author sees — not one it invents from the
-    // objective's single "Scene N of 80" target pointer (the bug where it called scene 14 "scene 17").
-    const total = n.kind === "scene" ? totalScenes : totalBeats;
-    const num = seqIdx && (n.kind === "scene" || n.kind === "beat") ? ` ${seqIdx}/${total}` : "";
-    let line = `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] L${n.level} ${n.kind}${num}: ${digestNode(n.kind, n.content)}`;
-    // Pending options (the picker channel) — surfaced so you can RECOMMEND which the author should pick.
-    if (Array.isArray(n.proposals) && n.proposals.length) {
-      line += `\n  PENDING OPTIONS (${n.proposals.length} — the author picks one; you may recommend which by its number): ` +
-        JSON.stringify(n.proposals.map((p, i) => ({ option: i + 1, ...p.content })));
-    }
-    return line;
-  };
-
-  // Depth-first, by position — mirrors the client's reading order (novelDna.ts childrenOf/scenesInOrder), so
-  // a beat's scenes list right after it and in draft order. A flat sort by `level` alone (the old behavior)
-  // interleaves every act's beats and every beat's scenes into one global by-level list with no parent
-  // linkage shown, so the agent had no way to tell which beat a scene belonged to — it once rendered a
-  // later beat's scene believing it was next. Out-of-scope nodes still appear (as <hidden>) so ids for
-  // parentId stay available.
-  const byParent = new Map<string | null, DnaNodeRow[]>();
-  for (const n of nodes) {
-    const list = byParent.get(n.parent_id) ?? [];
-    list.push(n);
-    byParent.set(n.parent_id, list);
-  }
-  for (const list of byParent.values()) list.sort((a, b) => a.position - b.position);
-  const visited = new Set<string>();
-  const sorted: DnaNodeRow[] = [];
-  const walk = (n: DnaNodeRow) => {
-    if (visited.has(n.id)) return;
-    visited.add(n.id);
-    sorted.push(n);
-    for (const c of byParent.get(n.id) ?? []) walk(c);
-  };
-  for (const root of byParent.get(null) ?? []) walk(root);
-  // A node whose parent_id doesn't resolve within this book (orphaned/inconsistent data) would otherwise
-  // vanish from the walk above — append any leftovers so the agent never silently loses a node's id.
-  for (const n of nodes) walk(n);
-  // Reading-order numbers for beats and scenes, assigned over the SAME DFS-by-position walk the client's
-  // beatsInOrder/scenesInOrder / the render / the timeline strip use — so "beat 3"/"scene 14" denote the same
-  // node in the digest, the UI, and the book.
-  const beatNo = new Map<string, number>();
-  const sceneNo = new Map<string, number>();
-  for (const n of sorted) {
-    if (n.kind === "beat") beatNo.set(n.id, beatNo.size + 1);
-    else if (n.kind === "scene") sceneNo.set(n.id, sceneNo.size + 1);
-  }
-  const seqOf = (n: DnaNodeRow) => n.kind === "beat" ? beatNo.get(n.id) : n.kind === "scene" ? sceneNo.get(n.id) : undefined;
-  const tree = sorted.map((n) => serialize(n, !kinds || kinds.has(n.kind), seqOf(n))).join("\n");
-
-  // The context tray, HYDRATED: the author attached these nodes to work on, so we inline their FULL content
-  // right here (not a bare pointer) — the agent doesn't need a read_node round-trip for the nodes it was
-  // explicitly told matter. Ids that no longer resolve (a since-deleted node) drop out silently. Prose is
-  // only carried for scene nodes — no other kind holds prose, and it's the bulk of the tokens, so we strip a
-  // stray `prose` key from anything else. This block is rebuilt every turn from the live tree, so it can
-  // never go stale the way the old glued-to-the-message "Focus —" prefix did.
-  const byIdRow = new Map(nodes.map((n) => [n.id, n]));
-  const focusNodes = (attachedIds ?? []).map((id) => byIdRow.get(id)).filter((n): n is DnaNodeRow => !!n);
-  const focus = focusNodes.map((n) => {
-    const content: Record<string, unknown> = { ...(n.content ?? {}) };
-    if (n.kind !== "scene") delete content.prose; // prose only rides for scenes (docs/agent-context-model.md)
-    return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind} “${nodeHandle(n.content)}”:\n${JSON.stringify(content)}`;
-  }).join("\n\n");
-
-  // ── Intent hydration (just-in-time context) ──
-  // Nodes the author's LATEST message explicitly references — by reading-order number ("scene 14",
-  // "beat 3"), by verbatim node id, or by an entity's name — get their FULL plan content inlined below,
-  // exactly like the focus tray but derived from the message instead of a manual attach. This is what
-  // keeps the turn ON the ask: the named target arrives fully grounded (no read_node round-trip), so the
-  // model doesn't reach for the objective/lints as its anchor. Deterministic (regex + the same DFS
-  // numbering the UI shows), capped at 4 nodes, prose omitted (bulky — read_node when the text matters).
-  const mentioned: DnaNodeRow[] = [];
-  const hydrated = new Set<string>(attachedIds ?? []); // the focus tray already inlines these in full
-  const addMention = (n: DnaNodeRow | undefined) => {
-    if (n && !hydrated.has(n.id) && mentioned.length < 4) { hydrated.add(n.id); mentioned.push(n); }
-  };
-  if (authorAsk.trim()) {
-    const ask = authorAsk.slice(0, 2000);
-    const idByNo = (m: Map<string, number>) => new Map([...m].map(([id, no]) => [no, id]));
-    const sceneByNo = idByNo(sceneNo), beatByNo = idByNo(beatNo);
-    for (const m of ask.matchAll(/\b(scene|beat)\s*#?\s*(\d+)\b/gi)) {
-      const id = (m[1].toLowerCase() === "scene" ? sceneByNo : beatByNo).get(Number(m[2]));
-      addMention(id ? byIdRow.get(id) : undefined);
-    }
-    for (const m of ask.matchAll(/\bn_[A-Za-z0-9]+/g)) addMention(byIdRow.get(m[0]));
-    for (const n of sorted) {
-      if (!["character", "location", "world_fact", "thread", "game"].includes(n.kind)) continue;
-      const name = typeof n.content?.name === "string" ? n.content.name.trim() : "";
-      if (name.length < 3) continue;
-      if (new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(ask)) addMention(n);
-    }
-  }
-  // A mentioned node arrives EDIT-READY: content + its POSITION (ancestor path it must honor as
-  // fixed, children an edit stales) + the kind's SCHEMA (appended once below) — the three things
-  // every node edit needs (craft rides separately as a skill brief).
-  const pathOf = (n: DnaNodeRow): string => {
-    const parts: string[] = [];
-    let cur: DnaNodeRow | undefined = n;
-    const walked = new Set<string>();
-    while (cur && !walked.has(cur.id)) {
-      walked.add(cur.id);
-      parts.unshift(cur.id === n.id ? cur.kind : `${cur.kind} “${nodeHandle(cur.content)}”`);
-      cur = cur.parent_id ? byIdRow.get(cur.parent_id) : undefined;
-    }
-    return parts.join(" › ");
-  };
-  const mentionedText = mentioned.map((n) => {
-    const content: Record<string, unknown> = { ...(n.content ?? {}) };
-    const words = (content.prose as { words?: unknown } | undefined)?.words;
-    delete content.prose;
-    const num = seqOf(n) ? ` ${seqOf(n)}/${n.kind === "scene" ? totalScenes : totalBeats}` : "";
-    const proseNote = typeof words === "number" && words > 0 ? ` (has prose, ${words.toLocaleString()}w — read_node for the text)` : "";
-    const kidCounts = new Map<string, number>();
-    for (const k of nodes) if (k.parent_id === n.id) kidCounts.set(k.kind, (kidCounts.get(k.kind) ?? 0) + 1);
-    const kidsNote = kidCounts.size ? ` · children: ${[...kidCounts].map(([k, c]) => `${c} ${k}${c > 1 ? "s" : ""}`).join(", ")} (an edit here STALES them)` : "";
-    return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}${num} “${nodeHandle(n.content)}”${proseNote}\npath: ${pathOf(n)}${kidsNote}\n${JSON.stringify(content)}`;
-  }).join("\n\n") + (mentioned.length ? `\n\n${schemaFor([...new Set(mentioned.map((n) => n.kind))])}` : "");
-
-
-  // LIVE re-derivation (docs/agent-improvement-plan.md P1.2): recompute the guided-flow objective and the
-  // structural backstop from the CURRENT tree, so an auto run's resume — a pure status flip that never
-  // refreshes the message-time snapshot — no longer keeps pointing at "TARGET NODE: scene 14" after scene 14
-  // renders. Same functions the web client runs (currentObjective / analysisText), so the anchor advances on
-  // its own each chain link. The client-computed `analysis`/`objective` params are kept only as a fallback for
-  // the (transient) case where the live tree hasn't loaded. Map DB rows → the engine's DnaNode shape;
-  // authoring.source isn't read by these derivations, so a constant is safe (see novelDna editContent).
-  const liveNodes: DnaNode[] = nodes.map((n) => ({
-    id: n.id, book_id: bookId, parent_id: n.parent_id, level: n.level, kind: n.kind as NodeKind, position: n.position,
-    content: (n.content ?? {}) as NodeContent,
-    authoring: { source: "user", locked: n.authoring?.locked ?? false, status: (n.authoring?.status as AuthoringStatus) ?? "empty" },
-    proposals: n.proposals ?? undefined, chosen: null,
-  }));
-  const liveObjective = currentObjective(liveNodes, { bookSlug: String(bookId) }) || objective;
-  // Skill briefs (the injection channel of agent-skills.ts): playbooks whose triggers match the ask.
-  // When the ask matches NOTHING (a generic "continue" / "what's next"), the objective IS the task
-  // (guided flow), so fall back to matching the objective's text — an objective-driven premise turn
-  // gets premise-craft without the author ever typing the word. Ask matches always win outright:
-  // a concrete ask must not drag in skills for a rung it's steering away from.
-  const askSkills = matchSkills(authorAsk);
-  const skillBriefs = (askSkills.length ? askSkills : matchSkills(liveObjective ?? ""))
-    .map((s) => `### ${s.name}\n${s.body}`).join("\n\n");
-  // Only meaningful once structure exists — mirrors the client's gate (AgentRail), which sends undefined
-  // otherwise. analysisText ignores its settings arg, so we pass {}. Lint thresholds are genre-tuned
-  // from the brief (lintConfigForBrief) so the agent acts on the same strictness the genre calls for.
-  const hasStructure = liveNodes.some((n) => n.kind === "beat" || n.kind === "scene");
-  const liveAnalysis = hasStructure ? analysisText(liveNodes, {}, lintConfigForBrief(b?.brief ?? null)) : (analysis ?? "");
-  // The unified between-scenes view (docs/scene-ledger.md §3.2 consumer 2): the state ENTERING the next scene to
-  // draft — open promises + character positions — rendered by the SAME ledgerText the prose generator reads, so
-  // the agent curates its render brief against the same snapshot the writer will see. Empty until there's a
-  // draftable scene with something to carry; an anchor, not a fence.
-  const draftTarget = hasStructure ? nextDraftTarget(liveNodes) : undefined;
-  const betweenScenes = draftTarget ? ledgerText(liveNodes, draftTarget.scene.id) : "";
-
-  // Each distinct kind of context gets its own XML tag so the model can unambiguously tell where one
-  // section ends and the next begins (Anthropic's prompt-engineering guidance: XML tags reduce
-  // misinterpretation when a prompt mixes instructions, context, and a large structured document).
-  const blocks = [
-    `<book_name>${b?.name ?? ""}</book_name>`,
-    `<brief note="binding voice contract">\n${briefContext(b?.brief ?? null, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}\n</brief>`,
-    // The guided-flow anchor (docs/agent-capabilities.md): the ONE journey rung to drive the author
-    // through next, derived client-side from the tree (lib/dnaJourney.currentObjective). An anchor, not
-    // a fence — and explicitly SUBORDINATE to the author's concrete ask (the note says so, and Task
-    // discipline in the system prompt makes the hierarchy binding): the observed failure was the agent
-    // answering a concrete ask with this block's next step instead.
-    liveObjective?.trim() ? `<current_objective note="the guided-flow anchor — drive this ONLY when the author's message has no concrete ask of its own">\n${liveObjective.trim()}\n</current_objective>` : "",
-    // The structural backstop (pacing / dangling-promise / sagging-run lints). In AUTO mode it's a
-    // standing directive (nobody else will act on it); in interactive mode it's REFERENCE — a per-turn
-    // imperative here made the agent fix lints when the author asked for something else entirely.
-    liveAnalysis?.trim() ? `<story_analysis note="${auto ? "the structural backstop — address any ⚠ flags" : "structural lints, for REFERENCE — act on a ⚠ only when the author asks about problems or what's next"}">\n${liveAnalysis.trim()}\n</story_analysis>` : "",
-    // The same between-scenes snapshot the prose generator sees entering the next scene to draft (scene-ledger
-    // §3.2) — so a render brief you curate honors the open promises + where characters stand. Anchor, not fence.
-    betweenScenes.trim() ? `<between_scenes note="state ENTERING the next scene to draft${draftTarget ? ` (scene ${draftTarget.orderIndex}/${draftTarget.total})` : ""} — the SAME snapshot the prose generator reads; honor open promises and where characters are when you plan or render">\n${betweenScenes.trim()}\n</between_scenes>` : "",
-    // The context tray (docs/agent-context-model.md): the nodes the author attached to work on, hydrated in
-    // full so you have their real content without a read_node. Lead with these unless the author steers
-    // elsewhere — an anchor, not a fence: the whole tree is still below.
-    focus ? `<focus note="the author attached these nodes to work on — their FULL content is inlined here; lead with them">\n${focus}\n</focus>` : "",
-    // Intent hydration (above): the message's named targets, pre-read. Sits beside <focus> — same shape,
-    // derived from the ask instead of a manual attach.
-    mentionedText ? `<mentioned note="nodes the author's latest message references — full plan content inlined (prose omitted; read_node for prose) so you can act on the ask directly">\n${mentionedText}\n</mentioned>` : "",
-    // Skill briefs (agent-skills.ts): the playbooks whose triggers match the ask, pre-injected so the
-    // matched job arrives with its full technique — no read_skill round-trip. Deterministic (regex on
-    // the ask), so a retried link re-derives the identical prompt; read_skill covers missed triggers.
-    skillBriefs ? `<skill_briefs note="playbooks matched to the author's ask — follow these when doing that job">\n${skillBriefs}\n</skill_briefs>` : "",
-    `<dna_tree${kinds ? ` scope="${[...kinds].join(", ")}"` : ""}>\nEdit/add/delete nodes by their real ids below. LOCKED nodes are immutable.${kinds ? " Out-of-scope nodes show as <hidden>." : ""} Beat and scene lines show their reading-order number (e.g. \`beat 3/41\`, \`scene 14/80\`); when you refer to a beat or scene by number, use THAT number — never guess it or reuse the objective's target number for a different node.\n\n${tree || "(no nodes yet)"}\n</dna_tree>`,
-  ].filter(Boolean);
-
-  const scopeLine = scope && scope.length
-    ? `\n\n<scope_note>\nIn scope this conversation: ${scope.join(", ")}. Only propose changes to these aspects.\n</scope_note>`
-    : "";
-  const effortLine = effort === "low"
-    ? "\n\n<fast_mode>\nThe author wants a quick response. If the change is clear from the tree, call propose_node_ops immediately — one sentence of narration, then the proposal. Skip read_node unless prose content is essential. Only pause to ask if the request is genuinely ambiguous.\n</fast_mode>"
-    : "";
-  // Autonomous mode: the author is AWAY. The agent must carry every request to a committed change with no
-  // human gate — it makes the option choices itself and never waits. (The client auto-applies what it stages.)
-  const autoLine = auto
-    ? "\n\n<autonomous_mode>\nThe author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n- BATCH INDEPENDENT CHANGES: when the request decomposes into edits that don't depend on each other (fixing several lint hits across different scenes, touching several unrelated nodes), make them ALL in ONE propose_node_ops call — its ops is an array, capped at roughly 6-8 ops. Split into separate turns ONLY when a later change needs to see an earlier one applied first, OR when there are more than ~6-8 independent fixes — for a lint pass with many scattered hits (echoed phrases across a dozen+ scenes), don't read every implicated scene first to build a complete inventory before proposing anything: fix a handful, propose+apply that batch, then continue with the next handful next turn. Gathering everything up front outgrows the context window and causes a read/re-read loop that never converges. Render ONE scene per turn with propose_prose_render. Changes are APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree/scene. Don't say \"I propose\" or wait for approval; just make the change (or request the render), then continue.\n- READ THEN ACT — don't over-read, and don't read in series. The tree in <book_state> is a DIGEST (handle/gist + causal spine). When changes need nodes' full detail (a beat's whole summary, a character's profile, a scene's prose), issue ALL the read_node/search_nodes calls for them in ONE turn — but only for the node(s) you're about to change. Don't sweep the tree; the digest is enough to decide what to touch.\n- At a GENUINE creative fork — a decision that shapes the story (an ending's direction, killing a character, a structural pivot) — call ask_author anyway, stating the question, your options, and which one you're choosing. In autonomous mode it never parks: the system answers instantly telling you to proceed with your stated choice, and the fork is journaled for the author to review later. Small mechanical choices don't warrant it.\n- Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n- ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish.\n</autonomous_mode>"
-    : "";
-
-  // Eager grounding steps (docs/agent-turn-grounding.md): the skill briefs and focus/mentioned nodes
-  // injected above happen SILENTLY — the model never chose them via a tool call, so nothing was logged and
-  // the author saw nothing but a spinner. Mirror the exact phrasing already used for the explicit
-  // read_skill/read_node tool steps (execTool, below) so pre-injected context reads the same as chosen
-  // context: "Loaded the X playbook.", "Loaded {kind} "{label}" in full." Caller dedups against what's
-  // already logged this turn-cluster (see call site) — an auto run re-injects the SAME skill/nodes turn
-  // after turn while nothing has changed, and re-announcing that is noise, not information.
-  const groundingLabels: string[] = [];
-  for (const s of (askSkills.length ? askSkills : matchSkills(liveObjective ?? ""))) groundingLabels.push(`Loaded the ${s.name} playbook.`);
-  for (const n of [...focusNodes, ...mentioned]) groundingLabels.push(`Loaded ${n.kind} “${nodeHandle(n.content)}” in full.`);
-
-  return { instructions: `${SYSTEM_THREAD}${scopeLine}${effortLine}${autoLine}`, bookState: blocks.join("\n\n"), groundingLabels };
-}

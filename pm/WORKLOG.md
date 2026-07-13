@@ -16,6 +16,11 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-13 — Split book-agent/index.ts into 8 modules `[chore]`
+- **What:** Full file split of the 1974-line edge function into a clean import DAG: `shared.ts` (types/constants/nodeHandle/schema), `prompts.ts`, `tools.ts` (tool schemas), `exec-tools.ts`, `verify.ts`, `proposals.ts`, `context.ts` (threadSystem+digest), `index.ts` (router+advance loop, now 845 lines). Follows the earlier `ackWith`/`rejectAndChain`/`chain` dedup. Pure verbatim block-move (build script sliced ranges — no prompt-string retyping); behavior unchanged. Also removed a stray `/` typo at `advance(...);/` that a concurrent IDE edit left in, breaking compilation.
+- **Files:** `supabase/functions/book-agent/{index,shared,prompts,tools,exec-tools,verify,proposals,context}.ts` (uncommitted). Verified: `deno check` on the entry (whole graph) clean — only the pre-existing `EdgeRuntime`-global noise; every moved symbol defined exactly once.
+- **PM impact:** none (no behavior/scope change).
+
 ## 2026-07-13 — Admin-only raw LLM request peek in AgentRail `[ship]`
 - **What:** User wanted to see the actual request sent to the LLM (right before the "thinking…"
   loader), admin-only, with no added latency. Reused existing infra rather than inventing new
