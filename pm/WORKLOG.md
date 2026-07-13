@@ -16,6 +16,21 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-13 — Diagnosed post-fix dna-expand 502; traced to digest-fold wall-clock, not the auth fix `[wip]`
+- **What:** After the auth fix landed, user retried the render flow and hit a 502 (not 401) plus a burst of `claude exited 1` errors in the shim log. Diagnosed both from `docker logs supabase_edge_runtime_pensive-books`: (1) the `claude exited 1` burst coincided with the user's `/login` ("Remote Control disconnected") disrupting the shim's spawned `claude -p` auth state — transient, self-recovered (shim succeeding again by end of log). (2) The 502 is `dna-expand`'s prepare-mode continuity-digest fold (`FOLD_BUDGET_MS = 100_000`, per-prior-page, via DIGEST_MODEL/qwen) exceeding the LOCAL Docker edge-runtime's wall-clock limit before it can hand off to the off-worker `/api/stream-prose` path — unrelated to today's auth/JSON fixes. Each fold is persisted immediately (`authoring.prose_digest`) so retries warm the cache incrementally (3/7 → 4/7 pages observed) — recommended the user retry a few more times to let book 1250's digest fully warm rather than treating it as a new bug. No code changed this turn; also cleaned up a stray `nohup.out` left from an earlier `nohup node scripts/claude-local-shim.mjs` invocation.
+- **Files/commits:** none (investigation only).
+- **PM impact:** none yet — if the wall-clock ceiling turns out to be a recurring local-dev blocker (not just cold-cache latency), it'd be a follow-up worth a ROADMAP line; flagging here for now, not promoting.
+
+## 2026-07-13 — Restarted claude-local-shim.mjs `[chore]`
+- **What:** Killed and relaunched the local shim process (nohup, backgrounded) after user request; no code changes.
+- **Files/commits:** none (process-only). Pre-existing uncommitted diff (`pm/WORKLOG.md`, deleted `scripts/dna-analyze-1171.mjs`) carried over from before this session, untouched.
+- **PM impact:** none.
+
+## 2026-07-13 — Committed the claude-local + local-dev-auth fixes `[chore]`
+- **What:** Landed the three preceding entries' work (claude-local shim JSON-extraction fix, config.toml verify_jwt gap, 10-function userClient fix) in one commit. Left out `scripts/dna-analyze-1171.mjs` (pre-existing unrelated deletion) and the local-only `doc_*.md` ritual file.
+- **Files/commits:** `b303b27` — "Fix claude-local tool-call parsing and local-dev auth for 10 edge functions".
+- **PM impact:** none.
+
 ## 2026-07-13 — Fix root cause of dna-expand 401: 10 functions hand-rolled the wrong Supabase project `[chore]`
 - **What:** The earlier config.toml `verify_jwt=false` fix (previous entry) got the request PAST the local gateway, but the user retried and still hit 401 — a second, deeper bug. `dna-expand` (and 9 siblings: `dna-chat`, `evaluate-ai-call`, `read-confusion/facts/logline/meters/premise/shape/synopsis`) each hand-built their own user-scoped Supabase client from the raw `Deno.env.get("SUPABASE_URL"/"SUPABASE_ANON_KEY")` — the platform-reserved vars, which are always the LOCAL project when running under `supabase start`. So `auth.getUser()` tried to validate the browser's HOSTED-project session JWT against the LOCAL project's auth server — always fails. `book-agent` already had this right: it uses `_shared/task.ts`'s `userClient()` helper, which resolves through `hostedEnv()` (honoring `LOCAL_DEV_HOSTED_SUPABASE_*` in `supabase/functions/.env`) to the SAME hosted project that minted the token. Switched all 10 functions to that shared helper, removed the now-unused direct `createClient` imports, verified `deno check`/`deno lint` clean (only pre-existing unrelated `EdgeRuntime` ambient-type noise), restarted the local stack. Awaiting the user's live retry to confirm end-to-end.
 - **Files/commits:** `supabase/functions/{dna-expand,dna-chat,evaluate-ai-call,read-confusion,read-facts,read-logline,read-meters,read-premise,read-shape,read-synopsis}/index.ts` (uncommitted).
