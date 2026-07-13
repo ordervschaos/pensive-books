@@ -115,9 +115,14 @@ function toolEnvelopeBlock(tools) {
     "You have access to these tools:",
     schemas,
     "",
-    "Reply with EXACTLY ONE JSON object and nothing else — no markdown fences, no commentary:",
+    "Reply with EXACTLY ONE JSON object and nothing else — no markdown fences, no commentary, no narration, no acknowledgment of what you're about to do:",
     '  {"tool": "<tool name>", "input": {...}}   to call a tool, or',
     '  {"text": "<your answer>"}                  to answer directly without calling a tool.',
+    "",
+    'WRONG: Assistant: I\'ll check the sketch first.\nsearch_nodes({"query": "apple"})',
+    'RIGHT: {"tool": "search_nodes", "input": {"query": "apple"}}',
+    'The conversation history below renders past turns as "Assistant: ..." / "User: ..." lines for',
+    "readability — that is a LOG FORMAT, not a reply template. Do not imitate it.",
   ].join("\n");
 }
 
@@ -174,17 +179,23 @@ function toAnthropicResponse(raw, requestedModel) {
       usage: { input_tokens: null, output_tokens: null },
     };
   }
-  const text = envelope && typeof envelope.text === "string" ? envelope.text : raw;
-  return {
-    id: `msg_local_${stamp}`,
-    type: "message",
-    role: "assistant",
-    model: requestedModel,
-    content: [{ type: "text", text }],
-    stop_reason: "end_turn",
-    stop_sequence: null,
-    usage: { input_tokens: null, output_tokens: null },
-  };
+  if (envelope && typeof envelope.text === "string") {
+    return {
+      id: `msg_local_${stamp}`,
+      type: "message",
+      role: "assistant",
+      model: requestedModel,
+      content: [{ type: "text", text: envelope.text }],
+      stop_reason: "end_turn",
+      stop_sequence: null,
+      usage: { input_tokens: null, output_tokens: null },
+    };
+  }
+  // Neither shape matched — the model narrated instead of emitting the envelope (observed: it mimics
+  // the flattened "Assistant: ..." transcript lines it's shown as history). Fail loud rather than
+  // dumping that narration into the UI as if it were a legitimate reply — the /v1/messages handler's
+  // catch turns this into a normal callLLM error, which the tool loop already knows how to surface.
+  throw new Error(`claude-local: model did not return a valid {tool}/{text} envelope — raw: ${raw.slice(0, 300)}`);
 }
 
 // Spawn recipe lifted from eval-bridge's runClaude (scripts/eval-bridge.mjs:583): stdin ignored so
