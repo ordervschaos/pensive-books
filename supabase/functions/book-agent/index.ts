@@ -397,9 +397,11 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // P2.3 — enforced render→verify (auto only): if the prior turn was an applied prose render, inject a
     // plan-conformance verdict into the transcript before this turn's model call. Best-effort; returns the
     // originals if nothing to verify or on any error, so the loop is never blocked.
-    const { transcript: rawTranscript, steps: baseSteps } = auto
+    const rvResult = auto
       ? await maybeInjectRenderVerify(service, apiKey, model, row)
       : { transcript: row.transcript as unknown[], steps: row.steps };
+    const rawTranscript = rvResult.transcript;
+    let baseSteps = rvResult.steps;
     // Prune stale bulky reads once the transcript is big (see compactTranscript). Persisted below with
     // the turns tick when it changed, so the row shrinks too (Realtime payload, next link's load).
     const baseTranscript = compactTranscript(rawTranscript);
@@ -416,7 +418,12 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // intent hydration inside threadSystem (nodes the message names get their full plan inlined).
     const authorAsk = latestAuthorAsk(baseTranscript);
     // `auto` (autonomous mode: never park, commit own picks) computed above for the turn ceiling.
-    const { instructions, bookState } = await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto, row.context_objective, row.context_attached_ids, authorAsk);
+    const { instructions, bookState, grounding } = await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto, row.context_objective, row.context_attached_ids, authorAsk);
+    // Grounding line (docs/agent-turn-grounding.md): surfaces what this turn's context assembly found
+    // (focus/mentioned counts, objective headline, matched craft brief) BEFORE the model call, so the
+    // author sees the agent is grounded during the wait rather than silence. Folded into the same
+    // pre-call write below — no extra round-trip.
+    if (grounding) baseSteps = [...baseSteps, { t: "read", label: grounding } as AgentStep];
     const tools = threadToolsFor(scope);
     // Count the turn BEFORE the call: a hard worker death mid-call still consumes budget, so a
     // crash-looping run hits MAX_TURNS instead of being revived forever by the watchdog.
@@ -1741,7 +1748,7 @@ async function proposeOptions(
 // the tree changes after every apply, and carrying it at position 0 invalidated the whole cached prefix
 // (system + entire transcript) on every turn. Each node is a DIGEST — handle/gist + causal spine, full
 // content via read_node (see digestNode).
-async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null, authorAsk = ""): Promise<{ instructions: string; bookState: string }> {
+async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null, authorAsk = ""): Promise<{ instructions: string; bookState: string; grounding: string }> {
   const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
   const b = book as { name?: string; brief?: Brief } | null;
   const { data: rows } = await service
@@ -1951,5 +1958,20 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   const autoLine = auto
     ? "\n\n<autonomous_mode>\nThe author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n- BATCH INDEPENDENT CHANGES: when the request decomposes into edits that don't depend on each other (fixing several lint hits across different scenes, touching several unrelated nodes), make them ALL in ONE propose_node_ops call — its ops is an array, capped at roughly 6-8 ops. Split into separate turns ONLY when a later change needs to see an earlier one applied first, OR when there are more than ~6-8 independent fixes — for a lint pass with many scattered hits (echoed phrases across a dozen+ scenes), don't read every implicated scene first to build a complete inventory before proposing anything: fix a handful, propose+apply that batch, then continue with the next handful next turn. Gathering everything up front outgrows the context window and causes a read/re-read loop that never converges. Render ONE scene per turn with propose_prose_render. Changes are APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree/scene. Don't say \"I propose\" or wait for approval; just make the change (or request the render), then continue.\n- READ THEN ACT — don't over-read, and don't read in series. The tree in <book_state> is a DIGEST (handle/gist + causal spine). When changes need nodes' full detail (a beat's whole summary, a character's profile, a scene's prose), issue ALL the read_node/search_nodes calls for them in ONE turn — but only for the node(s) you're about to change. Don't sweep the tree; the digest is enough to decide what to touch.\n- At a GENUINE creative fork — a decision that shapes the story (an ending's direction, killing a character, a structural pivot) — call ask_author anyway, stating the question, your options, and which one you're choosing. In autonomous mode it never parks: the system answers instantly telling you to proceed with your stated choice, and the fork is journaled for the author to review later. Small mechanical choices don't warrant it.\n- Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n- ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish.\n</autonomous_mode>"
     : "";
-  return { instructions: `${SYSTEM_THREAD}${scopeLine}${effortLine}${autoLine}`, bookState: blocks.join("\n\n") };
+
+  // Grounding line (docs/agent-turn-grounding.md): a one-line summary of what THIS turn's context assembly
+  // found, written to `steps` as a 'read' activity line before the LLM call — so the author sees the agent
+  // is grounded (which nodes it's anchored on, what rung it's driving, which craft brief loaded) during the
+  // possibly-long wait for the model's first token, not just silence. Built from values already computed
+  // above; always emitted when non-empty (no turn-to-turn dedup — a repeated line during a long auto run is
+  // itself a useful "still on track" signal, not noise).
+  const headline = liveObjective?.split("\n").find((l) => l.startsWith("▸"))?.replace(/^▸\s*/, "").trim();
+  const grounding = [
+    focusNodes.length ? `${focusNodes.length} in focus` : "",
+    mentioned.length ? `${mentioned.length} mentioned` : "",
+    headline ? `▸ ${headline}` : "",
+    askSkills.length ? `brief: ${askSkills.map((s) => s.name).join(", ")}` : "",
+  ].filter(Boolean).join(" · ");
+
+  return { instructions: `${SYSTEM_THREAD}${scopeLine}${effortLine}${autoLine}`, bookState: blocks.join("\n\n"), grounding };
 }

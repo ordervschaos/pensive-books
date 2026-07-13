@@ -1,5 +1,5 @@
 import { type RefObject } from "react";
-import { ArrowUp, Loader2, Slash, Square, X } from "lucide-react";
+import { ArrowUp, Loader2, Square, X } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import type { AgentCommand } from "@/features/dna/lib/agentCommands";
 
@@ -89,11 +89,6 @@ export function Composer({
             : busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
         </button>
       </div>
-      {draft === "" && !active && (
-        <p className="mt-1.5 inline-flex items-center gap-1 pv-mono text-[9.5px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">
-          <Slash className="h-2.5 w-2.5" /> for commands
-        </p>
-      )}
     </div>
   );
 }

@@ -16,6 +16,35 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-13 — Agent turn grounding line `[ship]`
+- **What:** The rail showed only a generic "thinking…" spinner during a turn's model call (up to
+  ~100s). `threadSystem()` (book-agent/index.ts) already computes everything needed for a status
+  line as a byproduct of context assembly — it now also returns `grounding` (focus/mentioned counts,
+  objective headline, matched skill brief), written as a `{t:"read"}` step folded into the existing
+  pre-call `turns` update (no extra DB round-trip). Client needs no changes — `StepBubble` already
+  renders `read` steps as a muted activity line. Always emitted, no turn-to-turn dedup.
+- **Files/commits:** `supabase/functions/book-agent/index.ts` (threadSystem + call site), new
+  `docs/agent-turn-grounding.md`. Deployed to prod (`supabase functions deploy book-agent`).
+- **PM impact:** addendum on the AgentRail row in `pm/STATE.md`.
+
+## 2026-07-13 — Composer: drop the "/ for commands" idle hint `[chore]`
+- **What:** Removed the small "/ for commands" hint line (and its now-unused `Slash` icon import)
+  that showed under the composer when idle and empty. Editorial tweak, no behavior change to the
+  slash-command menu itself.
+- **Files/commits:** `apps/web/src/features/dna/components/agentRail/Composer.tsx` — uncommitted.
+- **PM impact:** none.
+
+## 2026-07-13 — DNA architecture challenge brief `[chore]`
+- **What:** wrote `docs/dna-architecture-challenge-brief.md` — a red-team briefing doc (system-as-built
+  first, our own self-critique last, to avoid anchoring) meant to be handed to an independent/stronger
+  model to challenge the DNA architecture. Poses 6 pointed open questions (is structure the real
+  bottleneck vs. prose craft, is tree-as-truth earning its complexity, cache-hostile agent context,
+  auto-accept convergence, modal-story ceiling, single load-bearing assumption).
+- **Files/commits:** `docs/dna-architecture-challenge-brief.md` (new, uncommitted).
+- **PM impact:** none — a review artifact, not a shipped change. Worth reading before/alongside the
+  Now-1 "re-exercise the live full-book build" item, since its own §6 Q1 questions whether that item is
+  attacking the real bottleneck.
+
 ## 2026-07-13 — AgentRail split into subcomponents `[chore]`
 - **What:** Pure readability refactor, no behavior change. AgentRail.tsx (896 lines) shrunk to a 431-line
   orchestrator; header controls, composer, and the step/proposal/session display pieces moved into a new
