@@ -54,11 +54,12 @@ interface RunRow {
   context_attached_ids: string[] | null; // the context tray: node ids the author attached as anchors
   context_effort: "low" | "high" | null; // null = high (default)
   context_auto: boolean | null; // auto-accept mode: run autonomously, never park on ask_author
+  context_follow_objective: boolean | null; // true only when this arc was started by the explicit "Next" nudge — gates the objective-driven skill fallback
   turns: number;
   cancel_requested: boolean;
   title: string | null; // short label generated from the chat's first message (history rail); null = not yet named
 }
-const ROW_COLS = "id, book_id, created_by, kind, status, transcript, steps, pending, proposals, context_analysis, context_objective, context_attached_ids, context_effort, context_auto, turns, cancel_requested, title";
+const ROW_COLS = "id, book_id, created_by, kind, status, transcript, steps, pending, proposals, context_analysis, context_objective, context_attached_ids, context_effort, context_auto, context_follow_objective, turns, cancel_requested, title";
 
 const ALL_NODE_KINDS = ["seed", "premise", "pillar", "act", "beat", "scene", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "meter", "voice_profile"];
 

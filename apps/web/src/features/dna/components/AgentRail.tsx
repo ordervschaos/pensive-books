@@ -203,7 +203,12 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
   }, [steps, optimistic]);
   useEffect(() => { if (optimistic != null) scrollToBottom(false); }, [optimistic, scrollToBottom]);
 
-  const send = async (text: string) => {
+  // `isNextStep` must be true ONLY for the explicit "Next" nudge click below — it's the signal that lets
+  // the server treat the guided-flow objective as the actual ask (and so use it to pick a skill brief). A
+  // free-typed composer message must NOT carry that signal, even though `objective` still rides along for
+  // the agent's own orientation — otherwise an unrelated typed question that happens to miss the skill
+  // triggers silently drags in whatever playbook the current rung matches.
+  const send = async (text: string, opts: { isNextStep?: boolean } = {}) => {
     const t = text.trim();
     if (!t || busy || active) return;
     setBusy(true);
@@ -213,7 +218,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
     // echo matches the stored 'user' step and clears cleanly.
     setOptimistic(t);
     try {
-      await sendAgentMessage(bookId, t, analysis, effort, auto, objective, attachedLiveIds);
+      await sendAgentMessage(bookId, t, analysis, effort, auto, objective, attachedLiveIds, opts.isNextStep);
       refetch();
     } catch (e) {
       setOptimistic(null);
@@ -359,7 +364,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
               no error. So it reads as "here's what's next", not a pinned CTA. One click hands the step to
               the agent (the objective itself already rides every message's context). */}
           {!active && !optimistic && proposals.length === 0 && row?.status !== "error" && objectiveHeadline && (
-            <button type="button" onClick={() => void send(nextStepMessage)} disabled={busy}
+            <button type="button" onClick={() => void send(nextStepMessage, { isNextStep: true })} disabled={busy}
               title="Let the agent lead you through this step"
               className="flex w-full items-center gap-2.5 rounded-2xl border border-dashed border-[hsl(var(--pv-accent))]/35 bg-[hsl(var(--pv-accent))]/[0.05] px-3.5 py-2.5 text-left transition-colors hover:border-[hsl(var(--pv-accent))]/60 hover:bg-[hsl(var(--pv-accent))]/[0.08] disabled:opacity-50">
               <Wand2 className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />

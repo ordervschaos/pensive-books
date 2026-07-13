@@ -110,7 +110,7 @@ async function advance(service: SupabaseClient, runId: number) {
     // intent hydration inside threadSystem (nodes the message names get their full plan inlined).
     const authorAsk = latestAuthorAsk(baseTranscript);
     // `auto` (autonomous mode: never park, commit own picks) computed above for the turn ceiling.
-    const { instructions, bookState, groundingLabels } = await threadSystem(service, row.book_id, row.context_analysis, effort, auto, row.context_objective, row.context_attached_ids, authorAsk);
+    const { instructions, bookState, groundingLabels } = await threadSystem(service, row.book_id, row.context_analysis, effort, auto, row.context_objective, row.context_attached_ids, authorAsk, !!row.context_follow_objective);
     // Grounding steps (docs/agent-turn-grounding.md): surface what got silently pre-loaded this turn
     // (skill briefs, focus/mentioned node content) BEFORE the model call, so the author sees concrete
     // activity during the wait instead of a bare spinner. Folded into the same pre-call write below — no

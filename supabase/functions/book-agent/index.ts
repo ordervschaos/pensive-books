@@ -30,7 +30,7 @@ Deno.serve(async (req: Request) => {
   try {
     const body = (await req.json().catch(() => ({}))) as {
       bookId?: number; runId?: number; answer?: string; chain?: boolean; autoContinue?: boolean;
-      message?: string; analysis?: string; effort?: "low" | "high"; auto?: boolean; objective?: string; attachedIds?: string[];
+      message?: string; analysis?: string; effort?: "low" | "high"; auto?: boolean; objective?: string; attachedIds?: string[]; isNextStep?: boolean;
     };
 
     // ── Continue call (self/watchdog): advance one model turn ──
@@ -124,6 +124,11 @@ Deno.serve(async (req: Request) => {
       // Auto-accept: run autonomously — the agent commits its own picks and never parks on ask_author; the
       // client auto-applies the proposals it stages. Carried on the run so every chain link sees it.
       const auto: boolean = body.auto === true;
+      // True only when this message IS the explicit "Next" nudge — gates whether the objective is allowed
+      // to drive skill-brief selection downstream (see agent-skills.ts matchSkills). A free-typed message
+      // that happens to miss the trigger regexes must not silently fall back to whatever the CURRENT
+      // objective matches; that's noise from an ask the author never made.
+      const isNextStep: boolean = body.isNextStep === true;
 
       const { data: existing } = await service
         .from("book_agent_runs").select(ROW_COLS).eq("book_id", tBookId).eq("kind", "thread").maybeSingle();
@@ -146,6 +151,7 @@ Deno.serve(async (req: Request) => {
             context_attached_ids: attachedIds,
             context_effort: effort,
             context_auto: auto,
+            context_follow_objective: isNextStep,
             transcript: [{ role: "user", content: [{ type: "text", text: message }] }],
             steps: [{ t: "user", label: message }],
           })
@@ -162,7 +168,7 @@ Deno.serve(async (req: Request) => {
       const transcript = [...thread.transcript, { role: "user", content: [{ type: "text", text: message }] }];
       const steps = [...thread.steps, { t: "user", label: message } as AgentStep];
       const { error } = await service.from("book_agent_runs")
-        .update({ transcript, steps, status: "running", turns: 0, pending: null, error: null, cancel_requested: false, context_analysis: analysis, context_objective: objective, context_attached_ids: attachedIds, context_effort: effort, context_auto: auto })
+        .update({ transcript, steps, status: "running", turns: 0, pending: null, error: null, cancel_requested: false, context_analysis: analysis, context_objective: objective, context_attached_ids: attachedIds, context_effort: effort, context_auto: auto, context_follow_objective: isNextStep })
         .eq("id", thread.id);
       if (error) throw new Error(error.message);
       chain(thread.id);

@@ -83,7 +83,7 @@ function digestNode(kind: string, content: Record<string, unknown> | null | unde
 // the tree changes after every apply, and carrying it at position 0 invalidated the whole cached prefix
 // (system + entire transcript) on every turn. Each node is a DIGEST — handle/gist + causal spine, full
 // content via read_node (see digestNode).
-async function threadSystem(service: SupabaseClient, bookId: number, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null, authorAsk = ""): Promise<{ instructions: string; bookState: string; groundingLabels: string[] }> {
+async function threadSystem(service: SupabaseClient, bookId: number, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null, authorAsk = "", followObjective = false): Promise<{ instructions: string; bookState: string; groundingLabels: string[] }> {
   const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
   const b = book as { name?: string; brief?: Brief } | null;
   const { data: rows } = await service
@@ -227,13 +227,14 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
   }));
   const liveObjective = currentObjective(liveNodes, { bookSlug: String(bookId) }) || objective;
   // Skill briefs (the injection channel of agent-skills.ts): playbooks whose triggers match the ask.
-  // When the ask matches NOTHING (a generic "continue" / "what's next"), the objective IS the task
-  // (guided flow), so fall back to matching the objective's text — an objective-driven premise turn
-  // gets premise-craft without the author ever typing the word. Ask matches always win outright:
-  // a concrete ask must not drag in skills for a rung it's steering away from.
+  // Ask matches always win outright: a concrete ask must not drag in skills for a rung it's steering
+  // away from. Only fall back to matching the objective's text — an objective-driven premise turn gets
+  // premise-craft without the author ever typing the word — when this arc was EXPLICITLY started by the
+  // "Next" nudge (followObjective), not merely because the ask happened to miss the trigger vocabulary.
+  // A free-typed message that hits no trigger gets no skill brief at all; read_skill still covers it.
   const askSkills = matchSkills(authorAsk);
-  const skillBriefs = (askSkills.length ? askSkills : matchSkills(liveObjective ?? ""))
-    .map((s) => `### ${s.name}\n${s.body}`).join("\n\n");
+  const matchedSkills = askSkills.length ? askSkills : followObjective ? matchSkills(liveObjective ?? "") : [];
+  const skillBriefs = matchedSkills.map((s) => `### ${s.name}\n${s.body}`).join("\n\n");
   // Only meaningful once structure exists — mirrors the client's gate (AgentRail), which sends undefined
   // otherwise. analysisText ignores its settings arg, so we pass {}. Lint thresholds are genre-tuned
   // from the brief (lintConfigForBrief) so the agent acts on the same strictness the genre calls for.
@@ -296,7 +297,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
   // already logged this turn-cluster (see call site) — an auto run re-injects the SAME skill/nodes turn
   // after turn while nothing has changed, and re-announcing that is noise, not information.
   const groundingLabels: string[] = [];
-  for (const s of (askSkills.length ? askSkills : matchSkills(liveObjective ?? ""))) groundingLabels.push(`Loaded the ${s.name} playbook.`);
+  for (const s of matchedSkills) groundingLabels.push(`Loaded the ${s.name} playbook.`);
   for (const n of [...focusNodes, ...mentioned]) groundingLabels.push(`Loaded ${n.kind} “${nodeHandle(n.content)}” in full.`);
 
   return { instructions: `${SYSTEM_THREAD}${effortLine}${autoLine}`, bookState: blocks.join("\n\n"), groundingLabels };
