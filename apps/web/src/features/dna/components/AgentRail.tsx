@@ -21,6 +21,8 @@ import { analysisText, byId, type BookSettings, type DnaNode, type NodeKind } fr
 import { currentObjective, currentObjectiveKey, nextDraftTarget } from "@/features/dna/lib/dnaJourney";
 import { useChatScroll } from "@/components/book/shared/useChatScroll";
 import { useAutoAccept } from "@/features/dna/hooks/useAutoAccept";
+import { useAdmin } from "@/hooks/use-admin";
+import { useLatestAiCall } from "@/features/dna/hooks/useLatestAiCall";
 import { ActionLink, Eyebrow, Panel, RunError } from "@/components/book/shared/studioUi";
 import { snapshotTree } from "@/features/dna/lib/treeVersions";
 import { briefIdea, type Brief } from "@/lib/brief";
@@ -30,6 +32,7 @@ import { StepBubble } from "./agentRail/StepBubble";
 import { ProposalCard } from "./agentRail/ProposalCard";
 import { SessionHistory } from "./agentRail/SessionHistory";
 import { Composer } from "./agentRail/Composer";
+import { AdminPromptPeek } from "./agentRail/AdminPromptPeek";
 
 export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedIds = [], onDetach, onClose }: {
   bookId: number; nodes: DnaNode[]; settings: BookSettings; bookSlug?: string; // bookSlug feeds the reader URL into the final render/publish hand-off
@@ -132,6 +135,12 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
   const running = row?.status === "running";
   const awaiting = row?.status === "awaiting_input";
   const active = running || awaiting;
+
+  // Admin-only debug peek at the raw LLM request (docs/agent-turn-grounding.md) — the live ai_calls row
+  // for this run, shown right above the "thinking…" line while a turn is in flight. Never fetched for
+  // non-admins (the hook no-ops when disabled), so this costs nothing for the common case.
+  const { isAdmin } = useAdmin();
+  const liveCall = useLatestAiCall("book_agent_runs", row?.id, isAdmin && running);
 
   const [draft, setDraft] = useState("");
   const [answer, setAnswer] = useState("");
@@ -378,6 +387,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
               </div>
             </div>
           )}
+          {isAdmin && running && liveCall && <AdminPromptPeek call={liveCall} />}
           {running && !stale && (
             <div className="flex items-center gap-2 pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-faint))]">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> thinking…

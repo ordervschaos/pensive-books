@@ -16,6 +16,26 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-13 — Admin-only raw LLM request peek in AgentRail `[ship]`
+- **What:** User wanted to see the actual request sent to the LLM (right before the "thinking…"
+  loader), admin-only, with no added latency. Reused existing infra rather than inventing new
+  storage: `ai_calls` already logs the full `system`/`input` for every call (including a 'running'
+  row inserted before the network call even starts) and is already Realtime-published
+  (20260713100000_ai_calls_realtime). New `useLatestAiCall` hook scopes that to one `task_id`
+  (Realtime event as signal, refetch one row — same discipline as `admin/AiCalls.tsx`'s
+  heavy-columns-on-demand pattern, so cost is one small query per turn, only for admins, never for
+  everyone else). New `AdminPromptPeek` component: collapsed one-liner (model/tokens), expands to
+  full system+messages. Gated on the existing `useAdmin()` hook + `running`.
+- **Files/commits:** new `apps/web/src/features/dna/hooks/useLatestAiCall.ts`,
+  `apps/web/src/features/dna/components/agentRail/AdminPromptPeek.tsx`; wired into
+  `AgentRail.tsx`. No backend/RLS changes needed. `vite build` clean. Uncommitted.
+- **PM impact:** none — admin debug tooling, not a product surface.
+
+## 2026-07-13 — book-agent advance() dispatch readability refactor `[chore]`
+- **What:** Extracted two helpers in the agent chain-link dispatch — `ackWith()` (terminal-call/sibling tool_result builder, was inlined 3×) and `rejectAndChain()` (the identical toolResults→push→update→chain block ending all 4 `propose_*` reject paths). Pure dedup, behavior byte-identical; net −11 lines, flatter dispatch. `chain()` + `groundingLabels` already landed via a parallel session's commit (a5e1941).
+- **Files/commits:** `supabase/functions/book-agent/index.ts` (uncommitted). Verified: `deno check` clean (only the pre-existing `EdgeRuntime`-global noise, 28→6).
+- **PM impact:** none (no behavior/scope change).
+
 ## 2026-07-13 — Fix grounding-line repetition (live-reported bug) `[ship]`
 - **What:** User saw the same-day grounding line (turn-grounding ship, above/earlier) repeat 10x
   identically in the rail ("Step 5/5 · Prose — Scenes — Scene 8 of 10..."). Root cause: the line
