@@ -16,10 +16,10 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
-## 2026-07-13 — Tree NodeGroup: shaded band + top rule to read as a subtree container `[chore]`
-- **What:** Small visual tweak to the DNA tree's `NodeGroup` header (found uncommitted, not part of this session's own work — catalogued here so it isn't lost): added a shaded background + top border and bumped vertical padding, so a node group reads as a container of real child nodes rather than just another field row.
-- **Files/commits:** `apps/web/src/features/dna/components/tree/Subtree.tsx`. Uncommitted.
-- **PM impact:** none — visual polish only.
+## 2026-07-13 — Reverted the NodeGroup shaded-band tweak `[chore]`
+- **What:** User asked to revert the prior "shaded band + top rule" styling on the DNA tree's `NodeGroup` header (bb44a4a). Reverted via `git revert`.
+- **Files/commits:** `apps/web/src/features/dna/components/tree/Subtree.tsx`.
+- **PM impact:** none — visual polish only, now undone.
 
 ## 2026-07-13 — Made eval-bridge redundant for the web app; killed the dead dna-chat client `[chore]`
 - **What:** Investigated whether `scripts/eval-bridge.mjs` (the browser's dev-only Claude-Code-as-backend bypass) could be retired in favor of the claude-local shim, since the shim rides the REAL edge functions instead of a hand-maintained reimplementation. Built it: `apps/web/src/lib/localFn.ts` (`invokeFn`, new) is a drop-in for `supabase.functions.invoke` that redirects to a locally-served fn (`VITE_LOCAL_FUNCTIONS_URL`) when set, mirroring book-agent's existing `VITE_LOCAL_BOOK_AGENT_URL` escape hatch. Paired with local-only `claude-local` defaults added to `getActiveModels()` (model-config.ts) and a new `getJudgeModel()` (judge.ts) — both gated on `CLAUDE_LOCAL_URL` being present in the worker's OWN env (never true when deployed), so prod's shared `admin_settings.ai_model_tier` is never touched. Migrated 9 call sites off the `if (BRIDGE)` branch onto `invokeFn`: `loglineRead`, `confusionRead`, `shapeRead`, `meterRead`, `premiseRead`, `synopsisRead`, `factLedger`, `dnaExpand`, `AiCalls.tsx`'s judge button. Deleted `apps/web/src/lib/bridge.ts` (zero remaining importers). Found genuine dead code along the way: `dnaChat.ts`'s `sendDnaMessage` + the whole `dna_chats` session wrapper (`applyDnaProposal`/`clearDnaProposal`/`startNewDnaSession`/`resumeDnaSession`) had zero callers — the per-stage reviser was superseded by AgentRail; deleted, keeping the file's still-live `applyNodeOps`/`validateOps`/`describeOps` machinery. `scripts/eval-bridge.mjs` itself was NOT deleted — it's still a load-bearing utility module for 6 standalone analysis scripts (dna-causality-probe.mjs etc.) and prose-context-experiment.mjs's HTTP harness; only its header + FEATURE.md/DnaArchitecturePage.tsx docs were updated to stop claiming it's the web app's route.
