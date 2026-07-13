@@ -16,6 +16,15 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-13 — AgentRail split into subcomponents `[chore]`
+- **What:** Pure readability refactor, no behavior change. AgentRail.tsx (896 lines) shrunk to a 431-line
+  orchestrator; header controls, composer, and the step/proposal/session display pieces moved into a new
+  `agentRail/` folder (AgentRailControls, Composer, DiffRows, ProposalCard, ResolvedCard, SessionHistory,
+  StepBubble, journeyContent, opSummary). Typecheck + eslint clean; only importer (DnaTreePage) unaffected.
+- **Files/commits:** `apps/web/src/features/dna/components/AgentRail.tsx` (rewritten), new
+  `apps/web/src/features/dna/components/agentRail/*` (9 files) — uncommitted.
+- **PM impact:** none.
+
 ## 2026-07-12 — DNA tree: ghost-preview the default skeleton before anything is generated `[ship]`
 - **What:** User wanted the tree to show the book's shape (3 acts, minimum cast, etc.) before any
   generation — a scaffold-first view instead of the current one-rung-unlocks-the-next journey. Investigation
