@@ -626,7 +626,7 @@ Deno.serve(async (req: Request) => {
 
     const ctx = [
       `BOOK: ${book?.name ?? ""}`,
-      `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
+      `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, vision: true, none: "(no brief)", empty: "(empty)" })}`,
       mandate ? `MANDATE — NON-NEGOTIABLE:\n${mandate}` : "",
       voiceBlock,
       "STORY SO FAR (the ladder above this node; LOCKED items are immutable):",
@@ -688,7 +688,7 @@ Revise internally until the verdict would be ACCEPT (>=32/40, no criterion below
 Output JSON ONLY, no prose, no fences:
 { "children": [ { "dramatic_question": "<DRAMATIC_QUESTION sentence>", "shape": { "name": "<2-4 word emotional trajectory>", "movements": ["<movement 1>", "<movement 2>", "<movement 3>", "..."], "ending_feel": "up|down|bittersweet|ambivalent" } } ] }`;
       const data = await callLLM({ model, max_tokens: 1800, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content: `BRIEF:\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}\n\nLOGLINE:\n${logline}\n\nDerive the premise. JSON only.` }] }, meta, { signal: req.signal });
+        messages: [{ role: "user", content: `BRIEF:\n${briefContext(brief, { scope: "full", success: true, vision: true, none: "(no brief)", empty: "(empty)" })}\n\nLOGLINE:\n${logline}\n\nDerive the premise. JSON only.` }] }, meta, { signal: req.signal });
       const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
       const first = Array.isArray(parsed.children) ? parsed.children[0] : parsed;
       const shape = first?.shape ?? {};
@@ -812,7 +812,7 @@ CRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md
         : "";
       const beatCtx = [
         `BOOK: ${book?.name ?? ""}`,
-        `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
+        `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, vision: true, none: "(no brief)", empty: "(empty)" })}`,
         mandate ? `MANDATE — NON-NEGOTIABLE:\n${mandate}` : "",
         "STORY SO FAR (the ladder above this node; LOCKED items are immutable):",
         ...chain.map((a) => `[${a.kind}${a.authoring?.locked ? " · LOCKED" : ""}] ${JSON.stringify(a.content)}`),
@@ -1041,21 +1041,23 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
         meterNodes.length ? `Meters already declared (do NOT re-emit these axes):\n${meterNodes.map((m) => `- ${mName(m)}`).join("\n")}` : "",
         vp?.constraints?.length ? `Voice constraints already set (do NOT repeat or contradict):\n${vp.constraints.map((c) => `- ${c}`).join("\n")}` : "",
       ].filter(Boolean).join("\n\n");
-      const system = `You are a story architect COMPILING THE BRIEF into the book's derived contract — the concrete promises its genre, audience, tone, and content type make to the reader. Derive ONLY from the BRIEF and MANDATE (the story-so-far is orientation, not a source of new plot); phrase everything for THIS book. Skip anything the existing registry already covers — empty arrays are fine. Three deliverables:
-1. TENTPOLES — the 3–6 OBLIGATORY scenes/moments this genre owes the reader (e.g. romance: the meet, the dark moment, the grand gesture; thriller: the reveal, the final confrontation). Give each a short NAME (2-4 words, e.g. "the grand gesture") and a one-line GUIDANCE: the emotional/scene quality it must deliver for THIS book — a feel or turn, not a script line to quote back.
-2. METERS — the 1–3 numeric axes the brief demands (a comedy brief → a comedy meter; the content type's heat → a heat meter; most genres → a tension meter). Each has poles (what low/high FEEL like on the page), a 0–100 scale, and a TARGET curve: 3–7 sparse keyframes { at: 0..1 position through the book, value: 0..100 } encoding the genre's expected shape (e.g. thriller tension: a sawtooth rising to ~90 near the climax, then release; romance heat: slow build with a spike at the midpoint turn).
+      const system = `You are a story architect COMPILING THE BRIEF into the book's derived contract — the concrete promises its genre, audience, tone, and content type make to the reader. Derive ONLY from the BRIEF, the MANDATE, and the VISION (the author's own captured intent — when the vision speaks, it OUTRANKS genre convention; the story-so-far is orientation, not a source of new plot); phrase everything for THIS book. Skip anything the existing registry already covers — empty arrays are fine. Three deliverables:
+1. TENTPOLES — from TWO sources: the 3–6 OBLIGATORY scenes/moments this genre owes the reader (e.g. romance: the meet, the dark moment, the grand gesture; thriller: the reveal, the final confrontation), AND every concrete moment the vision's plot points promise — a vision promise is a tentpole even if the genre doesn't demand it; mark each tentpole's source: "genre" or "vision". Give each a short NAME (2-4 words, e.g. "the grand gesture") and a one-line GUIDANCE: the emotional/scene quality it must deliver for THIS book — a feel or turn, not a script line to quote back. For vision tentpoles keep the author's own framing.
+2. METERS — the 2–5 numeric axes the brief AND vision jointly demand (a comedy brief → a comedy meter; the content type's heat → a heat meter; most genres → a tension meter; a vision built on secrets → a mystery meter). Each has poles (what low/high FEEL like on the page), a 0–100 scale, and a TARGET curve: 3–7 sparse keyframes { at: 0..1 position through the book, value: 0..100 } encoding the expected shape (e.g. thriller tension: a sawtooth rising to ~90 near the climax, then release; romance heat: slow build with a spike at the midpoint turn). Where the vision states a pacing intent ("slow burn", "one brutal midpoint scene", "keeps it light until the end"), shape that meter's keyframes to encode it.
 3. VOICE_CONSTRAINTS — 2–5 short imperative register bounds for THIS audience: vocabulary ceiling/floor, content phrasing limits, sentence-complexity guidance (e.g. "YA: no graphic gore; keep slang timeless, not dated").
-Output JSON ONLY: { "tentpoles": [ { "name": "...", "summary": "..." } ], "meters": [ { "name": "...", "kind": "comedy"|"heat"|"tension"|"affect"|"value"|"custom", "poles": { "low": "...", "high": "..." }, "scale": { "min": 0, "max": 100 }, "target": [ { "at": 0.0, "value": 10 } ] } ], "voice_constraints": [ "..." ] }`;
+Output JSON ONLY: { "tentpoles": [ { "name": "...", "summary": "...", "source": "genre"|"vision" } ], "meters": [ { "name": "...", "kind": "comedy"|"heat"|"tension"|"mystery"|"violence"|"levity"|"affect"|"value"|"custom", "poles": { "low": "...", "high": "..." }, "scale": { "min": 0, "max": 100 }, "target": [ { "at": 0.0, "value": 10 } ] } ], "voice_constraints": [ "..." ] }`;
       const data = await callLLM({ model, max_tokens: 3000, output_config: { effort: "medium" }, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}${existingBlock ? `\n\nEXISTING REGISTRY:\n${existingBlock}` : ""}\n\nCompile the brief's contract. JSON only.` }] }, meta, { signal: AbortSignal.any([req.signal, AbortSignal.timeout(140_000)]) });
       const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
       const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
-      const METER_KINDS = new Set(["value", "game_score", "affect", "relationship", "heat", "comedy", "tension", "custom"]);
+      const METER_KINDS = new Set(["value", "game_score", "affect", "relationship", "heat", "comedy", "tension", "mystery", "violence", "levity", "custom"]);
       const outTentpoles = (Array.isArray(parsed.tentpoles) ? parsed.tentpoles as Record<string, unknown>[] : [])
         .map((t) => {
           const summary = String(t?.summary ?? "").trim();
           const name = String(t?.name ?? "").trim() || summary.split(/\s+/).slice(0, 6).join(" ");
-          return { name, summary };
+          // Provenance (docs/vision-to-structure.md D2): which contract source promised this moment.
+          const source = t?.source === "vision" ? "vision" : "genre";
+          return { name, summary, source };
         }).filter((t) => t.summary);
       const outMeters = (Array.isArray(parsed.meters) ? parsed.meters as Record<string, unknown>[] : [])
         .map((m) => {
@@ -1091,7 +1093,7 @@ Output JSON ONLY: { "tentpoles": [ { "name": "...", "summary": "..." } ], "meter
     const slots = (config.slots ?? {}) as SlotConfig;
     const slottedCtx = [
       `BOOK: ${book?.name ?? ""}`,
-      `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}`,
+      `BRIEF (binding):\n${briefContext(brief, { scope: "full", success: true, vision: true, none: "(no brief)", empty: "(empty)" })}`,
       mandate ? `MANDATE — NON-NEGOTIABLE:\n${mandate}` : "",
       slots.voice ? voiceBlock : "",
       "STORY SO FAR (the ladder above this node; LOCKED items are immutable):",

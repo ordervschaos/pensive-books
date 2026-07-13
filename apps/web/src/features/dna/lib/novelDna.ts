@@ -203,7 +203,7 @@ export interface SceneContent {
 // tag = the physical/visual tag (a character-appearance descriptor).
 export interface CharacterContent { name?: string; role?: "protagonist" | "antagonist" | "ally" | "love_interest" | "minor"; want?: string; need?: string; wound?: string; lie?: string; truth?: string; idiolect?: string; tag?: string }
 export interface RelationshipContent { a?: string; b?: string; bond?: string; charge?: string }
-export interface TentpoleContent { name?: string; summary?: string }
+export interface TentpoleContent { name?: string; summary?: string; source?: "genre" | "vision" }
 // name = a short handle (so beats/scenes can reference the rule); mechanism = the OPERABLE rule — what it
 // enables or forbids, with inputs→outputs — not just atmosphere. The climax's win must fire a mechanism.
 export interface WorldFactContent { name?: string; rule?: string; mechanism?: string; category?: string }
@@ -236,7 +236,7 @@ export interface GameContent {
 // meter (docs/novel-dna-meters.md): one named bounded axis (comedy/heat/freedom/game-score). Defined once on
 // the pillar; beats/scenes carry numeric `readings` on it. `target` is the planned curve generation aims at;
 // `owner` (optional) ties an owned meter to a character/game/relationship (e.g. Mara's hope, the contract's score).
-export type MeterKind = "value" | "game_score" | "affect" | "relationship" | "heat" | "comedy" | "tension" | "custom";
+export type MeterKind = "value" | "game_score" | "affect" | "relationship" | "heat" | "comedy" | "tension" | "mystery" | "violence" | "levity" | "custom";
 export interface MeterContent {
   name?: string; kind?: MeterKind; owner?: string;
   poles?: { low?: string; high?: string };

@@ -19,6 +19,7 @@
 
 // The shared craft cores (ONE copy, also interpolated into dna-expand's generation prompts).
 import { CAUSALITY_CRAFT, POLARITY_CRAFT, PREMISE_CRAFT, SCENE_DIRECTION_CRAFT } from "./craft-kb.ts";
+import { VISION_RUBRIC } from "./vision-craft.ts";
 
 export interface AgentSkill {
   name: string;
@@ -180,6 +181,13 @@ A stale or missing sketch before a render = propose_expansion(scene, 'sketch') f
 - When they RAMBLE, don't interrupt the gold: capture everything, then reflect the 2–3 strongest things back and ask which is load-bearing.
 - DISAGREEMENTS with craft (a flat protagonist, stakes that can't escalate) get ONE gentle flag during discovery — note it in open_questions, don't relitigate. The interview is for THEIR book, not your fixes.
 - Every exchange that surfaces something new → update_vision the same turn (only changed sections). End-game: when most sections have substance and their answers start repeating, summarize the whole vision back, get the yes, compile.`,
+  },
+  {
+    name: "vision-fulfillment",
+    description: "judging whether the built structure delivers the author's captured vision — the sufficiency rubric",
+    triggers: [/\b(vision|fulfill|sufficien|audit|covers?\s+(my|the)|what\s+i\s+(asked|wanted|said)|match(es)?\s+(my|the)\s+(idea|vision|intent))\b/i],
+    body: `How to judge — and fix — whether the built structure delivers the author's captured vision. Run audit_vision for the systematic sweep; use this rubric when reasoning about any single gap:
+${VISION_RUBRIC}`,
   },
 ];
 

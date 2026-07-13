@@ -35,7 +35,7 @@ interface ExpandResult {
   beatsheet?: boolean; beats?: BeatSheetEntry[]; actIds?: string[]; threads?: MintedThread[]; prepared?: PreparedProse;
   needsRepair?: boolean; repairPrepared?: PreparedProse;
   // target 'contract' (W1: compile the brief) — genre tentpoles + seeded meters + register bounds.
-  contract?: boolean; tentpoles?: { summary?: string }[]; meters?: MeterContent[]; voice_constraints?: string[];
+  contract?: boolean; tentpoles?: TentpoleContent[]; meters?: MeterContent[]; voice_constraints?: string[];
   sketch?: SceneSketch; // target 'sketch' — the scene treatment (what/how), generated before prose
   // The ai_calls row that produced this result's content — from dna-expand's `meta.loggedCallId` (direct
   // targets) or the stream-prose proxy's logged row (prose/beatsheet). Stamped onto the committed node(s)
@@ -454,16 +454,21 @@ async function persistBeatSheet(bookId: number, res: ExpandResult): Promise<{ ad
 // genuinely NEW against the tree (case-insensitive summary/name match) plus the voice-constraint merge
 // (dedupe, existing entries preserved in order). Pure — the exits decide how to land it.
 export function contractDelta(tree: DnaNode[], res: Pick<ExpandResult, "tentpoles" | "meters" | "voice_constraints">): {
-  tentpoles: string[]; meters: MeterContent[];
+  tentpoles: TentpoleContent[]; meters: MeterContent[];
   voice?: { node?: DnaNode; merged: string[] }; // node undefined = no voice_profile exists yet
 } {
   const norm = (s: unknown) => String(s ?? "").trim().toLowerCase();
   const haveTp = new Set(tree.filter((n) => n.kind === "tentpole").map((n) => norm((n.content as TentpoleContent).summary)));
   const haveM = new Set(tree.filter((n) => n.kind === "meter").map((n) => norm((n.content as MeterContent).name)));
-  const tentpoles: string[] = [];
+  const tentpoles: TentpoleContent[] = [];
   for (const t of res.tentpoles ?? []) {
     const summary = String(t?.summary ?? "").trim();
-    if (summary && !haveTp.has(norm(summary))) { haveTp.add(norm(summary)); tentpoles.push(summary); }
+    // Carry name + source (provenance, docs/vision-to-structure.md D2) through to the node content.
+    if (summary && !haveTp.has(norm(summary))) {
+      haveTp.add(norm(summary));
+      const name = String(t?.name ?? "").trim();
+      tentpoles.push({ ...(name ? { name } : {}), summary, source: t?.source === "vision" ? "vision" : "genre" });
+    }
   }
   const meters: MeterContent[] = [];
   for (const m of res.meters ?? []) {
@@ -498,7 +503,7 @@ export async function persistContract(bookId: number, res: ExpandResult): Promis
   const mk = (kind: NodeKind, position: number, content: NodeContent): DnaNode =>
     ({ id: newId(), book_id: bookId, parent_id: pillar.id, level: 2, kind, position, content, authoring: { source: "ai", locked: false, status: "accepted" }, last_ai_call_id: res.callId ?? null });
   const made: DnaNode[] = [
-    ...delta.tentpoles.map((summary) => mk("tentpole", tpPos++, { summary })),
+    ...delta.tentpoles.map((content) => mk("tentpole", tpPos++, content as NodeContent)),
     ...delta.meters.map((content) => mk("meter", mPos++, content as NodeContent)),
   ];
   if (made.length) {
@@ -549,7 +554,7 @@ export async function generateExpansionOps(bookId: number, node: DnaNode, target
     const delta = contractDelta(tree, res);
     const ops: NodeOp[] = [
       // parentId = the triggering node (the pillar); applyNodeOps re-homes pillar-parented kinds anyway.
-      ...delta.tentpoles.map((summary): NodeOp => ({ op: "add", kind: "tentpole", parentId: node.id, content: { summary } })),
+      ...delta.tentpoles.map((content): NodeOp => ({ op: "add", kind: "tentpole", parentId: node.id, content: content as NodeContent })),
       ...delta.meters.map((content): NodeOp => ({ op: "add", kind: "meter", parentId: node.id, content: content as NodeContent })),
     ];
     // Register bounds ride an EDIT of the existing voice profile (a patch, so validateOps passes it). With

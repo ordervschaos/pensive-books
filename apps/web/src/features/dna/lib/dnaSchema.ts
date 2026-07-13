@@ -99,13 +99,16 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     // summary is GUIDANCE, not a script line: the emotional/scene quality a beat must deliver (a feeling, an
     // image, a turn) — the beat sheet honors its spirit in its own words, it never has to quote this back.
     { key: "summary", label: "guidance", multiline: true, required: true },
+    // Provenance (docs/vision-to-structure.md D2): which contract source promised this moment — the genre's
+    // conventions or the author's own vision. Set by the contract compile; absent on hand-made tentpoles.
+    { key: "source", label: "source", type: "select", options: ["genre", "vision"], genOnly: true },
     { key: "waived", label: "waived", genOnly: true, note: "true = set-piece deliberately unplaced (cut or deferred) — settles it in the obligation ledger; only with the author's consent" },
   ],
   // meter (docs/novel-dna-meters.md): a named bounded axis (comedy/heat/freedom/game-score) defined once on
   // the pillar. Beats/scenes carry numeric `readings` on it; the engine plots the series + lints its shape.
   meter: [
     { key: "name", label: "name", required: true },
-    { key: "kind", label: "kind", type: "select", options: ["value", "game_score", "affect", "relationship", "heat", "comedy", "tension", "custom"] },
+    { key: "kind", label: "kind", type: "select", options: ["value", "game_score", "affect", "relationship", "heat", "comedy", "tension", "mystery", "violence", "levity", "custom"] },
     // poles give a bare number meaning (the low/high ends); for game_score they mirror the lose/win condition.
     { key: "poles", label: "poles", type: "object", fields: [{ key: "low", label: "low", multiline: true }, { key: "high", label: "high", multiline: true }] },
     { key: "scale", label: "scale", type: "object", fields: [{ key: "min", label: "min", type: "number" }, { key: "max", label: "max", type: "number" }] },

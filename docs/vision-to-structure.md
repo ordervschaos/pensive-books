@@ -1,8 +1,11 @@
 # Vision → Structure — making the built book fulfill the author's vision
 
-**Status:** ratified 2026-07-13. Sequel to `docs/agent-guidance-system.md` (interview + vision doc,
-now implemented). This is an EXECUTABLE plan for an implementing agent: decisions are final — do not
-relitigate; if a step is impossible as written, stop and report rather than substituting.
+**Status:** ✅ IMPLEMENTED 2026-07-13 (all phases; both fns deployed). Remaining: the live
+end-to-end exercise (fresh book → interview → contract with a vision tentpole + shaped curve →
+audit_vision catching a planted gap) has NOT been run on a real book — code-level gates all green
+(typechecks, parity, full web suite, byte-stability fence greps). Note: dna-expand's shared ctx
+also feeds its prose/sketch prepare path, so streamed prose prompts now carry the vision too —
+within D1's wording, flagged for awareness. Sequel to `docs/agent-guidance-system.md`.
 
 ## Why (one paragraph)
 
@@ -113,9 +116,12 @@ edits (parity test runs `currentObjective` over both, so any divergence fails lo
    pacing wish, an ending change), capture it with update_vision in the same turn."*
 3. **Gate:** parity test green; `dnaJourney.test.ts` green; `deno check` clean.
 
-### Phase 3b — `vision-interview` skill, state-injected (D9)
+### Phase 3b — `vision-interview` skill, state-injected (D9) — ✅ SHIPPED 2026-07-13 (ahead of the rest)
 
-Files: `_shared/agent-skills.ts`, `book-agent/context.ts`.
+Files: `_shared/agent-skills.ts`, `book-agent/context.ts`. Implemented + deployed same day (the D4
+hole was live); verified via a mocked-threadSystem harness: discovery injects vision-interview and
+suppresses character-craft; compiled / skipped / grandfathered books all restore ask-triggered
+skills. Implementers of the remaining phases: this one is DONE, skip it.
 
 1. `agent-skills.ts` — add the skill (keep `triggers` minimal; state injection is the real channel):
    ```ts

@@ -44,6 +44,16 @@ const SHARED_TOOLS = [
     },
   },
   {
+    name: "audit_vision",
+    description: "Judge whether the book's current foundations and structure FULFILL the author's vision (the brief's vision document). Returns a section-by-section verdict — covered / partial / missing — with the concrete gaps (a vision character with no node, a promised plot point no beat delivers, a stated pacing intent no meter targets, an aim the controlling idea ignores). Run it at checkpoints (after the cast lands, after the beat sheet) or when the author asks whether the book matches what they wanted. It's a read: batch it with other reads; then PROPOSE fixes for real gaps — don't just report them.",
+    input_schema: {
+      type: "object",
+      properties: {
+        focus: { type: "string", description: "Optional: one vision section or question to audit deeply instead of the full sweep." },
+      },
+    },
+  },
+  {
     name: "read_skill",
     description: `Load one of the specialized playbooks listed in the system prompt's Skills index (${AGENT_SKILLS.map((s) => s.name).join(", ")}) — the full technique for that job. Call it when your turn involves that job and its body is NOT already injected in the latest message's <skill_briefs>. It's a read: batch it in the SAME turn as your read_node/search_nodes calls.`,
     input_schema: {
