@@ -9,6 +9,7 @@ import {
 } from "@/features/dna/lib/novelDna";
 import { editSpecs } from "@/features/dna/lib/dnaSchema";
 import { diffAgainstVersion, listVersions, loadVersion, restoreVersion, snapshotTree, type TreeDiff, type TreeVersion } from "@/features/dna/lib/treeVersions";
+import { listNodeRevisions, revertNodeToRevision, type NodeRevision } from "@/features/dna/lib/nodeRevisions";
 import { displayValue, hiddenFields, nodeTitle } from "./nodeDisplay";
 import { MONO, SERIF, T } from "./treeChrome";
 
@@ -527,19 +528,121 @@ function NodeAnalysis({ node, nodes }: { node: DnaNode; nodes: DnaNode[] }) {
 // Every content field this node's schema declares (plan fields like value_shift, goal, conflict…) plus
 // anything genOnly/undeclared (hiddenFields) — read-only, so "view details" actually shows the plan, not
 // just provenance + derived analysis. Reuses the same displayValue/hiddenFields the tree editor renders from.
-function ContentFields({ node, index }: { node: DnaNode; index: Map<string, DnaNode> }) {
-  const rows = editSpecs(node.kind).flatMap((spec) => {
+// Every schema-declared content field as one flat {key,label,value} row (object specs fan out to their
+// sub-fields). Unfiltered — a field going value→"" is a real change the history diff must see. Callers that
+// only display current content filter out the empty rows themselves (ContentFields does).
+function specRows(node: DnaNode, index: Map<string, DnaNode>): { key: string; label: string; value: string }[] {
+  return editSpecs(node.kind).flatMap((spec) => {
     if (spec.type === "object") {
       return (spec.fields ?? []).map((sub) => ({ key: `${spec.key}.${sub.key}`, label: `${spec.label} · ${sub.label}`, value: displayValue(node, sub, index, spec.key) }));
     }
     return [{ key: spec.key, label: spec.label, value: displayValue(node, spec, index) }];
-  }).filter((r) => r.value);
+  });
+}
+
+function ContentFields({ node, index }: { node: DnaNode; index: Map<string, DnaNode> }) {
+  const rows = specRows(node, index).filter((r) => r.value);
   const hidden = hiddenFields(node, index);
   if (!rows.length && !hidden.length) return null;
   return (
     <Section label="content">
       {rows.map((r) => <Row key={r.key} label={r.label} value={r.value} />)}
       {hidden.map((f) => <Row key={f.key} label={f.label} value={f.value} />)}
+    </Section>
+  );
+}
+
+// ── Node history ─────────────────────────────────────────────────────────────
+// One node's content timeline (book_node_revisions), captured by the log_book_node_revision trigger on
+// every content-changing write. Each entry shows what that write changed (field-level old→new diff vs the
+// prior revision), who/what drove it (AI call vs hand edit), and a forward-moving "restore" (writes
+// book_nodes → appends a new revision, never rewrites history). The fine-grained twin of HistoryModal
+// (which restores the WHOLE tree from book_tree_versions).
+const histWhen = (iso: string) => { try { return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return iso; } };
+const clip = (s: string, n = 90) => (s.length > n ? s.slice(0, n) + "…" : s);
+
+function NodeHistory({ node, nodes }: { node: DnaNode; nodes: DnaNode[] }) {
+  const { toast } = useToast();
+  const index = byId(nodes);
+  const [revs, setRevs] = useState<NodeRevision[] | "loading" | "error">("loading");
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [confirmId, setConfirmId] = useState<number | null>(null);
+
+  const load = useCallback(() => {
+    let alive = true;
+    setRevs("loading");
+    listNodeRevisions(node.id).then((r) => { if (alive) setRevs(r); }).catch(() => { if (alive) setRevs("error"); });
+    return () => { alive = false; };
+  }, [node.id]);
+  useEffect(load, [load]);
+
+  const revert = async (rev: NodeRevision) => {
+    setBusyId(rev.id); setConfirmId(null);
+    try {
+      await revertNodeToRevision(node, rev);
+      toast({ title: "Reverted", description: "Node content restored to the earlier revision." });
+      load(); // the restore lands as a new forward revision
+    } catch (e) {
+      toast({ title: "Revert failed", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    } finally { setBusyId(null); }
+  };
+
+  // Field-level diff of a revision against the next-OLDER one: what this write changed.
+  const changesOf = (rev: NodeRevision, older: NodeRevision | undefined) => {
+    const now = specRows({ ...node, content: rev.content }, index);
+    const prev = older ? new Map(specRows({ ...node, content: older.content }, index).map((r) => [r.key, r.value])) : null;
+    return now.flatMap((r) => {
+      const before = prev ? (prev.get(r.key) ?? "") : "";
+      if (prev && r.value === before) return [];
+      if (!prev && !r.value) return []; // creation: only show fields that had content
+      return [{ label: r.label, before, after: r.value }];
+    });
+  };
+
+  if (revs === "loading") return <Section label="history"><div style={{ fontFamily: MONO, fontSize: 11, color: T.muted }}>loading history…</div></Section>;
+  if (revs === "error") return <Section label="history"><div style={{ fontFamily: MONO, fontSize: 11, color: T.bad }}>couldn't load this node's history.</div></Section>;
+  if (!revs.length) return null;
+
+  return (
+    <Section label={`history · ${revs.length}`} defaultOpen={false}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {revs.map((rev, i) => {
+          const changes = changesOf(rev, revs[i + 1]);
+          const isAi = rev.ai_call_id != null;
+          const src = isAi ? `🧬 AI · call #${rev.ai_call_id}` : (rev.authoring?.source ?? "hand edit");
+          return (
+            <div key={rev.id} style={{ borderTop: `1px solid ${T.borderSoft}`, paddingTop: 10 }}>
+              <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: "4px 12px", fontFamily: MONO, fontSize: 11 }}>
+                <span style={{ color: T.inkSoft }}>{histWhen(rev.created_at)}</span>
+                <span style={{ color: T.muted }}>{rev.op}</span>
+                <span style={{ color: isAi ? T.accent : T.muted }}>{src}</span>
+                {i > 0 && (
+                  confirmId === rev.id
+                    ? <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                        <span onClick={() => revert(rev)} style={{ color: T.warn, cursor: "pointer" }}>{busyId === rev.id ? "restoring…" : "confirm restore"}</span>
+                        <span onClick={() => setConfirmId(null)} style={{ color: T.muted, cursor: "pointer" }}>cancel</span>
+                      </span>
+                    : <span onClick={() => setConfirmId(rev.id)} style={{ marginLeft: "auto", color: T.muted, cursor: "pointer" }}>restore</span>
+                )}
+                {i === 0 && <span style={{ marginLeft: "auto", color: T.muted, fontStyle: "italic" }}>current</span>}
+              </div>
+              {changes.length > 0 && (
+                <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                  {changes.map((c) => (
+                    <div key={c.label} style={{ fontFamily: MONO, fontSize: 10.5, lineHeight: 1.5 }}>
+                      <span style={{ color: T.muted }}>{c.label}: </span>
+                      {c.before && <span style={{ color: T.bad, textDecoration: "line-through" }}>{clip(c.before)}</span>}
+                      {c.before && <span style={{ color: T.muted }}> → </span>}
+                      <span style={{ color: T.good }}>{c.after ? clip(c.after) : "∅"}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {changes.length === 0 && <div style={{ marginTop: 6, fontFamily: MONO, fontSize: 10.5, color: T.muted, fontStyle: "italic" }}>no content field changed</div>}
+            </div>
+          );
+        })}
+      </div>
     </Section>
   );
 }
@@ -602,6 +705,7 @@ export function NodeDetailsModal({ node, nodes, onClose }: { node: DnaNode; node
               <CopyBlock label="raw output" text={call.output ?? ""} />
             </>
           )}
+          <NodeHistory node={node} nodes={nodes} />
           <NodeAnalysis node={node} nodes={nodes} />
         </div>
       </DialogContent>
