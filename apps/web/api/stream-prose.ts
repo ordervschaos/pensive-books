@@ -2,7 +2,7 @@
 // vite-plugin-stream-prose.ts; both delegate to ./_proseProxy so the logic exists once. See
 // TO-DO/dna-streaming-proxy.md. Required Vercel env: OPENROUTER_API_KEY, SERVICE_ROLE_SECRET (or
 // SUPABASE_SERVICE_ROLE_KEY), and SUPABASE_URL (or VITE_SUPABASE_PROJECT_ID) + an anon key.
-import { streamProse, ProxyError, type PrepareReq } from "./_proseProxy";
+import { streamProse, ProxyError, type PrepareReq } from "./_proseProxy.js";
 
 export const config = { maxDuration: 300 };
 
