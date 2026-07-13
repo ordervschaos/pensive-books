@@ -343,6 +343,44 @@ verify_jwt = false
 [functions.dna-decompose]
 verify_jwt = false
 
+# The local-dev bridge (apps/web/src/lib/localFn.ts, VITE_LOCAL_FUNCTIONS_URL) redirects these
+# calls to the LOCAL gateway while the app's Supabase client stays pointed at the HOSTED project
+# (apps/web/src/integrations/supabase/client.ts) — so the bearer token is a production-signed JWT.
+# The local gateway's default verify_jwt checks it against the LOCAL project's JWT secret and
+# always rejects it (401) before the function runs. Each of these already does its own getUser()
+# against the hosted project via _shared/task.ts's hostedEnv() (LOCAL_DEV_HOSTED_SUPABASE_* in
+# supabase/functions/.env) — same pattern as book-agent above — so gateway verification is
+# redundant and actively wrong here. Add new entries whenever a function joins that bridge list.
+[functions.dna-expand]
+verify_jwt = false
+
+[functions.dna-chat]
+verify_jwt = false
+
+[functions.evaluate-ai-call]
+verify_jwt = false
+
+[functions.read-confusion]
+verify_jwt = false
+
+[functions.read-facts]
+verify_jwt = false
+
+[functions.read-logline]
+verify_jwt = false
+
+[functions.read-meters]
+verify_jwt = false
+
+[functions.read-premise]
+verify_jwt = false
+
+[functions.read-shape]
+verify_jwt = false
+
+[functions.read-synopsis]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

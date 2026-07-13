@@ -148,17 +148,43 @@ function buildUserPrompt(body) {
   ].filter(Boolean).join("\n\n");
 }
 
-// Malformed/absent JSON envelope -> return the raw text as a text reply rather than erroring; the
-// caller (book-agent's tool loop) already recovers from unparseable tool output the same way
-// openAIToAnthropic's unparseable-arguments branch does.
+// Find the first balanced top-level {...} object in text, respecting string literals — so a stray
+// "}" inside a quoted string value (or in narration trailing the envelope) can't truncate or
+// extend the match. Replaces a prior indexOf("{")/lastIndexOf("}") that grabbed the LAST "}" in
+// the whole text: any post-envelope narration containing its own brace broke the parse and the
+// raw JSON leaked into the chat as if it were the model's reply (2026-07-13, observed live on a
+// propose_prose_render call with a large multi-field input).
+function extractBalancedObject(text) {
+  const openAt = text.indexOf("{");
+  if (openAt === -1) return null;
+  let depth = 0, inString = false, escaped = false;
+  for (let i = openAt; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return text.slice(openAt, i + 1);
+    }
+  }
+  return null; // unterminated — truncated output
+}
+
+// Malformed/absent JSON envelope -> null; toAnthropicResponse below throws in that case, which
+// the caller (book-agent's tool loop) surfaces as a normal callLLM error and retries.
 function extractEnvelope(raw) {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
   const candidate = fenced ? fenced[1] : raw;
-  const start = candidate.indexOf("{");
-  const end = candidate.lastIndexOf("}");
-  if (start === -1 || end === -1 || end < start) return null;
+  const jsonText = extractBalancedObject(candidate);
+  if (!jsonText) return null;
   try {
-    return JSON.parse(candidate.slice(start, end + 1));
+    return JSON.parse(jsonText);
   } catch {
     return null;
   }

@@ -8,7 +8,6 @@
 // scene's own text. The LLM host is chosen per-call in callLLM (the ai_provider switch); dev can also
 // route this same fn through @/lib/localFn's local-serve override to ride the claude-local shim.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { getRoleModels, getActiveProvider, DIGEST_MODEL } from "../_shared/model-config.ts";
@@ -21,7 +20,7 @@ import { CAUSALITY_CRAFT, LOGLINE_CRAFT, POLARITY_CRAFT, PREMISE_CRAFT, PREMISE_
 import { canonicalizeKey, entityRegistryBlock, ledgerAt, ledgerText, structureForBook, validate, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneLedger } from "../_shared/novel-dna.ts";
 import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
 import { isChainCall } from "../_shared/self-chain.ts";
-import { serviceClient } from "../_shared/task.ts";
+import { serviceClient, userClient as createUserClient } from "../_shared/task.ts";
 
 // The rolling continuity digest cached per scene node (authoring.prose_digest). Stores this page's DELTA, not
 // the whole accumulator (P3/§3b): `line` = THIS page's one-line recap; `ledger`/`impressions` = the cumulative
@@ -285,8 +284,7 @@ async function buildProseDigest(model: string, allNodes: Node[], currentId: stri
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const userClient = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      { global: { headers: { Authorization: req.headers.get("Authorization")! } } });
+    const userClient = createUserClient(req.headers.get("Authorization") ?? "");
     // Trusted server-to-server call (the editor agent's render_scene_prose tool) carries the chain secret →
     // skip user auth and read via the service client. A logged-out client can't forge it. Otherwise: user auth.
     const trusted = isChainCall(req);
