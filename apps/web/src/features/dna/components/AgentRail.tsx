@@ -52,17 +52,22 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
   // The guided-flow anchor (docs/agent-capabilities.md): the ONE journey rung to drive the author through
   // next, derived live from the tree. Sent with each message so the agent leads with it; also surfaced as
   // the idle "Next" nudge below.
+  // `brief` rides along because the journey's FIRST rung — the discovery interview — is gated outside the
+  // tree, on brief.vision (docs/agent-guidance-system.md D3).
   const objective = useMemo(
-    () => currentObjective(nodes, { bookSlug }),
-    [nodes, bookSlug],
+    () => currentObjective(nodes, { bookSlug, brief }),
+    [nodes, bookSlug, brief],
   );
   // The one-line headline of the objective (the "▸ Step n/5 · …" line), for the idle nudge chip.
   const objectiveHeadline = useMemo(() => objective.split("\n").find((l) => l.startsWith("▸"))?.replace(/^▸\s*/, "") ?? "", [objective]);
   // The substep key behind that headline (e.g. "seed", "beats") — so the nudge's chat message can name the
   // actual action instead of the generic "let's work on the next step" that used to ride under every headline.
-  const objectiveKey = useMemo(() => currentObjectiveKey(nodes), [nodes]);
-  // The rung BEFORE the first rung: on the seed step with no idea in the brief, the guide's job is
-  // ideation, not loglines — the greeting and the nudge below both switch stance on this flag.
+  const objectiveKey = useMemo(() => currentObjectiveKey(nodes, brief), [nodes, brief]);
+  // The rung BEFORE the first rung: on the SEED step with no idea in the brief, the guide's job is ideation,
+  // not loglines — the greeting and the nudge below both switch stance on this flag. It sits AFTER the
+  // interview deliberately: a blank author is ideated with INSIDE the interview (STEP_RECIPE.interview says
+  // so), so a fresh book gets the interview card, and this fires only for the odd book that reached the seed
+  // (interview compiled or skipped) still carrying no idea.
   const needsIdea = objectiveKey === "seed" && !briefIdea(brief)?.trim();
   // When the objective is the draft step, the concrete scene it targets — so the "next step" nudge can NAME
   // which scene ("Write 'Bram's door'") instead of a bare ordinal, and can't diverge from what the agent

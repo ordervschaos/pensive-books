@@ -16,6 +16,36 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-13 — Shipped the guidance system: interview-first discovery + three-state objective `[ship]`
+- **What:** Implemented `docs/agent-guidance-system.md` end to end. The journey's premise stage now opens
+  with an **Interview** rung (Interview → Seed → Premise) whose artifact is `books.brief.vision` (a jsonb
+  section, no migration), written by a new **non-terminal, direct-write `update_vision` tool** — the first
+  deliberate break from proposals-only, because it records the author's own words. `<current_objective>` is
+  now injected in **three states**: omitted on a concrete typed ask (the intent-pollution fix), injected on
+  the Next-nudge / an empty ask, and ALWAYS injected in auto mode (it's auto's work queue). The vision
+  renders into the agent's `<brief>` only behind a new `briefContext` opt (`vision:true`), so every other
+  prompt in the codebase stays byte-identical. Live-verified on a scratch book: interview asked, captured 5
+  sections, compiled, journey advanced to Seed on its own, and the logline it then proposed carried the
+  vision. Verified in `ai_calls` that all three injection states behave.
+- **Scope change en route:** the plan's grandfather clause (`seedDone` ⇒ interview moot) was too narrow —
+  a live drafted book (1235, 141 scenes) whose seed was never *accepted* regressed into an interview.
+  Grandfather now keys on "any non-seed node exists" (a fresh book is minted with the seed alone).
+- **Files:** `_shared/brief.ts` (+`BriefVision`/`VISION_SECTIONS`/`vision` opt), both dna-journey twins
+  (+interview substep, `STEP_RECIPE.interview`, `brief` param), `book-agent/{context,tools,exec-tools,
+  prompts}.ts`, `apps/web/src/lib/brief.ts`, `AgentRail.tsx`/`DnaOverview.tsx` (+skip affordance)/
+  `TreeOverviewTab.tsx`/`DnaTreePage.tsx`/`journeyContent.ts`; parity + journey tests extended (751 green).
+  `book-agent` deployed. Uncommitted.
+- **PM impact:** new STATE row (Agent section); DECISIONS amended with the grandfather widening.
+## 2026-07-13 — Ratified + spec'd Vision→Structure (executable plan) `[decision]`
+- **What:** Second guidance-system rung, decision-maker session (owner delegated choices). The vision now grounds the derivation ENGINE, not just the agent chat: every `briefContext` call in dna-expand gets `vision:true`; contract v2 compiles vision plot points into `source:"vision"` tentpoles (enforced free by the existing `tentpole_unplaced` lint) and derives 2–5 meters (palette + `mystery`/`violence`/`levity`; heat = sexual content with `content_type` as ceiling) with vision-shaped target curves; a new non-terminal `audit_vision` LLM-judge tool closes the loop at recipe checkpoints. No journey changes; recipes carry the nudging. Key planning discovery: the meter cascade (`target_drift`/`read_gap`/`targetGap`) already exists — the plan feeds it, doesn't rebuild it. 6 phases with gates, written for a smaller-model implementer.
+- **Files/commits:** `docs/vision-to-structure.md` (new, uncommitted); promoted to `pm/DECISIONS.md`.
+- **PM impact:** DECISIONS.md entry added. Implementation queued behind the guidance-system implementation; not slotted into Now (Now ≤ 2 holds).
+
+## 2026-07-13 — Merged feat/ai-provider-switch to main; fixed the prod build break it exposed `[ship]`
+- **What:** Executed the merge decided in the prior entry (one deployed SSOT instead of two divergent branches). Committed the incident-response fix (dna-chat restore + dna_chats migration), then pushed straight to `main` — the pre-push hook (typecheck+tests) caught 2 failures, traced to a concurrent session's uncommitted WIP polluting the shared working tree (not anything in the 73 commits being merged); verified clean via an isolated `git worktree` checkout of just the target commit. That surfaced one real pre-existing failure: `bookAgentDigestFields.test.ts` had a hardcoded path to `book-agent/index.ts`, broken since an earlier refactor moved `DIGEST_FIELDS` to `context.ts` — fixed the path rather than bypass the hook. Pushed clean (fast-forward, `main` now at the same commit as this branch). Immediately after, the user reported the actual production build error the stale `main` had been hiding: `api/stream-prose.ts` failing `TS2835` (relative import needs an explicit extension) — `apps/web`'s `"type": "module"` makes Vercel compile `api/*.ts` as native Node ESM (node16/nodenext resolution), which requires `.js` on relative specifiers even for `.ts` sources. This is very likely why production deploys had been erroring for 5+ days (unrelated to any of today's work — pre-existing on `main`, just never fixed since main wasn't being pushed to). One-line fix (`"./_proseProxy"` → `"./_proseProxy.js"`), verified clean typecheck, pushed the same isolated-worktree way.
+- **Files/commits:** `1185604` (test path fix), `fdbede1` (stream-prose.ts fix) on `main` (= `feat/ai-provider-switch`). Also lands `99578e6` (dna-chat restore, already logged in the prior entry) since it rode the same push.
+- **PM impact:** `main` and this branch are now identical — the branch-divergence root cause from the near-miss entry above is resolved. Open: confirm the next Vercel prod deploy actually goes green (not verified in-session — Vercel builds asynchronously); `dna_chats` recovery from backup still open.
+
 ## 2026-07-13 — Fixed: DNA→pages chaptering was per-beat, not per-act `[ship]`
 - **What:** `renderPages` (novelDna.ts) was already correctly designed as section-per-chapter + one text page per beat + "***" scene breaks — but `realizeScenesFromBeat` (dnaExpand.ts) stamped `chapter_start` on EVERY beat's first scene (its `startPosition === 0` guard was dead: every caller always passed literal `0`), so every beat rendered as its own chapter instead of one section per act. Fixed by keying off `beatNode.position` (0-indexed per act already, via `persistBeatSheet`) instead of the unused `startPosition` param, and by sourcing the chapter title from the ACT's own `title` field (new `chapterTitleFromAct`) rather than the first beat's summary, since the chapter now represents an act. Verified: `tsc -p tsconfig.app.json --noEmit` clean; `vitest run dnaExpand.test.ts novelDna.parity.test.ts novelDna.test.ts` — 858/858 pass (3 new tests added covering act-boundary + no-op-for-non-first-beat + act-title-wins).
 - **Files/commits:** `apps/web/src/features/dna/lib/dnaExpand.ts`, `apps/web/src/features/dna/lib/dnaExpand.test.ts` — uncommitted, not yet committed (user hasn't asked to commit).

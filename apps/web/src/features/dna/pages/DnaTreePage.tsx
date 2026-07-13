@@ -160,6 +160,13 @@ export default function DnaTreePage() {
     setSettings((prev) => ({ ...prev, word_target: next.scope?.word_target }));
   }, [brief, bookId]);
 
+  // Decline the discovery interview (the journey's first rung): mark the vision skipped so the journey
+  // advances to the seed. Goes through saveBrief, so `books` Realtime re-derives everything downstream.
+  const skipInterview = useCallback(() => {
+    void saveBrief({ vision: { ...(brief?.vision ?? {}), skipped: true } }).catch((e) =>
+      toast({ title: "Couldn't skip the interview", description: String((e as Error)?.message ?? e), variant: "destructive" }));
+  }, [saveBrief, brief, toast]);
+
   // Seed an empty tree: create the root `seed` node, prefilling its logline from the brief's idea.
   // Everything else (premise/pillar/cast/spine) grows from here via the reviser or the studio.
   // The load+bootstrap effect runs once per book (also dedupes React strict-mode's double-invoke, so an
@@ -697,6 +704,7 @@ export default function DnaTreePage() {
       {/* ── overview tab: the studio's dashboard — shape, next move, issues ── */}
       {tab === "overview" && (
         <TreeOverviewTab bookId={bookId} nodes={nodes} settings={settings} stages={journeyStages} nowKey={nowKey}
+          brief={brief} onSkipInterview={skipInterview}
           onOpen={openStage} onChanged={() => {}} />
       )}
 

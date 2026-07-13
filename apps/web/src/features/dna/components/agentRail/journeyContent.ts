@@ -2,6 +2,7 @@
 // bubble names the actual action instead of a one-size-fits-all "let's work on the next step" that read as
 // disconnected from whatever the button was visibly offering (e.g. "generate the logline").
 export const NEXT_STEP_MESSAGE: Record<string, string> = {
+  interview: "Interview me about my book.",
   seed: "Generate logline options for the seed.",
   premise: "Generate premise options for the central question.",
   pillar: "Set the pillar's controlling idea and ending.",
@@ -20,6 +21,7 @@ export const NEXT_STEP_MESSAGE: Record<string, string> = {
 // like NEXT_STEP_MESSAGE above. The agent itself carries the same duty in its system prompt ("Teach as
 // you go" in book-agent) — this is the zero-cost, zero-latency copy of that stance.
 export const STEP_TEACH: Record<string, string> = {
+  interview: "Before we build anything, I'll interview you — your characters, world, plot points, aims — and save it all to the book's vision so every later step honors it.",
   seed: "First rung: the logline — your whole story in one sentence: who wants what, what stands in the way, and what's at stake. It's the cheapest place to fix a story; one sentence is easy to change, 80,000 words are not.",
   premise: "Next: the premise — your logline turned into a question with a price (“Can she win X without losing Y?”). Every act, beat, and scene below exists to make that question harder before it's answered.",
   pillar: "Next: the pillar — what your story argues is true (its controlling idea) plus the ending that proves it. Pin it now and everything generated below bends toward the same point instead of wandering.",

@@ -7,7 +7,7 @@ import { SYSTEM_THREAD } from "./prompts.ts";
 import { type Brief, briefContext } from "../_shared/brief.ts";
 import { currentObjective, nextDraftTarget } from "../_shared/dna-journey.ts";
 import { analysisText, ledgerText, lintConfigForBrief, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind } from "../_shared/novel-dna.ts";
-import { matchSkills } from "../_shared/agent-skills.ts";
+import { AGENT_SKILLS, matchSkills } from "../_shared/agent-skills.ts";
 
 // ── Tree digest (docs/agent-context-model.md) ────────────────────────────────
 // The system prompt ships the WHOLE tree every turn; dumping each node's full content (a beat's paragraph
@@ -225,7 +225,13 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
     authoring: { source: "user", locked: n.authoring?.locked ?? false, status: (n.authoring?.status as AuthoringStatus) ?? "empty" },
     proposals: n.proposals ?? undefined, chosen: null,
   }));
-  const liveObjective = currentObjective(liveNodes, { bookSlug: String(bookId) }) || objective;
+  const liveObjective = currentObjective(liveNodes, { bookSlug: String(bookId), brief: b?.brief ?? null }) || objective;
+  // THREE-STATE OBJECTIVE INJECTION (docs/agent-guidance-system.md D4). The objective used to ride EVERY
+  // turn, so a concrete typed ask arrived next to a standing "do the next rung instead" instruction — the
+  // pollution the Task-discipline paragraph then has to fight. Now: a concrete ask OMITS it entirely; an
+  // empty ask or the explicit "Next" nudge (followObjective) injects it. AUTO always injects — there the
+  // objective IS the work queue, and omitting it would break a full-book build.
+  const injectObjective = auto || followObjective || !authorAsk.trim();
   // Skill briefs (the injection channel of agent-skills.ts): playbooks whose triggers match the ask.
   // Ask matches always win outright: a concrete ask must not drag in skills for a rung it's steering
   // away from. Only fall back to matching the objective's text — an objective-driven premise turn gets
@@ -234,7 +240,22 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
   // A free-typed message that hits no trigger gets no skill brief at all; read_skill still covers it.
   const askSkills = matchSkills(authorAsk);
   const matchedSkills = askSkills.length ? askSkills : followObjective ? matchSkills(liveObjective ?? "") : [];
-  const skillBriefs = matchedSkills.map((s) => `### ${s.name}\n${s.body}`).join("\n\n");
+  // D9 (docs/vision-to-structure.md): DISCOVERY is a STATE, not an ask. A mid-interview answer ("my
+  // protagonist is a lighthouse keeper") is a concrete message — so the objective (carrying the interview
+  // recipe) is omitted above, and its story nouns trip the WRONG ask-triggered skills (character-craft's
+  // node-editing playbook, mid-interview). While discovering, pin the vision-interview skill every turn
+  // and suppress ask-triggered skills. The predicate mirrors the journey twins' interview gate
+  // (dna-journey stageSubsteps 'premise'): vision neither compiled nor skipped, and building not started
+  // (no accepted seed-with-logline, no non-seed node).
+  const vis = b?.brief?.vision;
+  const seedNode = liveNodes.find((n) => n.kind === "seed");
+  const seedAccepted = !!seedNode && seedNode.authoring.status === "accepted" &&
+    !!String((seedNode.content as { logline?: string }).logline ?? "").trim();
+  const startedBuilding = seedAccepted || liveNodes.some((n) => n.kind !== "seed");
+  const discovering = !vis?.compiled_at && !vis?.skipped && !startedBuilding;
+  const interviewSkill = AGENT_SKILLS.find((s) => s.name === "vision-interview");
+  const effectiveSkills = discovering && interviewSkill ? [interviewSkill] : matchedSkills;
+  const skillBriefs = effectiveSkills.map((s) => `### ${s.name}\n${s.body}`).join("\n\n");
   // Only meaningful once structure exists — mirrors the client's gate (AgentRail), which sends undefined
   // otherwise. analysisText ignores its settings arg, so we pass {}. Lint thresholds are genre-tuned
   // from the brief (lintConfigForBrief) so the agent acts on the same strictness the genre calls for.
@@ -252,13 +273,13 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
   // misinterpretation when a prompt mixes instructions, context, and a large structured document).
   const blocks = [
     `<book_name>${b?.name ?? ""}</book_name>`,
-    `<brief note="binding voice contract">\n${briefContext(b?.brief ?? null, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}\n</brief>`,
+    // The brief, WITH the interview's vision document (the one v1 call site that opts in — every other
+    // briefContext caller keeps byte-identical prompts).
+    `<brief note="binding voice contract">\n${briefContext(b?.brief ?? null, { scope: "full", success: true, none: "(no brief)", empty: "(empty)", vision: true })}\n</brief>`,
     // The guided-flow anchor (docs/agent-capabilities.md): the ONE journey rung to drive the author
-    // through next, derived client-side from the tree (lib/dnaJourney.currentObjective). An anchor, not
-    // a fence — and explicitly SUBORDINATE to the author's concrete ask (the note says so, and Task
-    // discipline in the system prompt makes the hierarchy binding): the observed failure was the agent
-    // answering a concrete ask with this block's next step instead.
-    liveObjective?.trim() ? `<current_objective note="the guided-flow anchor — drive this ONLY when the author's message has no concrete ask of its own">\n${liveObjective.trim()}\n</current_objective>` : "",
+    // through next, derived live from the tree (dna-journey.currentObjective). Present ONLY when this turn
+    // has no concrete ask of its own (or auto/Next drives it) — see injectObjective above.
+    injectObjective && liveObjective?.trim() ? `<current_objective note="the guided-flow anchor — the step to drive the author through next">\n${liveObjective.trim()}\n</current_objective>` : "",
     // The structural backstop (pacing / dangling-promise / sagging-run lints). In AUTO mode it's a
     // standing directive (nobody else will act on it); in interactive mode it's REFERENCE — a per-turn
     // imperative here made the agent fix lints when the author asked for something else entirely.
@@ -297,7 +318,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
   // already logged this turn-cluster (see call site) — an auto run re-injects the SAME skill/nodes turn
   // after turn while nothing has changed, and re-announcing that is noise, not information.
   const groundingLabels: string[] = [];
-  for (const s of matchedSkills) groundingLabels.push(`Loaded the ${s.name} playbook.`);
+  for (const s of effectiveSkills) groundingLabels.push(`Loaded the ${s.name} playbook.`);
   for (const n of [...focusNodes, ...mentioned]) groundingLabels.push(`Loaded ${n.kind} “${nodeHandle(n.content)}” in full.`);
 
   return { instructions: `${SYSTEM_THREAD}${effortLine}${autoLine}`, bookState: blocks.join("\n\n"), groundingLabels };

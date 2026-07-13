@@ -8,6 +8,7 @@ import { DnaOverview } from "@/features/dna/components/DnaOverview";
 import { Eyebrow } from "@/components/book/shared/studioUi";
 import type { BookSettings, DnaNode, ThreadContent } from "@/features/dna/lib/novelDna";
 import type { JourneyStage, StageKey } from "@/features/dna/lib/dnaJourney";
+import type { Brief } from "@/lib/brief";
 
 function ThreadRow({ node, onOpen }: { node: DnaNode; onOpen: (id: string) => void }) {
   const c = node.content as ThreadContent;
@@ -21,14 +22,16 @@ function ThreadRow({ node, onOpen }: { node: DnaNode; onOpen: (id: string) => vo
   );
 }
 
-export function TreeOverviewTab({ bookId, nodes, settings, stages, nowKey, onOpen, onChanged }: {
+export function TreeOverviewTab({ bookId, nodes, settings, stages, nowKey, brief, onSkipInterview, onOpen, onChanged }: {
   bookId: number; nodes: DnaNode[]; settings: BookSettings; stages: JourneyStage[]; nowKey: StageKey;
+  brief?: Brief | null; onSkipInterview?: () => void; // the journey's interview rung is gated on the brief
   onOpen: (key: StageKey, focusId?: string) => void; onChanged: () => void;
 }) {
   return (
     <div className="min-h-full bg-background">
       <div className="mx-auto max-w-2xl space-y-5 px-6 py-6">
         <DnaOverview bookId={bookId} nodes={nodes} settings={settings} stages={stages} nowKey={nowKey}
+          brief={brief} onSkipInterview={onSkipInterview}
           onOpen={onOpen} onChanged={onChanged}
           renderCard={(n) => <ThreadRow node={n} onOpen={(id) => onOpen("structure", id)} />} />
       </div>

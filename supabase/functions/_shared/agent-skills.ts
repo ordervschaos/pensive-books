@@ -165,6 +165,22 @@ A stale or missing sketch before a render = propose_expansion(scene, 'sketch') f
 - voice_profile is a CONTRACT the prose render obeys, so write it operationally: style in concrete, imitable terms (sentence economy, image density, heat level of the narration); constraints[] as hard rules a lint could check ("no semicolons", "no interiority in action beats", "never name the emotion — show its symptom"); sample as 2–3 sentences of the voice actually doing it, in-world.
 - pov/tense changes are book-wide renovations: existing prose won't match — surface the re-render cost before proposing.`,
   },
+  {
+    name: "vision-interview",
+    description: "interviewing the author to capture their vision — elicitation technique for the discovery phase",
+    // Minimal triggers on purpose: the real channel is STATE injection (threadSystem pins this skill on
+    // every discovery-phase turn, whatever the author typed — docs/vision-to-structure.md D9). Triggers
+    // only cover post-discovery asks that explicitly reach back to the interview.
+    triggers: [/\b(interview|vision|my\s+(book|story|idea)\s+is|what\s+i\s+(have|want)\s+in\s+mind)\b/i],
+    body: `You are in DISCOVERY: the book lives in the author's head, and your job is to get it out — not to generate. Technique:
+- FUNNEL each thread: open ("what draws you to this story?"), then follow up on the specific ("you said betrayal — who betrays whom, and does the reader see it coming?"), then confirm by reflecting it back in YOUR words before capturing. Author's-words-first: capture what they SAID, tagged loosely to sections; never launder it into genre boilerplate.
+- 2–3 questions per turn, max. Lead with the section that's emptiest AND closest to their last answer — chase their energy, not your checklist order.
+- CONCRETE beats ABSTRACT: "what's a scene you can already see?" outworks "what are your themes". When they give an abstraction ("it's about grief"), ask for the image that carries it.
+- When they're BLANK, offer 2–3 directions to react to (reacting is easier than inventing) — but mark your offers as yours; if they adopt one, capture it as theirs only after they say yes.
+- When they RAMBLE, don't interrupt the gold: capture everything, then reflect the 2–3 strongest things back and ask which is load-bearing.
+- DISAGREEMENTS with craft (a flat protagonist, stakes that can't escalate) get ONE gentle flag during discovery — note it in open_questions, don't relitigate. The interview is for THEIR book, not your fixes.
+- Every exchange that surfaces something new → update_vision the same turn (only changed sections). End-game: when most sections have substance and their answers start repeating, summarize the whole vision back, get the yes, compile.`,
+  },
 ];
 
 // The one-line index for the system prompt (static — byte-stable across turns, cache-safe).

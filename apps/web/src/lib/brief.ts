@@ -26,6 +26,23 @@ export interface ContentType {
   note?: string;
 }
 
+/** The interview's artifact: everything the author has in their head, captured section by section during
+ *  discovery (the premise stage's first rung — Interview → Seed → Premise). Free text per section; the
+ *  agent's `update_vision` tool writes it in the AUTHOR's words. `compiled_at` (or `skipped`) is the
+ *  journey's done-gate for the interview rung. Mirrors BriefVision in supabase/functions/_shared/brief.ts. */
+export interface BriefVision {
+  characters?: string;
+  world_setting?: string;
+  plot_points?: string;
+  themes_aims?: string;
+  influences?: string;
+  constraints?: string;
+  open_questions?: string;
+  notes?: string;
+  compiled_at?: string;
+  skipped?: boolean;
+}
+
 export interface Brief {
   scope?: BriefScope;
   genre?: string;
@@ -38,6 +55,8 @@ export interface Brief {
   success_criteria?: string;
   // C5 — content type (publishing-first classification); the AI heat level is derived from it.
   content_type?: ContentType;
+  /** The discovery interview's artifact (see BriefVision). Written by the agent's update_vision tool. */
+  vision?: BriefVision;
   updated_at?: string;
 }
 

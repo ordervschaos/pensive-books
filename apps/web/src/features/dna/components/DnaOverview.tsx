@@ -13,6 +13,7 @@ import { DnaStoryMap } from "@/features/dna/components/DnaStoryMap";
 import { DnaAnalysis } from "@/features/dna/components/DnaAnalysis";
 import { STAGE_KINDS, stageSubsteps, type JourneyStage, type StageKey } from "@/features/dna/lib/dnaJourney";
 import { patchNodeContent } from "@/features/dna/lib/bookNodes";
+import type { Brief } from "@/lib/brief";
 import {
   byId, childrenOf, isProseStale, isStale, obligationLedger, openObligations, validate,
   type BookSettings, type DnaNode, type NodeKind, type Obligation, type SceneContent,
@@ -123,8 +124,12 @@ function PromisesPanel({ nodes, index, onOpen }: { nodes: DnaNode[]; index: Map<
   );
 }
 
-export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, onChanged, renderCard }: {
+export function DnaOverview({ bookId, nodes, settings, stages, nowKey, brief, onSkipInterview, onOpen, onChanged, renderCard }: {
   bookId: number; nodes: DnaNode[]; settings: BookSettings; stages: JourneyStage[]; nowKey: StageKey; onOpen: (k: StageKey, focusId?: string) => void; onChanged: () => void;
+  // The journey's first rung (the discovery interview) is gated on the BRIEF, not the tree — so the sub-step
+  // derivation needs it, and the author needs a way out of it (onSkipInterview writes brief.vision.skipped).
+  brief?: Brief | null;
+  onSkipInterview?: () => void;
   // Threads are edited in place on the dashboard (a cross-cutting whole-book registry); the studio passes its
   // own card renderer down so we reuse the exact node-card UI without lifting it out.
   renderCard: (n: DnaNode, accent?: boolean) => ReactNode;
@@ -143,7 +148,7 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
   // ── Next move: the live now-stage + its first open sub-step, plus the optional branches also available now.
   const nowStage = stages.find((s) => s.key === nowKey)!;
   const allDone = stages.every((s) => s.status === "done");
-  const subs = stageSubsteps(nowKey, nodes);
+  const subs = stageSubsteps(nowKey, nodes, brief);
   const nowSub = subs.find((s) => s.status === "now");
   const alsoAvailable = subs.filter((s) => s.status === "available");
 
@@ -183,6 +188,16 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, onOpen, o
           onClick={() => onOpen(nowKey)} />
       )}
       
+
+      {/* The interview is the one rung the author can decline outright — it asks THEM for the book, and an
+          author who'd rather just start building shouldn't be stuck behind it (writes brief.vision.skipped;
+          the journey re-derives itself off the live books row). */}
+      {nowSub?.key === "interview" && onSkipInterview && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <Eyebrow tone="muted">or</Eyebrow>
+          <ActionLink tone="faint" onClick={onSkipInterview}>skip the interview →</ActionLink>
+        </div>
+      )}
 
       {alsoAvailable.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">

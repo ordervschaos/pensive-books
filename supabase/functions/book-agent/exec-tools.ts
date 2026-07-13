@@ -1,7 +1,7 @@
 // book-agent tool execution: run a turn's non-terminal tool calls (read_node / search_nodes /
-// get_schema / read_skill / check_against_contract) and return their tool_result blocks.
+// get_schema / read_skill / check_against_contract / update_vision) and return their tool_result blocks.
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { type Brief } from "../_shared/brief.ts";
+import { type Brief, type BriefVision, VISION_SECTIONS } from "../_shared/brief.ts";
 import { getRoleModels } from "../_shared/model-config.ts";
 import { AGENT_SKILLS } from "../_shared/agent-skills.ts";
 import { type SceneContent } from "../_shared/novel-dna.ts";
@@ -71,6 +71,42 @@ async function execTool(
       result: {
         type: "tool_result", tool_use_id: t.id,
         content: `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}\npath: ${parts.join(" › ")}\n${JSON.stringify(n.content)}` + (childLines ? `\nchildren (an edit here STALES them):\n${childLines}` : "") + (schema ? `\n\n${schema}` : ""),
+      },
+    };
+  }
+  // The interview's ONLY write (docs/agent-guidance-system.md D2): a DIRECT, non-terminal write of the
+  // author's own words into books.brief.vision. Direct on purpose — a proposal card would make the author
+  // review their own answers back. Shallow per-section merge: only the keys present in the call change.
+  if (t.name === "update_vision") {
+    const input = (t.input ?? {}) as Record<string, unknown>;
+    const { data: book, error: readErr } = await service.from("books").select("brief").eq("id", bookId).maybeSingle();
+    if (readErr) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: `Couldn't read the brief: ${readErr.message}`, is_error: true } };
+    }
+    const brief = ((book as { brief?: Brief } | null)?.brief ?? {}) as Brief;
+    const vision: BriefVision = { ...(brief.vision ?? {}) };
+    const touched: string[] = [];
+    for (const [key, label] of VISION_SECTIONS) {
+      const v = input[key];
+      if (typeof v !== "string" || !v.trim()) continue; // absent OR blanked → leave that section alone
+      vision[key] = v.trim();
+      touched.push(label);
+    }
+    const compiled = input.compiled === true;
+    if (compiled) vision.compiled_at = new Date().toISOString();
+    if (!touched.length && !compiled) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: "Nothing to update — pass at least one non-empty section (or compiled: true).", is_error: true } };
+    }
+    const { error } = await service.from("books").update({ brief: { ...brief, vision } }).eq("id", bookId);
+    if (error) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: `Couldn't save the vision: ${error.message}`, is_error: true } };
+    }
+    const what = touched.length ? touched.join(", ") : "the interview";
+    return {
+      step: { t: "read", label: compiled ? `Compiled the vision${touched.length ? ` (${what})` : ""} — the interview is done.` : `Captured the vision: ${what}.` },
+      result: {
+        type: "tool_result", tool_use_id: t.id,
+        content: `ok — vision updated (sections: ${what})` + (compiled ? ". The interview is now marked complete; the journey advances to the seed on its own." : ""),
       },
     };
   }

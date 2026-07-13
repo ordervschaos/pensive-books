@@ -26,6 +26,24 @@ const SHARED_TOOLS = [
     },
   },
   {
+    name: "update_vision",
+    description: "Capture what the author just told you into the brief's durable vision document (their characters-in-mind, setting, known plot points, aims, influences, constraints, open questions). Direct write, no review — this records THEIR words, so stay faithful: capture, don't invent or embellish. Pass ONLY the sections that changed; each replaces that section wholesale (carry forward anything worth keeping — the current vision is in your <brief> block). Set compiled: true only at the end of the interview, after the author confirms your summary — it marks the interview done and advances the journey. This is a read-class tool: batch it with other reads; it does not end your turn.",
+    input_schema: {
+      type: "object",
+      properties: {
+        characters: { type: "string", description: "Who they have in mind — names, roles, sketches." },
+        world_setting: { type: "string", description: "Place, time, rules, atmosphere." },
+        plot_points: { type: "string", description: "Anything they already know happens." },
+        themes_aims: { type: "string", description: "What the book is FOR — aims, arguments, feelings to land." },
+        influences: { type: "string", description: "Comps, authors, tones to echo or avoid." },
+        constraints: { type: "string", description: "Non-negotiables (POV, content lines, length, structure)." },
+        open_questions: { type: "string", description: "What the author is still unsure about." },
+        notes: { type: "string", description: "Anything that fits nowhere else." },
+        compiled: { type: "boolean", description: "true = interview complete (author confirmed)." },
+      },
+    },
+  },
+  {
     name: "read_skill",
     description: `Load one of the specialized playbooks listed in the system prompt's Skills index (${AGENT_SKILLS.map((s) => s.name).join(", ")}) — the full technique for that job. Call it when your turn involves that job and its body is NOT already injected in the latest message's <skill_briefs>. It's a read: batch it in the SAME turn as your read_node/search_nodes calls.`,
     input_schema: {

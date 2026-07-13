@@ -7,6 +7,7 @@
 // never scores health. Everything present here MUST stay behaviourally identical to the web copy; parity is
 // LOCKED by apps/web/src/features/dna/lib/novelDna.parity.test.ts (currentObjective run over both copies).
 import { byId, childrenOf, debtSettled, obligationLedger, openObligations, scenesInOrder, type DnaNode, type NodeKind, type SceneContent } from "./novel-dna.ts";
+import type { Brief } from "./brief.ts";
 
 export type StageKey = "premise" | "foundations" | "structure" | "scenes" | "draft";
 
@@ -95,16 +96,25 @@ function resolveSeq(specs: SubSpec[]): SubStep[] {
   });
 }
 
-/** The serial sub-steps inside one stage, each with its derived status + tally. */
-export function stageSubsteps(key: StageKey, nodes: DnaNode[]): SubStep[] {
+/** The serial sub-steps inside one stage, each with its derived status + tally. `brief` is needed only by the
+ *  premise stage's INTERVIEW rung (the discovery regime — its artifact lives in brief.vision, not the tree). */
+export function stageSubsteps(key: StageKey, nodes: DnaNode[], brief?: Brief | null): SubStep[] {
   const of = (k: NodeKind) => nodes.filter((n) => n.kind === k);
   const seed = of("seed")[0], premise = of("premise")[0], pillar = of("pillar")[0];
   const n = (k: NodeKind) => of(k).length;
 
   if (key === "premise") {
     const seedDone = !!seed && hasText((seed.content as { logline?: string }).logline) && accepted(seed);
+    // The interview's done-gate lives OUTSIDE the tree (brief.vision.compiled_at, or an explicit skip).
+    // GRANDFATHER: a book that already HAS DNA can't regress into an interview it never had — and a book
+    // is "already built" the moment anything beyond the seed exists (a fresh book is minted with just the
+    // seed node, so `any non-seed node` is exactly the fresh/not-fresh line). Keying this on seedDone alone
+    // wasn't enough: a fully drafted book whose seed was never *accepted* would be sent back to the interview.
+    const startedBuilding = seedDone || nodes.some((x) => x.kind !== "seed");
+    const visionDone = !!(brief?.vision?.compiled_at || brief?.vision?.skipped) || startedBuilding;
     return resolveSeq([
-      { key: "seed", label: "Seed", done: seedDone, ready: true, manual: true },
+      { key: "interview", label: "Interview", done: visionDone, ready: true },
+      { key: "seed", label: "Seed", done: seedDone, ready: visionDone, manual: true },
       { key: "premise", label: "Premise", done: accepted(premise) && premiseFilled(premise), ready: seedDone },
     ]);
   }
@@ -164,6 +174,7 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[]): SubStep[] {
 // limits #6/#7: applying ops writes book_nodes only; render→pages and publish are deliberate author gestures
 // across the render seam). One recipe per serial sub-step key (see stageSubsteps).
 const STEP_RECIPE: Record<string, string> = {
+  interview: "INTERVIEW the author — do NOT generate story content yet. Your job this step is to get the book out of their head into the brief's vision document: the characters they have in mind, the world/setting, plot points they already know, what the book is FOR (aims, themes, the feeling it should land), influences/comps, non-negotiables, and what they're still unsure of. Ask 2–3 focused questions at a time (never a wall of questions), reflect their answers back in your own words, and ideate WITH them — offer directions when they're blank, name what's strong when they're vague. After EVERY exchange that surfaces something new, call update_vision with just the sections that changed — capture as you go, don't batch it for the end. When the vision has real substance across most sections and the author signals they're ready (or has nothing to add), summarize the whole vision back in a few lines, get their yes, then call update_vision with compiled: true — the journey then advances to the seed on its own. If the author says skip the interview, tell them they can skip it from the journey strip, or capture whatever one line they give you and compile.",
   seed: "Generate 2–4 logline options from the brief with propose_options on the seed node — a logline names the protagonist, their goal, the obstacle, and the stakes in one sentence. Recommend one and ask the author which direction fits and what to change.",
   premise: "Generate 2–4 premise options directly in the tree — no separate baseline step. Call propose_options with kind='premise', parentId=<seed-node-id>, and no nodeId. This mints the premise node and stages all candidates at once so the author picks from the tree. Each option is a COMPLETE premise content object with: `dramatic_question` (a priced cost: \"Can she X without losing Y?\", using the brief's specific nouns), and `shape` with a `name`, `movements` (array of 3–5 escalating internal movements tracing the protagonist's changing relationship to their want — each a short phrase, ending in a want-vs-need choice), and `ending_feel`. Every option MUST honor the accepted logline's protagonist/inciting/goal/obstacle/stakes as FIXED; vary only the priced dramatic question and the shape's internal arc. Once the author picks, if they want further directions, offer 2–4 more with propose_options on the accepted premise node.",
   pillar: "Generate 2–4 pillar options directly in the tree — no separate baseline step. Call propose_options with kind='pillar', parentId=<premise-node-id>, and no nodeId. This mints the pillar node and stages all candidates at once so the author picks from the tree. Each option is a COMPLETE pillar content object with: `controlling_idea` (the book's one-sentence thematic argument — what the story argues is true) and `ending` (the concrete ending that argument implies, stated as what actually happens on the page). Every option MUST honor the accepted premise's dramatic question and shape as FIXED; vary only the thematic angle (what the story is arguing) and the ending it lands on. Once the author picks, if they want further directions, offer 2–4 more with propose_options on the accepted pillar node.",
@@ -197,7 +208,7 @@ export function nextDraftTarget(nodes: DnaNode[]): { scene: DnaNode; orderIndex:
 
 /** The agent's CURRENT objective — the one rung to drive the author through next, derived live from the
  *  tree. See STEP_RECIPE above. `bookSlug` (when known) puts the reader URL into the final hand-off. */
-export function currentObjective(nodes: DnaNode[], opts: { bookSlug?: string } = {}): string {
+export function currentObjective(nodes: DnaNode[], opts: { bookSlug?: string; brief?: Brief | null } = {}): string {
   const { stages, nowIndex } = buildJourney(nodes);
   if (stages.every((s) => s.status === "done")) {
     const reader = opts.bookSlug ? ` (then read it at /books/${opts.bookSlug})` : "";
@@ -207,7 +218,7 @@ export function currentObjective(nodes: DnaNode[], opts: { bookSlug?: string } =
     ].join("\n");
   }
   const stage = stages[nowIndex];
-  const now = stageSubsteps(stage.key, nodes).find((s) => s.status === "now");
+  const now = stageSubsteps(stage.key, nodes, opts.brief).find((s) => s.status === "now");
   const recipe = STEP_RECIPE[now?.key ?? stage.key] ?? "";
   const next = stages[nowIndex + 1];
   // The draft stage names its specific next scene (see nextDraftTarget); every other stage keeps the plain
