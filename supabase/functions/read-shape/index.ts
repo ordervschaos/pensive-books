@@ -35,8 +35,6 @@ Deno.serve(async (req: Request) => {
     }
     if (!movements.length || !acts.some((a) => a.beats?.length)) return json({ fits: [] }); // nothing to read yet
 
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
     // Access check: the same surface as editing the book (RLS lets the caller read it).
     const { data: book } = await userClient.from("books").select("id").eq("id", bookId).maybeSingle();
@@ -52,7 +50,7 @@ Deno.serve(async (req: Request) => {
 
     const { high: model } = await getActiveModels();
     const meta: CallMeta = { fn: "read-shape", bookId, taskTable: "book_nodes", taskId: bookId };
-    const data = await callLLM(apiKey, {
+    const data = await callLLM({
       model,
       max_tokens: 1500,
       thinking: { type: "adaptive" },

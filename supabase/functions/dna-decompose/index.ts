@@ -84,11 +84,9 @@ const digestMenu = (digests: ({ title?: string; digest?: string } | null)[]): st
 // pass DIGEST_MODEL, the workhorse the incremental digest already proves fits the ~150s worker;
 // chapter reads keep the high tier (per-chapter judgment quality, and 1.2k-token outputs fit).
 async function ask(bookId: number, system: string, prompt: string, max_tokens: number, effort: "low" | "medium", timeoutMs = 140_000, modelOverride?: string): Promise<Record<string, unknown>> {
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
   const model = modelOverride ?? (await getActiveModels()).high;
   const meta: CallMeta = { fn: FN, bookId, taskTable: "book_decompositions", taskId: bookId };
-  const data = await callLLM(apiKey, {
+  const data = await callLLM({
     model, max_tokens, thinking: { type: "adaptive" }, output_config: { effort },
     system: [{ type: "text", text: system }],
     messages: [{ role: "user", content: prompt }],

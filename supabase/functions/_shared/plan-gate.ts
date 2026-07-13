@@ -63,7 +63,7 @@ const PLAN_JUDGE_SYSTEM =
 
 // Judge a scene's prose against its OWN plan slice. Mirrors mandate-gate.judgeProse (prose in a cached system
 // block; strict JSON out). Returns [] if the plan has nothing to conform to.
-export async function judgeAgainstPlan(apiKey: string, model: string, plan: ScenePlan, proseText: string, meta: CallMeta): Promise<PlanAxisVerdict[]> {
+export async function judgeAgainstPlan(model: string, plan: ScenePlan, proseText: string, meta: CallMeta): Promise<PlanAxisVerdict[]> {
   if (!planHasContent(plan)) return [];
   const lines: string[] = [];
   if (plan.goal) lines.push(`GOAL: ${plan.goal}`);
@@ -82,7 +82,6 @@ export async function judgeAgainstPlan(apiKey: string, model: string, plan: Scen
 
   const user = `SCENE PLAN:\n${lines.join("\n")}\n\nJudge the prose below against THIS plan (only these elements). JSON only.`;
   const data = await callLLM(
-    apiKey,
     {
       model,
       max_tokens: 1200,

@@ -38,8 +38,6 @@ Deno.serve(async (req: Request) => {
     if (!bookId || !Array.isArray(chapters)) return json({ error: "bookId and chapters[] are required" }, 400);
     if (!chapters.length) return json({ flags: [], truncated: false, chaptersRead: 0 }); // nothing to read yet
 
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
     // Access check: the same surface as editing the book (RLS lets the caller read it).
     const { data: book } = await userClient.from("books").select("id").eq("id", bookId).maybeSingle();
@@ -67,7 +65,7 @@ Deno.serve(async (req: Request) => {
 
     const { high: model } = await getActiveModels();
     const meta: CallMeta = { fn: "read-confusion", bookId, taskTable: "book_nodes", taskId: bookId };
-    const data = await callLLM(apiKey, {
+    const data = await callLLM({
       model,
       max_tokens: 3000,
       thinking: { type: "adaptive" },

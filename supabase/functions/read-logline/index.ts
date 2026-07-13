@@ -39,8 +39,6 @@ Deno.serve(async (req: Request) => {
     const logline = (input?.logline ?? "").trim();
     if (!bookId || !logline) return json({ error: "bookId and input.logline are required" }, 400);
 
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
     // Access check + brief load in one query: RLS lets the caller read the book, and the brief carries the
     // idea/genre/tone/stakes the logline is judged against — loaded HERE, never sent by the client.
@@ -52,7 +50,7 @@ Deno.serve(async (req: Request) => {
 
     const { high: model } = await getActiveModels();
     const meta: CallMeta = { fn: "read-logline", bookId, taskTable: "book_nodes", taskId: bookId };
-    const data = await callLLM(apiKey, {
+    const data = await callLLM({
       model,
       max_tokens: 1200,
       thinking: { type: "adaptive" },

@@ -45,8 +45,6 @@ Deno.serve(async (req: Request) => {
     if (!bookId || !scene?.id || !scene.prose?.trim()) {
       return json({ error: "bookId and a scene with prose are required" }, 400);
     }
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
     const { data: book } = await userClient.from("books").select("id").eq("id", bookId).maybeSingle();
     if (!book) return json({ error: "Book not found or access denied" }, 403);
@@ -67,7 +65,7 @@ Deno.serve(async (req: Request) => {
 
     const { high: model } = await getActiveModels();
     const meta: CallMeta = { fn: "read-facts", bookId, taskTable: "book_nodes", taskId: bookId };
-    const data = await callLLM(apiKey, {
+    const data = await callLLM({
       model,
       max_tokens: 2000,
       thinking: { type: "adaptive" },

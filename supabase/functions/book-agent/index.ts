@@ -25,8 +25,6 @@ import { advance, chain } from "./advance.ts";
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
   const service = serviceClient();
 
   try {
@@ -39,7 +37,7 @@ Deno.serve(async (req: Request) => {
     if (body.chain) {
       if (!isChainCall(req)) return json({ error: "Unauthorized" }, 401);
       if (!body.runId) return json({ error: "runId required" }, 400);
-      await advance(service, apiKey, body.runId);
+      await advance(service, body.runId);
       return json({ ok: true });
     }
 

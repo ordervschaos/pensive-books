@@ -47,7 +47,7 @@ function lastAssistantText(transcript: unknown[]): string {
 // message, write that one-line acknowledgement to the visible feed, then let the normal grounded
 // tool loop run. If the ack itself has a transient issue, continue into the real turn rather than
 // making UX worse; billing/config failures still surface through the main call path.
-async function maybeEagerAck(service: SupabaseClient, apiKey: string, row: RunRow, model: string) {
+async function maybeEagerAck(service: SupabaseClient, row: RunRow, model: string) {
   const userText = latestPlainUserText(row.transcript);
   if (!userText) return;
   const lastStep = row.steps[row.steps.length - 1];
@@ -69,7 +69,7 @@ async function maybeEagerAck(service: SupabaseClient, apiKey: string, row: RunRo
     const capabilities = toolNames ? `<capabilities>${toolNames}</capabilities>\n` : "";
     const groundedText = objective + trail + capabilities +
       (prior ? `<prior_note>${prior}</prior_note>\n` : "") + userText.slice(0, 2000);
-    const resp = await callLLM(apiKey, {
+    const resp = await callLLM({
       model,
       max_tokens: 120,
       system: [{ type: "text", text: EAGER_ACK_SYSTEM }],
@@ -103,12 +103,12 @@ async function maybeEagerAck(service: SupabaseClient, apiKey: string, row: RunRo
 // failed title never delays the author's turn. Guarded on title being empty, so it fires only on the opening
 // turn and never overwrites a name. Best-effort: any failure leaves title null and the rail falls back to the
 // client-derived title (the first message, trimmed).
-async function maybeTitleThread(service: SupabaseClient, apiKey: string, model: string, row: RunRow) {
+async function maybeTitleThread(service: SupabaseClient, model: string, row: RunRow) {
   if (row.title && row.title.trim()) return;
   const first = row.steps.find((s) => s.t === "user")?.label?.trim();
   if (!first) return;
   try {
-    const resp = await callLLM(apiKey, {
+    const resp = await callLLM({
       model,
       max_tokens: 24,
       system: [{ type: "text", text: TITLE_SYSTEM }],

@@ -133,7 +133,6 @@ export interface CallMeta {
 
 // deno-lint-ignore no-explicit-any
 export async function callLLM(
-  apiKey: string,
   body: Record<string, unknown>,
   meta: CallMeta,
   // `signal` lets a caller enforce a per-call timeout (evaluate-book aborts slow calls so they don't
@@ -155,7 +154,7 @@ export async function callLLM(
   const route = isLocal ? null : resolveRoute(model, await activeProvider(), (env) => !!Deno.env.get(env));
   const provider: LoggedProvider = isLocal ? "claude-local" : route!.provider;
   const isAnthropic = provider === "anthropic";
-  const key = isLocal ? "" : (Deno.env.get(route!.keyEnv) ?? apiKey);
+  const key = isLocal ? "" : (Deno.env.get(route!.keyEnv) ?? "");
   // Insert a 'running' row BEFORE the call so it's visible in /admin while in flight. Awaited
   // (we need the id to close it out) but best-effort — a null id just means we fall back to a
   // single insert at the end, the pre-existing behavior.

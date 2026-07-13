@@ -150,10 +150,6 @@ async function execTool(
     if (!proseText) {
       return { result: { type: "tool_result", tool_use_id: t.id, content: `Scene ${id} has no prose yet (content.prose.text is empty). Render or write the scene before checking it.`, is_error: true } };
     }
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) {
-      return { result: { type: "tool_result", tool_use_id: t.id, content: "Contract check unavailable: ANTHROPIC_API_KEY not configured.", is_error: true } };
-    }
     const check = ((t.input as { check?: string })?.check ?? "both");
     const doPlan = check !== "mandate", doMandate = check !== "plan";
     const { agent: model } = await getRoleModels();
@@ -161,12 +157,12 @@ async function execTool(
     try {
       // The two judges are independent LLM calls — run them together.
       const [planRes, mandateBody] = await Promise.all([
-        doPlan ? planConformanceSummary(service, apiKey, model, n.id, n.content, "book-agent-contract", bookId) : Promise.resolve(null),
+        doPlan ? planConformanceSummary(service, model, n.id, n.content, "book-agent-contract", bookId) : Promise.resolve(null),
         doMandate
           ? (async () => {
             const { data: book } = await service.from("books").select("brief").eq("id", bookId).maybeSingle();
             const brief = ((book as { brief?: Brief } | null)?.brief ?? {}) as Brief;
-            const axes = await judgeProse(apiKey, model, brief, proseText, meta);
+            const axes = await judgeProse(model, brief, proseText, meta);
             return axes.map((a) => `  ${a.axis}: ${a.verdict.toUpperCase()} — ${a.detail}${a.evidence ? ` (e.g. "${a.evidence}")` : ""}`).join("\n");
           })()
           : Promise.resolve(null),

@@ -105,14 +105,13 @@ const JUDGE_SYSTEM =
 // Judge an arbitrary span of prose (a scene, a chapter, the whole book) against the brief's mandate.
 // Exported so the editor agent can check a single scene's prose against the genre/heat/success contract
 // without running the whole-book gate (which is page-based — see runMandateGate).
-export async function judgeProse(apiKey: string, model: string, brief: Brief, manuscript: string, meta: CallMeta): Promise<MandateAxisVerdict[]> {
+export async function judgeProse(model: string, brief: Brief, manuscript: string, meta: CallMeta): Promise<MandateAxisVerdict[]> {
   const mandate = mandateContext(brief) || "(no explicit mandate set)";
   const user =
     `BRIEF MANDATE (what the book promised to deliver):\n${mandate}\n\n` +
     `GENRE: ${brief.genre ?? "(unset)"}\nSUCCESS CRITERIA: ${brief.success_criteria ?? "(unset)"}\n\n` +
     `Judge the manuscript below against the mandate. JSON only.`;
   const data = await callLLM(
-    apiKey,
     {
       model,
       max_tokens: 1200,
@@ -136,7 +135,6 @@ export async function judgeProse(apiKey: string, model: string, brief: Brief, ma
 // ── Orchestrator ──────────────────────────────────────────────────────────────
 export async function runMandateGate(
   client: SupabaseClient,
-  apiKey: string,
   bookId: number,
   log?: { taskTable?: string; taskId?: number; userId?: string | null },
 ): Promise<ConformanceReport> {
@@ -157,7 +155,7 @@ export async function runMandateGate(
 
   const { high: model } = await getActiveModels();
   const meta: CallMeta = { fn: "mandate-gate", bookId, taskTable: log?.taskTable ?? null, taskId: log?.taskId ?? null, userId: log?.userId ?? null };
-  const proseAxes = await judgeProse(apiKey, model, brief, manuscript, meta);
+  const proseAxes = await judgeProse(model, brief, manuscript, meta);
 
   const axes = [lengthAxis, ...proseAxes];
   return { overall: rollup(axes), axes, wordCount, wordTarget: target };

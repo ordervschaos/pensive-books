@@ -50,8 +50,6 @@ Deno.serve(async (req: Request) => {
       return json({ error: "bookId, input.logline and input.premise.dramaticQuestion are required" }, 400);
     }
 
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
     // Access check + brief load in one query: RLS lets the caller read the book, and the brief carries the
     // genre/tone/heat the brief_fidelity axis judges against.
@@ -70,7 +68,7 @@ Deno.serve(async (req: Request) => {
 
     const { high: model } = await getActiveModels();
     const meta: CallMeta = { fn: "read-premise", bookId, taskTable: "book_nodes", taskId: bookId };
-    const data = await callLLM(apiKey, {
+    const data = await callLLM({
       model,
       max_tokens: 3000,
       thinking: { type: "adaptive" },

@@ -5,7 +5,8 @@
 //   client → POST { bookId, nodeId } → load node + ancestors + mandate → Claude → { children } | { prose }
 //
 // Locked ancestors are hard constraints; accepted siblings give local coherence. Scene → prose fills the
-// scene's own text. Needs ANTHROPIC_API_KEY. The bridge (scripts/eval-bridge.mjs) mirrors this for dev.
+// scene's own text. The LLM host is chosen per-call in callLLM (the ai_provider switch); the bridge
+// (scripts/eval-bridge.mjs) mirrors this for dev.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
@@ -162,7 +163,7 @@ function sanitizeEntries(raw: unknown, ids: Set<string>): LedgerEntry[] {
   return out;
 }
 
-async function foldDigest(apiKey: string, model: string, prior: DigestAccum, pageText: string, registry: string, meta: CallMeta, signal?: AbortSignal): Promise<DigestAccum> {
+async function foldDigest(model: string, prior: DigestAccum, pageText: string, registry: string, meta: CallMeta, signal?: AbortSignal): Promise<DigestAccum> {
   const first = !prior.pages.length;
   const ledgerSoFar = first ? "(this is the first page — no prior state)" : (formatLedger(prior.ledger) || "(no ledger yet)");
   const impressionsSoFar = first ? "(none yet)" : (formatImpressions(prior.impressions) || "(none yet)");
@@ -199,7 +200,7 @@ ${impressionsSoFar}
 
 THIS PAGE:
 ${pageText}`;
-  const data = await callLLM(apiKey, { model, max_tokens: 2500, messages: [{ role: "user", content: dprompt }] }, { ...meta, fn: "dna-expand-digest" }, { signal });
+  const data = await callLLM({ model, max_tokens: 2500, messages: [{ role: "user", content: dprompt }] }, { ...meta, fn: "dna-expand-digest" }, { signal });
   const p = JSON.parse(extractJsonBlock(textFromLLM(data))) as { page?: string; ledger?: Record<string, unknown>; impressions?: DigestImpression[] };
   const impressions = Array.isArray(p.impressions)
     ? p.impressions.filter((i) => i && typeof i.note === "string" && i.note.trim()).map((i) => ({ note: i.note.trim(), weight: Math.max(1, Math.min(5, Math.round(Number(i.weight) || 1))) }))
@@ -215,7 +216,7 @@ ${pageText}`;
     : prior.ledger;
   return { pages: [...prior.pages, (p.page ?? "").trim()].filter(Boolean), ledger, impressions };
 }
-async function buildProseDigest(apiKey: string, model: string, allNodes: Node[], currentId: string, bookId: number, meta: CallMeta, signal?: AbortSignal): Promise<string> {
+async function buildProseDigest(model: string, allNodes: Node[], currentId: string, bookId: number, meta: CallMeta, signal?: AbortSignal): Promise<string> {
   const ordered = scenesInOrder(allNodes);
   const idx = ordered.findIndex((s) => s.id === currentId);
   if (idx <= 0) return "";
@@ -253,7 +254,7 @@ async function buildProseDigest(apiKey: string, model: string, allNodes: Node[],
     // first. Each completed fold below is already persisted, so the next generation resumes from here.
     if (Date.now() - startFold > FOLD_BUDGET_MS) { truncated = true; break; }
     try {
-      const next = await foldDigest(apiKey, model, accum, txt, registry, meta, signal);
+      const next = await foldDigest(model, accum, txt, registry, meta, signal);
       const line = next.pages[next.pages.length - 1] ?? ""; // this page's delta = the line the fold just appended
       page.authoring = { ...page.authoring, prose_digest: { v: DIGEST_VERSION, line, ledger: next.ledger, impressions: next.impressions, src_hash: srcHash, prev_hash: prevHash } };
       // Persist THIS fold immediately — a worker death at the ~150s ceiling must not lose progress (the
@@ -306,8 +307,6 @@ Deno.serve(async (req: Request) => {
     // against the text the browser streamed off-worker. Independent of prose's `prepare` boolean.
     const { bookId, nodeId, target, light, prepare, phase, rawText, repairText, brief: renderBrief } = (await req.json().catch(() => ({}))) as { bookId?: number; nodeId?: string; target?: string; light?: boolean; prepare?: boolean; phase?: "prepare" | "finalize"; rawText?: string; repairText?: string; brief?: { focus?: string; mustHonor?: string[]; avoid?: string[] } };
     if (!bookId || !nodeId) return json({ error: "bookId and nodeId are required" }, 400);
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
     const { data: book } = await db.from("books").select("name, brief, foundations").eq("id", bookId).maybeSingle();
     const { data: nodeRows } = await db.from("book_nodes").select("id, parent_id, kind, position, content, authoring").eq("book_id", bookId);
@@ -541,7 +540,7 @@ Deno.serve(async (req: Request) => {
     // anti-repetition polish for speed; fine for a draft-to-check, not for the canonical book build.
     const prevProseBlock = light ? ""
       : (target === "prose" || target === "sketch" || (!target && node.kind === "scene"))
-      ? await buildProseDigest(apiKey, DIGEST_MODEL, nodes, nodeId, bookId, meta, req.signal)
+      ? await buildProseDigest(DIGEST_MODEL, nodes, nodeId, bookId, meta, req.signal)
       : "";
     // Beat neighbourhood — the sibling beats of the scene's parent beat, in act order.
     // Prose generation only sees its direct ancestor chain (parent beat + act + …), so it never
@@ -656,7 +655,7 @@ Deno.serve(async (req: Request) => {
 ${LOGLINE_CRAFT}
 
 Honor the MANDATE (genre/tone) and any LOCKED ancestors. Do NOT invent a title. Do NOT restate the raw idea verbatim — SHARPEN it into a real logline. Output the LOGLINE ONLY: one or two sentences, no preamble, no label, no quotes, no JSON.`;
-      const data = await callLLM(apiKey, { model, max_tokens: 400, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      const data = await callLLM({ model, max_tokens: 400, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}\n\nWrite the logline.` }] }, meta, { signal: req.signal });
       return json({ logline: textFromLLM(data).trim(), callId: meta.loggedCallId ?? null });
     }
@@ -688,7 +687,7 @@ Revise internally until the verdict would be ACCEPT (>=32/40, no criterion below
 
 Output JSON ONLY, no prose, no fences:
 { "children": [ { "dramatic_question": "<DRAMATIC_QUESTION sentence>", "shape": { "name": "<2-4 word emotional trajectory>", "movements": ["<movement 1>", "<movement 2>", "<movement 3>", "..."], "ending_feel": "up|down|bittersweet|ambivalent" } } ] }`;
-      const data = await callLLM(apiKey, { model, max_tokens: 1800, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      const data = await callLLM({ model, max_tokens: 1800, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `BRIEF:\n${briefContext(brief, { scope: "full", success: true, none: "(no brief)", empty: "(empty)" })}\n\nLOGLINE:\n${logline}\n\nDerive the premise. JSON only.` }] }, meta, { signal: req.signal });
       const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
       const first = Array.isArray(parsed.children) ? parsed.children[0] : parsed;
@@ -725,7 +724,7 @@ Rules:
 - Never write actual dialogue lines or prose sentences — moves describe WHAT turns, not WHAT'S SAID.
 
 Output JSON ONLY: {"opening":"...","moves":[{"what":"...","thread":"<thread id, optional>","sense":"<e.g. smell:tar, optional>"}],"exit":"...","direction":{"cut":{"in":"...","out":"..."},"distance":"far|mid|close|deep","mode":"dialogue|action|interior|description|summary","time":"real|compressed|stretched","tension":"suspense|mystery|irony"}}`;
-      const data = await callLLM(apiKey, { model, max_tokens: 1200, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      const data = await callLLM({ model, max_tokens: 1200, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}\n\nWrite this scene's sketch. JSON only.` }] }, meta, { signal: req.signal });
       try {
         const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
@@ -755,7 +754,7 @@ CRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md
       // `provider` carries the admin's ai_provider setting to the proxy, which has no admin_settings read of
       // its own — this worker is the authority on both which model and which host runs the call.
       if (prepare) return json({ prepared: { system, userContent, model, max_tokens: 8000, provider: await getActiveProvider() } });
-      const data = await callLLM(apiKey, { model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      const data = await callLLM({ model, max_tokens: 8000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: userContent }] }, meta, { signal: req.signal });
       return json({ prose: textFromLLM(data).trim(), callId: meta.loggedCallId ?? null });
     }
@@ -1047,7 +1046,7 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
 2. METERS — the 1–3 numeric axes the brief demands (a comedy brief → a comedy meter; the content type's heat → a heat meter; most genres → a tension meter). Each has poles (what low/high FEEL like on the page), a 0–100 scale, and a TARGET curve: 3–7 sparse keyframes { at: 0..1 position through the book, value: 0..100 } encoding the genre's expected shape (e.g. thriller tension: a sawtooth rising to ~90 near the climax, then release; romance heat: slow build with a spike at the midpoint turn).
 3. VOICE_CONSTRAINTS — 2–5 short imperative register bounds for THIS audience: vocabulary ceiling/floor, content phrasing limits, sentence-complexity guidance (e.g. "YA: no graphic gore; keep slang timeless, not dated").
 Output JSON ONLY: { "tentpoles": [ { "name": "...", "summary": "..." } ], "meters": [ { "name": "...", "kind": "comedy"|"heat"|"tension"|"affect"|"value"|"custom", "poles": { "low": "...", "high": "..." }, "scale": { "min": 0, "max": 100 }, "target": [ { "at": 0.0, "value": 10 } ] } ], "voice_constraints": [ "..." ] }`;
-      const data = await callLLM(apiKey, { model, max_tokens: 3000, output_config: { effort: "medium" }, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      const data = await callLLM({ model, max_tokens: 3000, output_config: { effort: "medium" }, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}${existingBlock ? `\n\nEXISTING REGISTRY:\n${existingBlock}` : ""}\n\nCompile the brief's contract. JSON only.` }] }, meta, { signal: AbortSignal.any([req.signal, AbortSignal.timeout(140_000)]) });
       const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
       const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
@@ -1111,7 +1110,7 @@ Output JSON ONLY: { "tentpoles": [ { "name": "...", "summary": "..." } ], "meter
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");
     const system = `You are a story architect expanding a ${node.kind} into ${config.role}. Generate ${config.count} ${config.child_kind}s as ONE authoritative structure — NOT alternatives to choose among. Honor every LOCKED ancestor and the MANDATE verbatim. Output JSON ONLY: { "children": [ ${config.schema_json} ] }`;
-    const data = await callLLM(apiKey, { model, max_tokens: 4000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+    const data = await callLLM({ model, max_tokens: 4000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: `${slottedCtx}\n\nGenerate the ${config.child_kind}s. JSON only.` }] }, meta, { signal: req.signal });
     const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
     let children = Array.isArray(parsed.children) ? parsed.children : [];

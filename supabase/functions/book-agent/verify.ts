@@ -37,7 +37,7 @@ async function scopePayoffsToLatestScene(
 // P2.3 auto-verify. Returns null when the scene has no prose; `{axes:[], summary}` when it has no structural
 // plan; else the judged axes + an indented summary. `fn` labels the caller in ai_calls.
 async function planConformanceSummary(
-  service: SupabaseClient, apiKey: string, model: string, sceneId: string, content: SceneContent | null | undefined, fn: string, bookId: number,
+  service: SupabaseClient, model: string, sceneId: string, content: SceneContent | null | undefined, fn: string, bookId: number,
 ): Promise<{ axes: PlanAxisVerdict[]; summary: string } | null> {
   const c = (content ?? {}) as SceneContent;
   const proseText = (c.prose?.text ?? "").trim();
@@ -57,7 +57,7 @@ async function planConformanceSummary(
     direction: c.sketch?.direction,
   };
   if (!planHasContent(plan)) return { axes: [], summary: "  this scene has no structural plan (no value_shift / establishes / threads) to check against." };
-  const axes = await judgeAgainstPlan(apiKey, model, plan, proseText, { fn, bookId, nodeId: sceneId, operation: "plan-conformance", taskTable: "book_agent_runs", taskId: null, userId: null });
+  const axes = await judgeAgainstPlan(model, plan, proseText, { fn, bookId, nodeId: sceneId, operation: "plan-conformance", taskTable: "book_agent_runs", taskId: null, userId: null });
   const summary = axes.map((a) => `  ${a.field}: ${a.verdict.toUpperCase()} — ${a.detail}${a.evidence ? ` (e.g. "${a.evidence}")` : ""}`).join("\n");
   return { axes, summary };
 }
@@ -72,7 +72,7 @@ const VERIFY_SENTINEL = "🔎 AUTO-VERIFY";
 // is told to FIX any fail before moving on. Returns the augmented { transcript, steps } (persisted) or the
 // originals. Best-effort: any failure returns the originals unchanged so the auto loop never breaks.
 async function maybeInjectRenderVerify(
-  service: SupabaseClient, apiKey: string, model: string, row: RunRow,
+  service: SupabaseClient, model: string, row: RunRow,
 ): Promise<{ transcript: unknown[]; steps: AgentStep[] }> {
   const fallback = { transcript: row.transcript, steps: row.steps };
   try {
@@ -94,7 +94,7 @@ async function maybeInjectRenderVerify(
     const blocks = (await Promise.all(sceneIds.map(async (id: string) => {
       const { data: sc } = await service.from("book_nodes").select("content").eq("id", id).maybeSingle();
       const content = (sc as { content?: SceneContent } | null)?.content;
-      const res = await planConformanceSummary(service, apiKey, model, id, content, "book-agent-autoverify", row.book_id);
+      const res = await planConformanceSummary(service, model, id, content, "book-agent-autoverify", row.book_id);
       if (!res || !res.axes.length) return null; // no prose written yet, or no structural plan → nothing to enforce
       return `Scene [${id}] “${nodeHandle(content as Record<string, unknown>)}”:\n${res.summary}`;
     }))).filter((b): b is string => !!b);

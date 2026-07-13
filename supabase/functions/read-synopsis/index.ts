@@ -54,8 +54,6 @@ Deno.serve(async (req: Request) => {
     const acts = input.acts;
     if (!acts.some((a) => a.beats?.length)) return json({ craft: [] }); // nothing to read yet
 
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
     // Access check + brief load in one query: RLS lets the caller read the book, and the brief carries the
     // genre/audience/tone promise the genre_feel axis judges against.
@@ -86,7 +84,7 @@ Deno.serve(async (req: Request) => {
 
     const { high: model } = await getActiveModels();
     const meta: CallMeta = { fn: "read-synopsis", bookId, taskTable: "book_nodes", taskId: bookId };
-    const data = await callLLM(apiKey, {
+    const data = await callLLM({
       model,
       max_tokens: 2000,
       thinking: { type: "adaptive" },

@@ -40,8 +40,6 @@ Deno.serve(async (req: Request) => {
     if (callError) return json({ error: callError.message }, 500);
     if (!call) return json({ error: "AI call not found or not accessible" }, 404);
 
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
 
     const service = serviceClient();
     const { data: row, error: insertError } = await service
@@ -52,7 +50,7 @@ Deno.serve(async (req: Request) => {
     if (insertError || !row) return json({ error: "Could not start eval" }, 500);
 
     runInBackground(service, "ai_call_evals", row.id, "evaluate-ai-call", async () => {
-      const data = await callLLM(apiKey, {
+      const data = await callLLM({
         model: JUDGE_MODEL,
         max_tokens: 2000,
         system: [{ type: "text", text: JUDGE_SYSTEM, cache_control: { type: "ephemeral" } }],

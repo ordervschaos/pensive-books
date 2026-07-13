@@ -53,7 +53,7 @@ async function rejectAndChain(
 }
 
 // ── One chain link: one Claude call, execute its tool calls, persist, chain or park ──
-async function advance(service: SupabaseClient, apiKey: string, runId: number) {
+async function advance(service: SupabaseClient, runId: number) {
   const { data } = await service.from("book_agent_runs").select(ROW_COLS).eq("id", runId).maybeSingle();
   const row = data as RunRow | null;
   if (!row || row.status !== "running") return; // not ours to drive (parked, finished, or gone)
@@ -83,16 +83,16 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // so the "unchanged steps" re-write at the update() a few lines down carries the ack note forward
     // instead of clobbering it with a pre-ack snapshot (the note would flash onto the row then vanish).
     if (row.turns === 0) {
-      await maybeEagerAck(service, apiKey, row, ackModel);
+      await maybeEagerAck(service, row, ackModel);
       // Name the chat from its first message, once, off the response path (the history rail lists chats by
       // this title). Fire-and-forget: a failure or slow model must never delay the author's actual turn.
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(maybeTitleThread(service, apiKey, ackModel, row));
+      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(maybeTitleThread(service, ackModel, row));
     }
     // P2.3 — enforced render→verify (auto only): if the prior turn was an applied prose render, inject a
     // plan-conformance verdict into the transcript before this turn's model call. Best-effort; returns the
     // originals if nothing to verify or on any error, so the loop is never blocked.
     const rvResult = auto
-      ? await maybeInjectRenderVerify(service, apiKey, model, row)
+      ? await maybeInjectRenderVerify(service, model, row)
       : { transcript: row.transcript as unknown[], steps: row.steps };
     const rawTranscript = rvResult.transcript;
     let baseSteps = rvResult.steps;
@@ -144,7 +144,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
 
     let resp;
     try {
-      resp = await callLLM(apiKey, {
+      resp = await callLLM({
         model,
         // Sized to the 140s timer, not to ambition: decode runs ~55 tok/s on both the qwen and
         // sonnet tiers, so ~5k generated tokens (+ ~20s prefill) is all that physically fits. 8000
