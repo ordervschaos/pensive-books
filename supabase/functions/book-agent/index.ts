@@ -19,7 +19,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient as createUserClient } from "../_shared/task.ts";
 import { isChainCall } from "../_shared/self-chain.ts";
-import { ASPECTS, ROW_COLS, type AgentStep, type Aspect, type RunRow } from "./shared.ts";
+import { ROW_COLS, type AgentStep, type RunRow } from "./shared.ts";
 import { advance, chain } from "./advance.ts";
 
 Deno.serve(async (req: Request) => {
@@ -30,7 +30,7 @@ Deno.serve(async (req: Request) => {
   try {
     const body = (await req.json().catch(() => ({}))) as {
       bookId?: number; runId?: number; answer?: string; chain?: boolean; autoContinue?: boolean;
-      message?: string; scope?: string[]; analysis?: string; effort?: "low" | "high"; auto?: boolean; objective?: string; attachedIds?: string[];
+      message?: string; analysis?: string; effort?: "low" | "high"; auto?: boolean; objective?: string; attachedIds?: string[];
     };
 
     // ── Continue call (self/watchdog): advance one model turn ──
@@ -110,10 +110,6 @@ Deno.serve(async (req: Request) => {
       const { data: canEdit } = await userClient.rpc("user_can_edit_book", { _book_id: tBookId });
       if (canEdit === false) return json({ error: "Access denied" }, 403);
 
-      // The aspects the agent may see + touch this turn (null = whole book).
-      const scope: Aspect[] | null = Array.isArray(body.scope) && body.scope.length
-        ? (body.scope.filter((s): s is Aspect => (ASPECTS as string[]).includes(s)))
-        : null;
       // The client-computed story analysis (the engine lives in the web app) — refreshed this turn.
       const analysis: string | null = typeof body.analysis === "string" && body.analysis.trim() ? body.analysis.trim() : null;
       // The client-computed CURRENT OBJECTIVE (the now journey rung + recipe) — the guided-flow anchor.
@@ -145,7 +141,6 @@ Deno.serve(async (req: Request) => {
             created_by: user.id,
             kind: "thread",
             status: "running",
-            context_scope: scope,
             context_analysis: analysis,
             context_objective: objective,
             context_attached_ids: attachedIds,
@@ -167,7 +162,7 @@ Deno.serve(async (req: Request) => {
       const transcript = [...thread.transcript, { role: "user", content: [{ type: "text", text: message }] }];
       const steps = [...thread.steps, { t: "user", label: message } as AgentStep];
       const { error } = await service.from("book_agent_runs")
-        .update({ transcript, steps, status: "running", turns: 0, pending: null, error: null, cancel_requested: false, context_scope: scope, context_analysis: analysis, context_objective: objective, context_attached_ids: attachedIds, context_effort: effort, context_auto: auto })
+        .update({ transcript, steps, status: "running", turns: 0, pending: null, error: null, cancel_requested: false, context_analysis: analysis, context_objective: objective, context_attached_ids: attachedIds, context_effort: effort, context_auto: auto })
         .eq("id", thread.id);
       if (error) throw new Error(error.message);
       chain(thread.id);

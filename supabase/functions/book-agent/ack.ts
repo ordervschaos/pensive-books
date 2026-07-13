@@ -65,7 +65,7 @@ async function maybeEagerAck(service: SupabaseClient, row: RunRow, model: string
     const recentSteps = row.steps.slice(0, -1).slice(-3)
       .map((s) => `${s.t}: ${s.label}`).join("\n");
     const trail = recentSteps ? `<recent_activity>\n${recentSteps}\n</recent_activity>\n` : "";
-    const toolNames = threadToolsFor(null).map((t) => (t as { name?: string }).name).filter(Boolean).join(", ");
+    const toolNames = threadToolsFor().map((t) => (t as { name?: string }).name).filter(Boolean).join(", ");
     const capabilities = toolNames ? `<capabilities>${toolNames}</capabilities>\n` : "";
     const groundedText = objective + trail + capabilities +
       (prior ? `<prior_note>${prior}</prior_note>\n` : "") + userText.slice(0, 2000);

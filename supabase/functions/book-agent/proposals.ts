@@ -1,8 +1,8 @@
 // book-agent proposal validators: turn the model's propose_* tool inputs into reviewable proposals,
-// validated against the live tree + the scope/lock fence (read-only on book_nodes except the
+// validated against the live tree + the lock fence (read-only on book_nodes except the
 // proposeOptions creation shortcut, which mints a node + stages options in one step).
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { scopedKinds, ALL_NODE_KINDS, nodeHandle, type Aspect, type NodeOp, type NewSubtree, type AgentProposal, type RenderBrief } from "./shared.ts";
+import { ALL_NODE_KINDS, nodeHandle, type NodeOp, type NewSubtree, type AgentProposal, type RenderBrief } from "./shared.ts";
 import { newId, OUTPUT_FIELDS, PARENT_KIND, SINGLETON_KINDS, type NodeKind } from "../_shared/novel-dna.ts";
 
 // Keep only { content, children } from a model-proposed subtree (drop stray op/kind/id fields the model
@@ -19,26 +19,23 @@ function sanitizeSubtree(subs: unknown[]): NewSubtree[] {
   return out;
 }
 
-// Validate proposed ops against the LIVE tree + the scope fence; build the reviewable proposal. Mirrors
-// dna-chat's parser: ids must exist, never LOCKED, add-kinds valid, and every touched kind in scope.
+// Validate proposed ops against the LIVE tree + the lock fence; build the reviewable proposal. Mirrors
+// dna-chat's parser: ids must exist, never LOCKED, add-kinds valid.
 async function proposeNodeOps(
   service: SupabaseClient,
   bookId: number,
-  scope: Aspect[] | null,
   input: { summary?: string; ops?: unknown[] },
 ): Promise<{ ok: true; proposal: AgentProposal } | { ok: false; error: string }> {
   // content rides along for replace_text's find-string check; other ops don't read it.
   const { data: rows } = await service.from("book_nodes").select("id, kind, authoring, content").eq("book_id", bookId);
   const nodes = (rows ?? []) as { id: string; kind: string; authoring: { locked?: boolean } | null; content: Record<string, unknown> | null }[];
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const kinds = scopedKinds(scope); // null = all kinds allowed
-  const allowed = (kind: string) => !kinds || kinds.has(kind);
 
   const ops: NodeOp[] = [];
   const badFinds: string[] = []; // replace_text ops whose find string isn't in the live prose — name them so the model corrects
   for (const raw of Array.isArray(input.ops) ? input.ops : []) {
     const o = raw as { op?: string; id?: string; kind?: string; childKind?: string; parentId?: string; content?: Record<string, unknown>; children?: unknown[]; find?: string; replace?: string };
-    if (o.op === "edit" && o.id && byId.has(o.id) && !byId.get(o.id)!.authoring?.locked && allowed(byId.get(o.id)!.kind) && o.content) {
+    if (o.op === "edit" && o.id && byId.has(o.id) && !byId.get(o.id)!.authoring?.locked && o.content) {
       // Output fields (confusion_flags, observed_shape_fit, observed_craft, prose, …) are written BY the reads
       // (Cold Read / Shape Read / Editor's Read / prose render) — never a direct plan edit. Caught live 2026-07-09:
       // the agent, unable to fix a scene's actual prose inconsistency, cleared the scene's confusion_flags to []
@@ -49,16 +46,16 @@ async function proposeNodeOps(
         continue;
       }
       ops.push({ op: "edit", id: o.id, content: o.content });
-    } else if (o.op === "delete" && o.id && byId.has(o.id) && !byId.get(o.id)!.authoring?.locked && allowed(byId.get(o.id)!.kind)) {
+    } else if (o.op === "delete" && o.id && byId.has(o.id) && !byId.get(o.id)!.authoring?.locked) {
       ops.push({ op: "delete", id: o.id });
-    } else if (o.op === "add" && o.parentId && byId.has(o.parentId) && o.kind && ALL_NODE_KINDS.includes(o.kind) && allowed(o.kind) && o.content) {
+    } else if (o.op === "add" && o.parentId && byId.has(o.parentId) && o.kind && ALL_NODE_KINDS.includes(o.kind) && o.content) {
       ops.push({ op: "add", kind: o.kind, parentId: o.parentId, content: o.content });
-    } else if (o.op === "replace_children" && o.parentId && byId.has(o.parentId) && !byId.get(o.parentId)!.authoring?.locked && o.childKind && ALL_NODE_KINDS.includes(o.childKind) && allowed(o.childKind) && Array.isArray(o.children) && o.children.length) {
+    } else if (o.op === "replace_children" && o.parentId && byId.has(o.parentId) && !byId.get(o.parentId)!.authoring?.locked && o.childKind && ALL_NODE_KINDS.includes(o.childKind) && Array.isArray(o.children) && o.children.length) {
       const children = sanitizeSubtree(o.children);
       if (children.length) ops.push({ op: "replace_children", parentId: o.parentId, childKind: o.childKind, children });
     } else if (o.op === "replace_text" && o.id && typeof o.find === "string" && o.find.length && typeof o.replace === "string") {
       const node = byId.get(o.id);
-      if (!node || node.authoring?.locked || node.kind !== "scene" || !allowed(node.kind)) {
+      if (!node || node.authoring?.locked || node.kind !== "scene") {
         badFinds.push(`[${o.id}] is not an editable scene`);
         continue;
       }
@@ -74,7 +71,7 @@ async function proposeNodeOps(
   }
   if (ops.length === 0) {
     const findNote = badFinds.length ? ` replace_text failures: ${badFinds.join("; ")}. The find string must match the CURRENT prose exactly — search_nodes shows the live text.` : "";
-    return { ok: false, error: (kinds ? `No valid ops — every op must target a non-locked node whose kind is in scope (${scope!.join(", ")}), or add a child of one.` : "No valid ops — reference real, non-locked node ids.") + findNote };
+    return { ok: false, error: "No valid ops — reference real, non-locked node ids." + findNote };
   }
   if (badFinds.length) {
     // Some ops were fine but these weren't — fail the whole proposal so nothing half-lands silently.
@@ -158,7 +155,7 @@ async function proposeExpansion(
 
 // Stage 2–4 alternative content objects ON a node as pickable options (the options/picker channel). The
 // candidates write to book_nodes.proposals; the author commits one in the tree (chooseProposal). Gated by
-// the same live-tree + scope + lock fence as proposeNodeOps — this only stages, it never commits.
+// the same live-tree + lock fence as proposeNodeOps — this only stages, it never commits.
 //
 // CREATION SHORTCUT: when `nodeId` is absent/unknown but `kind` and `parentId` are provided, a new node
 // of that kind is created (draft, source=ai) and the options are staged on it immediately — one step.
@@ -167,12 +164,10 @@ async function proposeExpansion(
 async function proposeOptions(
   service: SupabaseClient,
   bookId: number,
-  scope: Aspect[] | null,
   input: { nodeId?: string; kind?: string; parentId?: string; note?: string; options?: unknown[] },
 ): Promise<{ ok: true; handle: string; count: number } | { ok: false; error: string }> {
   const { data: rows } = await service.from("book_nodes").select("id, parent_id, kind, level, position, content, authoring").eq("book_id", bookId);
   const nodes = (rows ?? []) as { id: string; parent_id: string | null; kind: string; level: number; position: number; content: Record<string, unknown> | null; authoring: { locked?: boolean } | null }[];
-  const kinds = scopedKinds(scope);
   const objects = (Array.isArray(input.options) ? input.options : []).filter((o) => o && typeof o === "object" && !Array.isArray(o)) as Record<string, unknown>[];
   if (objects.length < 2) return { ok: false, error: "Offer at least 2 distinct option objects (2–4)." };
   const note = input.note?.trim();
@@ -189,7 +184,6 @@ async function proposeOptions(
     const parentNode = nodes.find((n) => n.id === parentId);
     if (!parentNode) return { ok: false, error: `No parent node with id ${parentId}.` };
     if (!ALL_NODE_KINDS.includes(targetKind)) return { ok: false, error: `Unknown kind "${targetKind}".` };
-    if (kinds && !kinds.has(targetKind)) return { ok: false, error: `Kind "${targetKind}" is not in scope (${scope!.join(", ")}).` };
     // STRUCTURAL GUARDRAILS — this shortcut writes book_nodes directly, bypassing the client validateOps gate,
     // so it must enforce the same invariants or it re-creates the nested-seed / duplicate-premise deviation.
     const want = PARENT_KIND[targetKind as NodeKind];
@@ -220,7 +214,6 @@ async function proposeOptions(
 
   if (!node) return { ok: false, error: `No node with id ${input.nodeId}. To create a new node with options, pass kind and parentId instead.` };
   if (node.authoring?.locked) return { ok: false, error: `Node ${input.nodeId} is LOCKED — unlock it before offering options.` };
-  if (kinds && !kinds.has(node.kind)) return { ok: false, error: `Node ${input.nodeId} is a ${node.kind}, not in scope (${scope!.join(", ")}).` };
   const { error } = await service.from("book_nodes").update({ proposals }).eq("id", node.id);
   if (error) return { ok: false, error: error.message };
   return { ok: true, handle: nodeHandle(node.content), count: proposals.length };

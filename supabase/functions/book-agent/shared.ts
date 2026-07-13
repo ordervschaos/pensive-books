@@ -1,5 +1,5 @@
-// book-agent shared kernel: row/proposal/op types, scope constants, and the pure leaf helpers
-// (nodeHandle, scopedKinds, the on-demand content-schema lookup) that every book-agent module imports.
+// book-agent shared kernel: row/proposal/op types and the pure leaf helpers (nodeHandle, the
+// on-demand content-schema lookup) that every book-agent module imports.
 // The content schema is GENERATED from the web app's NODE_SCHEMA (dnaSchema.artifact.test.ts) — never
 // hand-edit; edit NODE_SCHEMA + regen.
 import dnaSchema from "../_shared/dna-schema.json" with { type: "json" };
@@ -49,7 +49,6 @@ interface RunRow {
   steps: AgentStep[];
   pending: Pending | null;
   proposals: AgentProposal[] | null;
-  context_scope: Aspect[] | null; // thread scope (docs/agent-rail.md): null = whole book
   context_analysis: string | null; // latest client-computed story analysis (backstop)
   context_objective: string | null; // latest client-computed current journey objective (guided-flow anchor)
   context_attached_ids: string[] | null; // the context tray: node ids the author attached as anchors
@@ -59,28 +58,8 @@ interface RunRow {
   cancel_requested: boolean;
   title: string | null; // short label generated from the chat's first message (history rail); null = not yet named
 }
-const ROW_COLS = "id, book_id, created_by, kind, status, transcript, steps, pending, proposals, context_scope, context_analysis, context_objective, context_attached_ids, context_effort, context_auto, turns, cancel_requested, title";
+const ROW_COLS = "id, book_id, created_by, kind, status, transcript, steps, pending, proposals, context_analysis, context_objective, context_attached_ids, context_effort, context_auto, turns, cancel_requested, title";
 
-// Context filter aspects mirror the DNA tree's visual layers. null/[] scope = all.
-type Aspect = "seed" | "premise" | "cast_world" | "story" | "prose";
-const ASPECTS: Aspect[] = ["seed", "premise", "cast_world", "story", "prose"];
-
-// Which book_nodes kinds each aspect covers. Mirrors lib/agentThread.ts ASPECT_KINDS.
-const ASPECT_KINDS: Record<Aspect, string[]> = {
-  seed: ["seed"],
-  premise: ["premise"],
-  cast_world: ["pillar", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "meter", "voice_profile"],
-  story: ["act", "beat", "scene"],
-  prose: ["scene"],
-};
-// The set of node kinds in scope (null/[] = every kind). Used to filter context AND fence which nodes
-// the agent may write ops against.
-function scopedKinds(scope: Aspect[] | null): Set<string> | null {
-  if (!scope || scope.length === 0) return null;
-  const s = new Set<string>();
-  for (const a of scope) for (const k of ASPECT_KINDS[a]) s.add(k);
-  return s;
-}
 const ALL_NODE_KINDS = ["seed", "premise", "pillar", "act", "beat", "scene", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "meter", "voice_profile"];
 
 interface DnaNodeRow { id: string; parent_id: string | null; kind: string; level: number; position: number; content: Record<string, unknown>; authoring: { locked?: boolean; status?: string } | null; proposals?: { id: string; content: Record<string, unknown>; note?: string }[] | null }
@@ -111,5 +90,5 @@ function schemaFor(kinds: string[]): string {
   return lines.length ? `${SCHEMA_HEADER}\n${lines.join("\n")}` : "";
 }
 
-export { ROW_COLS, ASPECTS, ASPECT_KINDS, scopedKinds, ALL_NODE_KINDS, nodeHandle, CONTENT_SCHEMAS, SCHEMA_BY_KIND, schemaFor };
-export type { AgentStep, Pending, NewSubtree, NodeOp, RenderBrief, AgentProposal, RunRow, Aspect, DnaNodeRow };
+export { ROW_COLS, ALL_NODE_KINDS, nodeHandle, CONTENT_SCHEMAS, SCHEMA_BY_KIND, schemaFor };
+export type { AgentStep, Pending, NewSubtree, NodeOp, RenderBrief, AgentProposal, RunRow, DnaNodeRow };

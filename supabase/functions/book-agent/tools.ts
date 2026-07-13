@@ -1,7 +1,6 @@
 // book-agent tool belt: the JSON tool schemas the model is given each turn (control-flow tools +
 // the DNA tree tools), plus threadToolsFor which assembles them.
 import { AGENT_SKILLS } from "../_shared/agent-skills.ts";
-import { type Aspect } from "./shared.ts";
 
 // ── Tools shared across every thread (ask_author/finish are control-flow, not DNA-specific) ──────
 const SHARED_TOOLS = [
@@ -151,9 +150,8 @@ const THREAD_DNA_TOOLS = [
   },
 ];
 
-// The thread tool belt: ask_author + finish always; the DNA tools (the per-op kind fence does the
-// fine-grained gating when a scope is set). null/[] scope = all.
-function threadToolsFor(_scope: Aspect[] | null): unknown[] {
+// The thread tool belt: ask_author + finish always, plus the DNA tools.
+function threadToolsFor(): unknown[] {
   return [...SHARED_TOOLS, ...THREAD_DNA_TOOLS];
 }
 

@@ -7,7 +7,7 @@ import { callLLM } from "../_shared/llm.ts";
 import { getRoleModels } from "../_shared/model-config.ts";
 import { reinvoke } from "../_shared/self-chain.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
-import { ROW_COLS, type AgentProposal, type AgentStep, type Aspect, type Pending, type RunRow } from "./shared.ts";
+import { ROW_COLS, type AgentProposal, type AgentStep, type Pending, type RunRow } from "./shared.ts";
 import { threadToolsFor } from "./tools.ts";
 import { toolResults } from "./exec-tools.ts";
 import { maybeInjectRenderVerify } from "./verify.ts";
@@ -103,16 +103,14 @@ async function advance(service: SupabaseClient, runId: number) {
     // The stable system prompt + the volatile book state (rebuilt per call so ids stay fresh; injected
     // into the latest message, not the system prompt — see threadSystem/withBookState), and the tool belt.
     const turns = row.turns + 1;
-    // Boundaries removed (docs/agent-context-model.md): the agent always sees + may touch the whole book.
-    // Forced null here (not row.context_scope) so even threads created under the old aspect-fence run
-    // unfenced from now on; context is anchored by attached nodes, not filtered by kind.
-    const scope: Aspect[] | null = null;
+    // Boundaries removed (docs/agent-context-model.md): the agent always sees + may touch the whole
+    // book; context is anchored by attached nodes, not filtered by kind.
     const effort = row.context_effort ?? "high";
     // The author's standing ask: grounds the <task> anchor (appended after <book_state>) and the
     // intent hydration inside threadSystem (nodes the message names get their full plan inlined).
     const authorAsk = latestAuthorAsk(baseTranscript);
     // `auto` (autonomous mode: never park, commit own picks) computed above for the turn ceiling.
-    const { instructions, bookState, groundingLabels } = await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto, row.context_objective, row.context_attached_ids, authorAsk);
+    const { instructions, bookState, groundingLabels } = await threadSystem(service, row.book_id, row.context_analysis, effort, auto, row.context_objective, row.context_attached_ids, authorAsk);
     // Grounding steps (docs/agent-turn-grounding.md): surface what got silently pre-loaded this turn
     // (skill briefs, focus/mentioned node content) BEFORE the model call, so the author sees concrete
     // activity during the wait instead of a bare spinner. Folded into the same pre-call write below — no
@@ -123,7 +121,7 @@ async function advance(service: SupabaseClient, runId: number) {
     for (let i = baseSteps.length - 1; i >= 0 && baseSteps[i].t !== "user" && baseSteps[i].t !== "answer"; i--) sinceUser.add(baseSteps[i].label);
     const freshGrounding = groundingLabels.filter((label) => !sinceUser.has(label));
     if (freshGrounding.length) baseSteps = [...baseSteps, ...freshGrounding.map((label) => ({ t: "read", label } as AgentStep))];
-    const tools = threadToolsFor(scope);
+    const tools = threadToolsFor();
     // Count the turn BEFORE the call: a hard worker death mid-call still consumes budget, so a
     // crash-looping run hits MAX_TURNS instead of being revived forever by the watchdog.
     // Re-write `steps` (unchanged) alongside `turns` so this mid-"thinking" Realtime event carries the
@@ -217,10 +215,10 @@ async function advance(service: SupabaseClient, runId: number) {
 
     // ── propose_node_ops (thread): record a reviewable DNA change and end the turn ──
     // A thread proposal lands in proposals[]; the author applies it from the rail via applyNodeOps
-    // (the existing book_nodes write path). Validated against the live tree + the scope fence.
+    // (the existing book_nodes write path). Validated against the live tree + the lock fence.
     const opsCall = toolUses.find((t) => t.name === "propose_node_ops");
     if (opsCall) {
-      const outcome = await proposeNodeOps(service, row.book_id, scope, opsCall.input as { summary?: string; ops?: unknown[] });
+      const outcome = await proposeNodeOps(service, row.book_id, opsCall.input as { summary?: string; ops?: unknown[] });
       if (outcome.ok) {
         steps.push({ t: "plan", label: outcome.proposal.summary });
         const proposals = [...(row.proposals ?? []), outcome.proposal];
@@ -287,7 +285,7 @@ async function advance(service: SupabaseClient, runId: number) {
     // them and chooseProposal commits one. The agent's narration is the reply; the pick waits for the author.
     const optionsCall = toolUses.find((t) => t.name === "propose_options");
     if (optionsCall) {
-      const outcome = await proposeOptions(service, row.book_id, scope, optionsCall.input as { nodeId?: string; kind?: string; parentId?: string; note?: string; options?: unknown[] });
+      const outcome = await proposeOptions(service, row.book_id, optionsCall.input as { nodeId?: string; kind?: string; parentId?: string; note?: string; options?: unknown[] });
       if (outcome.ok) {
         steps.push({ t: "plan", label: `Staged ${outcome.count} options for "${outcome.handle}" — pick one in the tree.` });
         transcript.push({ role: "user", content: ackResults(toolUses.map((t) => t.id)) });

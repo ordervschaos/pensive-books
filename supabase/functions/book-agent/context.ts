@@ -2,7 +2,7 @@
 // instructions (system-cached) and the volatile book-state digest (injected request-time). The tree
 // digest helpers (digestNode et al.) live here since only threadSystem uses them.
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { nodeHandle, schemaFor, scopedKinds, type Aspect, type DnaNodeRow } from "./shared.ts";
+import { nodeHandle, schemaFor, type DnaNodeRow } from "./shared.ts";
 import { SYSTEM_THREAD } from "./prompts.ts";
 import { type Brief, briefContext } from "../_shared/brief.ts";
 import { currentObjective, nextDraftTarget } from "../_shared/dna-journey.ts";
@@ -83,18 +83,16 @@ function digestNode(kind: string, content: Record<string, unknown> | null | unde
 // the tree changes after every apply, and carrying it at position 0 invalidated the whole cached prefix
 // (system + entire transcript) on every turn. Each node is a DIGEST — handle/gist + causal spine, full
 // content via read_node (see digestNode).
-async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null, authorAsk = ""): Promise<{ instructions: string; bookState: string; groundingLabels: string[] }> {
+async function threadSystem(service: SupabaseClient, bookId: number, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null, authorAsk = ""): Promise<{ instructions: string; bookState: string; groundingLabels: string[] }> {
   const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
   const b = book as { name?: string; brief?: Brief } | null;
   const { data: rows } = await service
     .from("book_nodes").select("id, parent_id, kind, level, position, content, authoring, proposals").eq("book_id", bookId);
   const nodes = (rows ?? []) as DnaNodeRow[];
-  const kinds = scopedKinds(scope); // null = all
   const totalScenes = nodes.filter((n) => n.kind === "scene").length;
   const totalBeats = nodes.filter((n) => n.kind === "beat").length;
 
-  const serialize = (n: DnaNodeRow, inScope: boolean, seqIdx?: number): string => {
-    if (!inScope) return `[${n.id}] L${n.level} ${n.kind}: <hidden>`;
+  const serialize = (n: DnaNodeRow, seqIdx?: number): string => {
     // Beats and scenes carry their 1-based reading-order number (matching the UI's tree badge + timeline
     // strip), so the agent names a node by the SAME number the author sees — not one it invents from the
     // objective's single "Scene N of 80" target pointer (the bug where it called scene 14 "scene 17").
@@ -113,8 +111,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   // a beat's scenes list right after it and in draft order. A flat sort by `level` alone (the old behavior)
   // interleaves every act's beats and every beat's scenes into one global by-level list with no parent
   // linkage shown, so the agent had no way to tell which beat a scene belonged to — it once rendered a
-  // later beat's scene believing it was next. Out-of-scope nodes still appear (as <hidden>) so ids for
-  // parentId stay available.
+  // later beat's scene believing it was next.
   const byParent = new Map<string | null, DnaNodeRow[]>();
   for (const n of nodes) {
     const list = byParent.get(n.parent_id) ?? [];
@@ -144,7 +141,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     else if (n.kind === "scene") sceneNo.set(n.id, sceneNo.size + 1);
   }
   const seqOf = (n: DnaNodeRow) => n.kind === "beat" ? beatNo.get(n.id) : n.kind === "scene" ? sceneNo.get(n.id) : undefined;
-  const tree = sorted.map((n) => serialize(n, !kinds || kinds.has(n.kind), seqOf(n))).join("\n");
+  const tree = sorted.map((n) => serialize(n, seqOf(n))).join("\n");
 
   // The context tray, HYDRATED: the author attached these nodes to work on, so we inline their FULL content
   // right here (not a bare pointer) — the agent doesn't need a read_node round-trip for the nodes it was
@@ -279,12 +276,9 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     // matched job arrives with its full technique — no read_skill round-trip. Deterministic (regex on
     // the ask), so a retried link re-derives the identical prompt; read_skill covers missed triggers.
     skillBriefs ? `<skill_briefs note="playbooks matched to the author's ask — follow these when doing that job">\n${skillBriefs}\n</skill_briefs>` : "",
-    `<dna_tree${kinds ? ` scope="${[...kinds].join(", ")}"` : ""}>\nEdit/add/delete nodes by their real ids below. LOCKED nodes are immutable.${kinds ? " Out-of-scope nodes show as <hidden>." : ""} Beat and scene lines show their reading-order number (e.g. \`beat 3/41\`, \`scene 14/80\`); when you refer to a beat or scene by number, use THAT number — never guess it or reuse the objective's target number for a different node.\n\n${tree || "(no nodes yet)"}\n</dna_tree>`,
+    `<dna_tree>\nEdit/add/delete nodes by their real ids below. LOCKED nodes are immutable. Beat and scene lines show their reading-order number (e.g. \`beat 3/41\`, \`scene 14/80\`); when you refer to a beat or scene by number, use THAT number — never guess it or reuse the objective's target number for a different node.\n\n${tree || "(no nodes yet)"}\n</dna_tree>`,
   ].filter(Boolean);
 
-  const scopeLine = scope && scope.length
-    ? `\n\n<scope_note>\nIn scope this conversation: ${scope.join(", ")}. Only propose changes to these aspects.\n</scope_note>`
-    : "";
   const effortLine = effort === "low"
     ? "\n\n<fast_mode>\nThe author wants a quick response. If the change is clear from the tree, call propose_node_ops immediately — one sentence of narration, then the proposal. Skip read_node unless prose content is essential. Only pause to ask if the request is genuinely ambiguous.\n</fast_mode>"
     : "";
@@ -305,7 +299,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
   for (const s of (askSkills.length ? askSkills : matchSkills(liveObjective ?? ""))) groundingLabels.push(`Loaded the ${s.name} playbook.`);
   for (const n of [...focusNodes, ...mentioned]) groundingLabels.push(`Loaded ${n.kind} “${nodeHandle(n.content)}” in full.`);
 
-  return { instructions: `${SYSTEM_THREAD}${scopeLine}${effortLine}${autoLine}`, bookState: blocks.join("\n\n"), groundingLabels };
+  return { instructions: `${SYSTEM_THREAD}${effortLine}${autoLine}`, bookState: blocks.join("\n\n"), groundingLabels };
 }
 
 
