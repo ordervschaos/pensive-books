@@ -67,9 +67,12 @@ function NodeGroup({ groupId, label, hint, count, depth, collapsedSet, onToggle,
   const collapsed = collapsedSet.has(groupId);
   return (
     <div style={{ position: "relative" }}>
+      {/* Shaded band + top rule — a NodeGroup is a container of real child nodes (a subtree), not an
+          attribute of its parent, so it must not read as just another field row (EditableField). */}
       <div onClick={() => onToggle(groupId)} style={{
         display: "flex", alignItems: "baseline", gap: 8,
-        paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 7, paddingBottom: 3, cursor: "pointer",
+        paddingLeft: depth * 20 + 20, paddingRight: 12, paddingTop: 8, paddingBottom: 4, cursor: "pointer",
+        background: T.surface, borderTop: `1px solid ${T.borderSoft}`, marginTop: 2,
       }}>
         <span style={{ width: 12, flexShrink: 0, color: T.faint, fontSize: 9, lineHeight: 1 }}>{collapsed ? "▶" : "▼"}</span>
         <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.2em", textTransform: "uppercase", color: count ? T.inkSoft : T.faint }}>{label}</span>
