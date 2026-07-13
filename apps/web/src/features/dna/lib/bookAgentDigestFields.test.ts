@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { NODE_SCHEMA } from "@/features/dna/lib/dnaSchema";
 
-// DIGEST_FIELDS in book-agent/index.ts is a THIRD hand-maintained mirror of the node schema (the other
+// DIGEST_FIELDS in book-agent/context.ts is a THIRD hand-maintained mirror of the node schema (the other
 // two: novelDna.ts's content interfaces, and the generated dna-schema.json checked by
 // dnaSchema.artifact.test.ts). It picks which fields of each node kind show in the agent's per-turn tree
 // digest. Unlike the generated artifact, nothing enforced it stayed in sync — it once listed a field
@@ -17,11 +17,11 @@ import { NODE_SCHEMA } from "@/features/dna/lib/dnaSchema";
 // that derived list drops `genOnly` fields (causality/meter data the AI sets but the manual tree editor
 // doesn't render a form for) — and DIGEST_FIELDS deliberately DOES surface those (a beat's `needs`/
 // `establishes`/etc ARE the "causal + meter spine" the digest exists to show).
-const BOOK_AGENT_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../../supabase/functions/book-agent/index.ts");
+const BOOK_AGENT_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../../supabase/functions/book-agent/context.ts");
 
 function parseDigestFields(source: string): Record<string, string[]> {
   const m = source.match(/const DIGEST_FIELDS: Record<string, string\[\]> = \{([\s\S]*?)\n\};/);
-  if (!m) throw new Error("DIGEST_FIELDS block not found in book-agent/index.ts — did it get renamed or restructured?");
+  if (!m) throw new Error("DIGEST_FIELDS block not found in book-agent/context.ts — did it get renamed or restructured?");
   const out: Record<string, string[]> = {};
   const lineRe = /^\s*(\w+):\s*\[(.*)\],?\s*$/gm;
   let line: RegExpExecArray | null;
