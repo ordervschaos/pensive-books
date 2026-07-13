@@ -4,17 +4,23 @@
 import { supabase } from "@/integrations/supabase/client";
 import { invokeFn } from "@/lib/localFn";
 import { deleteNode, loadTree, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
-import { byId, deepMergeContent, emptyNode, gameTwins, newId, PARENT_KIND, pillarOf, stampInput, stampProse, stampSketch, type BeatContent, type DnaNode, type GameContent, type MeterContent, type NodeContent, type NodeKind, type RenderBrief, type SceneContent, type SceneSketch, type TentpoleContent, type ThreadContent, type ThreadRef, type VoiceContent } from "@/features/dna/lib/novelDna";
+import { byId, deepMergeContent, emptyNode, gameTwins, newId, PARENT_KIND, pillarOf, stampInput, stampProse, stampSketch, type ActContent, type BeatContent, type DnaNode, type GameContent, type MeterContent, type NodeContent, type NodeKind, type RenderBrief, type SceneContent, type SceneSketch, type TentpoleContent, type ThreadContent, type ThreadRef, type VoiceContent } from "@/features/dna/lib/novelDna";
 import { stageGeneratedProposal, type AgentProposal } from "@/features/dna/lib/agentThread";
 import type { NewSubtree, NodeOp } from "@/features/dna/lib/dnaChat";
 
-/** A short, legible chapter title from a beat's summary (the working title; the author renames). */
+/** A short, legible chapter title from a beat's summary (fallback when the act has no title). */
 function chapterTitleFromBeat(beat: DnaNode): string {
   const summary = (beat.content as BeatContent).summary?.trim() ?? "";
   if (!summary) return "Untitled";
   const firstClause = summary.split(/[—–.;:]/)[0].trim();
   const words = firstClause.split(/\s+/).slice(0, 7).join(" ");
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** A chapter is an ACT (novel-dna-flow.md §7 render projection) — prefer the act's own title. */
+function chapterTitleFromAct(act: DnaNode | undefined, beat: DnaNode): string {
+  const title = act ? (act.content as ActContent).title?.trim() : "";
+  return title || chapterTitleFromBeat(beat);
 }
 
 interface BeatSheetEntry { act: number; content: BeatContent }
@@ -220,7 +226,7 @@ const wordCount = (t: string) => (t.trim() ? t.trim().split(/\s+/).length : 0);
 // anchors, set-piece placements, game moves, causal state and chaptering rather than re-inventing them
 // locally — so the global plan stays authoritative. Mutates `scenes` in place. Shared by the COMMIT path
 // (expandNode) and the PROPOSE path (generateExpansionOps) so a proposed scene set carries the SAME plan.
-export function realizeScenesFromBeat(beatNode: DnaNode, scenes: SceneContent[], startPosition: number): void {
+export function realizeScenesFromBeat(beatNode: DnaNode, scenes: SceneContent[], actNode?: DnaNode): void {
   const beat = beatNode.content as BeatContent;
   scenes.forEach((sc) => {
     if (beat.polarity && sc.value_shift && !sc.value_shift.polarity) sc.value_shift.polarity = beat.polarity;
@@ -243,8 +249,10 @@ export function realizeScenesFromBeat(beatNode: DnaNode, scenes: SceneContent[],
   // single-scene beat first === last, so it keeps both (P3/§3d).
   if (beat.needs?.length && scenes[0]) scenes[0].needs = beat.needs;
   if (beat.establishes?.length && scenes.length) scenes[scenes.length - 1].establishes = beat.establishes;
-  // Chaptering: a beat opens a chapter (the legible default; author can merge/rename later).
-  if (startPosition === 0 && scenes[0] && !scenes[0].chapter_start) scenes[0].chapter_start = { title: chapterTitleFromBeat(beatNode) };
+  // Chaptering: only the ACT'S FIRST beat opens a chapter — one section page per act, one text page
+  // per beat within it (renderPages, novelDna.ts §Render projection). Beat position is 0-indexed
+  // per act (persistBeatSheet), so position 0 IS "first beat of this act".
+  if (beatNode.position === 0 && scenes[0] && !scenes[0].chapter_start) scenes[0].chapter_start = { title: chapterTitleFromAct(actNode, beatNode) };
 }
 
 /** Ensure the book's root `seed` node exists — the agent can't create a parent-less root, so this is the
@@ -356,7 +364,8 @@ export async function expandNode(
   }
   // Scenes REALIZE their beat (root fix): inherit the beat's plan rather than re-inventing it locally.
   if (res.childKind === "scene" && node.kind === "beat") {
-    realizeScenesFromBeat(node, made.map((s) => s.content as SceneContent), startPosition);
+    const actNode = node.position === 0 ? (await loadTree(bookId)).find((n) => n.id === node.parent_id) : undefined;
+    realizeScenesFromBeat(node, made.map((s) => s.content as SceneContent), actNode);
   }
   // Stamp each against its inputs (parent + the new siblings) so they don't read as stale on arrival.
   const index = byId([parentNode, ...made]);
@@ -579,7 +588,10 @@ export async function generateExpansionOps(bookId: number, node: DnaNode, target
   if (!children.length) throw new Error("No children were generated.");
   const childKind = (res.childKind ?? "scene") as NodeKind;
   // Scenes inherit their beat's plan before being proposed (parity with the commit path).
-  if (childKind === "scene" && node.kind === "beat") realizeScenesFromBeat(node, children as SceneContent[], 0);
+  if (childKind === "scene" && node.kind === "beat") {
+    const actNode = node.position === 0 ? (await loadTree(bookId)).find((n) => n.id === node.parent_id) : undefined;
+    realizeScenesFromBeat(node, children as SceneContent[], actNode);
+  }
   // parentId = the triggering node; applyNodeOps re-homes pillar-parented kinds (entities + acts) onto
   // the pillar at apply, so the named parent only matters for the contextual rungs (scene→beat).
   const ops: NodeOp[] = children.map((content) => ({ op: "add", kind: childKind, parentId: node.id, content }));
