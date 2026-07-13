@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, BookOpen, Check, ChevronDown, Clock, CornerDownLeft, Infinity as InfinityIcon, Loader2, Slash, Square, SquarePen, Wand2, X, Zap } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow } from "@/hooks/useLatestTaskRow";
@@ -683,7 +684,18 @@ function StepBubble({ step, nodes }: { step: AgentStep; nodes: DnaNode[] }) {
   // note / ask / done — the agent speaking. Rehydrate any bare node-id references into human labels first.
   return (
     <div className="max-w-[92%] pv-serif text-[14.5px] leading-[1.62] text-[hsl(var(--pv-text-muted))] prose prose-sm max-w-none prose-p:my-2 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0 prose-headings:text-foreground prose-strong:text-foreground prose-strong:font-semibold prose-code:text-foreground">
-      <ReactMarkdown>{humanizeNodeRefs(step.label, index)}</ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          table: ({ children }) => (
+            <div className="overflow-x-auto">
+              <table>{children}</table>
+            </div>
+          ),
+        }}
+      >
+        {humanizeNodeRefs(step.label, index)}
+      </ReactMarkdown>
     </div>
   );
 }

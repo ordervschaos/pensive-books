@@ -42,20 +42,25 @@ const CLAUDE_FLAGS = (process.env.CLAUDE_LOCAL_SHIM_FLAGS || "--dangerously-skip
 // prior call) it has no business seeing for a one-shot completion. mkdtempSync/rmSync per call in
 // runClaudeLocal() below; nothing here at module load time.
 //
-// This does NOT stop the GLOBAL `~/.claude/CLAUDE.md` / `~/.claude/settings.json` — those are user-level,
-// loaded regardless of cwd, empty or not. Verified live 2026-07-10 (second incident): a book-agent
-// "suggest logline" call came back as Claude Code narrating MY OWN coding session — "the uncommitted
-// changes... aren't mine to catalogue; doing a /wrap on someone else's in-flight work would misattribute
-// it" — because the user's global CLAUDE.md (a PM /wrap ritual + auto-memory + "document your work"
-// instructions) was still part of the default system prompt Claude Code assembles, contaminating
-// book-agent's persona. `--bare` suppresses that too, but forces ANTHROPIC_API_KEY-only auth (no
-// OAuth/keychain) — defeating the whole point of this bridge (subscription billing, not per-token spend).
+// The fresh cwd does NOT stop USER/GLOBAL-scoped context — `~/.claude/CLAUDE.md`, the auto-memory,
+// and the SessionStart hooks that enabled plugins (vercel, chrome-devtools, ...) register are loaded
+// regardless of cwd. Verified live 2026-07-10 (second incident): a book-agent "suggest logline" call
+// came back as Claude Code narrating MY OWN coding session — "the uncommitted changes... aren't mine
+// to catalogue; doing a /wrap on someone else's in-flight work would misattribute it" — the user's
+// global CLAUDE.md (a PM /wrap ritual + auto-memory) had contaminated book-agent's persona.
 //
-// Fix: `--system-prompt` REPLACES Claude Code's default system prompt outright, rather than appending
-// to it — verified live: with it, "shim works." came back clean, no leaked git-status/memory/PM content,
-// still on subscription auth (no ANTHROPIC_API_KEY in the shell). So the actual system text (book-agent's
-// persona + the tool envelope instructions) goes through `--system-prompt`, and only the conversation
-// transcript goes through `-p` — see buildSystemPrompt/buildUserPrompt below.
+// A PRIOR fix claimed `--system-prompt` alone suppressed this. It does NOT — re-verified empirically on
+// CLI 2.1.207 (2026-07-12): with `--system-prompt` set, the global `~/.claude/CLAUDE.md` AND the Vercel
+// plugin's SessionStart blob still leaked in full. `--system-prompt` only sets the persona; it does not
+// disable ambient CLAUDE.md/plugins/hooks. `--bare` disables them but forces ANTHROPIC_API_KEY-only auth
+// (no OAuth/keychain) — defeating this bridge's whole point (subscription billing, not per-token spend).
+//
+// Actual fix: `--safe-mode` — starts with ALL customizations disabled (CLAUDE.md, skills, plugins, hooks,
+// MCP servers, custom agents, ...) WITHOUT `--bare`'s api-key restriction. Verified from cwd=repo (the
+// worst case) with ANTHROPIC_API_KEY unset: the leak probe returned exactly "NONE" and auth still held
+// (subscription, not per-token). So `--safe-mode` kills the leak, `--system-prompt` delivers the persona,
+// and only the conversation transcript goes through `-p` — see buildSystemPrompt/buildUserPrompt below.
+// The per-call temp cwd stays as defense-in-depth (it independently blocks PROJECT-scoped hooks/CLAUDE.md).
 
 // `system` may be a plain string or an array of { type:'text', text } blocks (with cache_control) —
 // mirrors systemText() in _shared/llm.ts. Duplicated because this process can't import Deno TS.
@@ -184,8 +189,9 @@ function toAnthropicResponse(raw, requestedModel) {
 
 // Spawn recipe lifted from eval-bridge's runClaude (scripts/eval-bridge.mjs:583): stdin ignored so
 // `claude -p` gets immediate EOF instead of waiting on an empty pipe, prompt via the -p arg, SIGTERM
-// then SIGKILL escalation on timeout. `--tools ""` is load-bearing — it forces a single completion
-// instead of a multi-minute repo-roaming agentic run.
+// then SIGKILL escalation on timeout. Two load-bearing flags: `--tools ""` forces a single completion
+// instead of a multi-minute repo-roaming agentic run; `--safe-mode` disables all ambient customizations
+// (global CLAUDE.md, plugins, hooks, memory) so none of it seeps into the book-gen context (see header).
 function runClaudeLocal(systemPrompt, userPrompt) {
   // Fresh, empty cwd for THIS call only — mkdtemp guarantees a unique, just-created directory (no
   // leftovers from a prior turn), and it's removed once this call settles either way. Never inside the
@@ -203,6 +209,7 @@ function runClaudeLocal(systemPrompt, userPrompt) {
     const args = [
       "-p", userPrompt,
       "--system-prompt", systemPrompt,
+      "--safe-mode", // load-bearing: no ambient CLAUDE.md/plugins/hooks/memory bleed — see header
       ...CLAUDE_FLAGS,
       ...(MODEL ? ["--model", MODEL] : []),
       "--tools", "",

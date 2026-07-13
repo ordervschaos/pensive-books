@@ -7,6 +7,8 @@ import { proseRollup } from "./nodeDisplay";
 import { EditableField } from "./EditableField";
 import { BacklinksRow, HiddenFieldsRow, TreeRow, type KebabItem } from "./TreeRow";
 import { addKey, OpDiffBlock, PhantomRow, ProposalPicker, type ProposalView } from "./proposalOverlay";
+import { ghostActs, ghostBeatsForAct, ghostCast, ghostFromPremise, ghostFromSeed } from "@/features/dna/lib/dnaSkeleton";
+import { GhostRows } from "./GhostRows";
 
 // ── A render-only grouping of the pillar's children ──────────────────────────
 // The pillar parents two kinds of thing (schema §3 ladder vs §4 entities), and the entity side spans seven
@@ -235,12 +237,14 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
             count={entities.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow>
             {ENTITY_GROUPS.map(({ kind, label }) => {
               const items = entities.filter((e) => e.kind === kind);
+              const ghosts = kind === "character" ? ghostCast(nodes) : [];
               return (
                 <NodeGroup key={kind} groupId={`${node.id}::world::${kind}`} label={label} hint={KIND_EXPLAINER[kind]}
                   count={items.length} depth={depth + 2} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
                   action={<GroupAddButton onAdd={() => h.onAdd(node.id, kind)} title={`add ${kind}`} />}
                   footer={phantoms(node.id, kind, depth + 3)}>
                   {sub(items, depth + 3)}
+                  <GhostRows items={ghosts} depth={depth + 3} />
                 </NodeGroup>
               );
             })}
@@ -259,6 +263,7 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
               </span>
             ) : undefined}>
             {sub(ladder, depth + 2)}
+            <GhostRows items={ghostActs(nodes)} depth={depth + 2} />
           </NodeGroup>
         </>
       );
@@ -275,6 +280,7 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
           {sub(kids, depth + 1)}
           {spineChildKind && phantoms(node.id, spineChildKind, depth + 1)}
           {spineChildRow}
+          <GhostRows items={ghostFromSeed(nodes)} depth={depth + 1} />
         </>
       );
     } else {
@@ -293,6 +299,8 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
           {spineChildKind && phantoms(node.id, spineChildKind, depth + 1)}
           {spineChildRow}
           {childAdd && phantoms(node.id, childAdd, depth + 1)}
+          {node.kind === "premise" && <GhostRows items={ghostFromPremise(nodes)} depth={depth + 1} />}
+          {node.kind === "act" && <GhostRows items={ghostBeatsForAct(nodes, node)} depth={depth + 1} />}
         </>
       );
     }

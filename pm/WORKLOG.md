@@ -16,6 +16,70 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-12 — DNA tree: ghost-preview the default skeleton before anything is generated `[ship]`
+- **What:** User wanted the tree to show the book's shape (3 acts, minimum cast, etc.) before any
+  generation — a scaffold-first view instead of the current one-rung-unlocks-the-next journey. Investigation
+  found most of the UI for this already existed (the pillar's `alwaysShow` entity/story groups), gated only
+  on the pillar node existing for real, which it doesn't until first generated. Rather than materializing
+  empty draft `book_nodes` rows (risky: `dnaJourney.stageComplete()` gates acts/beats on mere row EXISTENCE,
+  not content — a real empty act would have silently marked "structure" done), built a pure client-side
+  render overlay: new `lib/dnaSkeleton.ts` derives ghost premise→pillar→{2-person min cast, Weiland's 3 acts
+  with their 9 template-slotted beats (hook/inciting/plot points/pinches/midpoint/climax/resolution)} from
+  the current tree + `structureForBook()`; new `components/tree/GhostRows.tsx` renders them dashed/faint,
+  read-only. A rung ghosts only while ENTIRELY empty and disappears for good the moment any real node lands
+  there (matched by sibling position, not title, so a renamed act still gets its slot's beats). Locations/
+  world/threads/tentpoles/games/relationships have no template count anywhere in the schema, so those got
+  one honest "registry" note instead of fabricated numbers. Wired into `Subtree.tsx` at 4 injection points.
+  Verified live on book "tes" (1251) via chrome-devtools MCP — full 3-act/9-beat/2-cast skeleton renders
+  correctly at the empty-tree state from the user's screenshot; `tsc --noEmit` clean; existing
+  `novelDna.test.ts` + `dnaJourney.test.ts` (131 tests) still pass.
+- **Files/commits:** `apps/web/src/features/dna/lib/dnaSkeleton.ts` (new),
+  `apps/web/src/features/dna/components/tree/GhostRows.tsx` (new),
+  `apps/web/src/features/dna/components/tree/Subtree.tsx` (uncommitted).
+- **PM impact:** none — a UX/discoverability improvement on the existing DNA tree, not a Now-item change.
+
+## 2026-07-12 — Beat-sheet quality fixes + shim leak actually plugged `[wip]`
+- **What:** Three fixes surfaced while re-exercising live beat-sheet generation on the deepseek-v4
+  path (Now #1). (1) `dna-expand`'s beat sheet prompt now converts the Weiland template's cumulative
+  act `target_pct` into per-act SPANS and tells the model to allocate beats proportionally — root-fixes
+  the starved-Act-2 failure (beats were split evenly across acts instead of ~half landing in the ~50%-
+  of-book Act 2). (2) `max_tokens` 8000→16000 on both the beat-sheet prepare and repair calls — a
+  reasoning model (deepseek-v4-pro) counts its thinking phase INSIDE max_tokens, so 8000 was silently
+  truncating the JSON mid-array (root cause of book 1237's unslotted sheet). (3) The repair prompt now
+  branches by issue class (causal vs structure-slot) and — for slot issues only — is allowed to
+  insert/reorder beats to fill a genuinely missing signpost, instead of a one-size prompt that forbade
+  adding beats even when a slot was structurally absent. Separately: `claude-local-shim.mjs`'s prior
+  "isolate spawned claude" fix (`--system-prompt`, committed in f1895de) was re-verified and found
+  NOT sufficient — the global `~/.claude/CLAUDE.md` and plugin SessionStart blobs still leaked into
+  book-agent's persona. `--safe-mode` (not `--bare`, which forces API-key-only auth) actually
+  disables ambient CLAUDE.md/skills/plugins/hooks/MCP while keeping subscription auth — verified with
+  a leak probe returning clean. `eval-bridge.mjs`'s default prose model also flipped opus→sonnet.
+- **Files/commits:** `supabase/functions/dna-expand/index.ts`, `scripts/claude-local-shim.mjs`,
+  `scripts/eval-bridge.mjs` (all uncommitted, edge fn not yet redeployed).
+- **PM impact:** none yet — feeds directly into Now #1's "re-exercise the live full-book build"
+  evidence gate (ROADMAP.md); not itself a ship.
+
+## 2026-07-12 — Seed logline: stop auto-generating from brief idea `[chore]`
+- **What:** The DNA tree's seed logline was being silently prefilled from `brief.idea` and then
+  auto-drafted via an AI call the moment the idea field was saved (`bootstrapLoglineFromBrief`).
+  Removed that entirely — the seed's logline now starts empty; the author writes it or asks the
+  agent explicitly. `ensureSeed()` no longer takes/prefills an idea.
+- **Files/commits:** apps/web/src/features/dna/lib/dnaExpand.ts,
+  apps/web/src/features/dna/pages/DnaTreePage.tsx, apps/web/src/components/book/BookBriefSection.tsx
+  (uncommitted).
+- **PM impact:** none — small UX correction to the brief→seed derivation, not a Now-item change.
+
+## 2026-07-12 — AgentRail: fix markdown tables rendering as raw pipe text `[chore]`
+- **What:** User-reported bug — GFM tables (e.g. Weiland beat-sheet analysis) in AgentRail chat
+  rendered as literal `| a | b |` text instead of a table. Root cause: `ReactMarkdown` in
+  `AgentRail.tsx` had no `remark-gfm` plugin, so GFM-only syntax (tables) fell back to plain
+  paragraph text. Installed `remark-gfm`, wired `remarkPlugins={[remarkGfm]}`, and wrapped the
+  `table` renderer in `overflow-x-auto` (rail is a narrow fixed panel). Verified live on book 1249
+  ("3 acts") — table now a real 11×3 DOM `<table>` with styled headers.
+- **Files/commits:** `apps/web/src/features/dna/components/AgentRail.tsx`, `apps/web/package.json`,
+  `pnpm-lock.yaml` (added `remark-gfm` dep). Uncommitted.
+- **PM impact:** none — isolated UI bug fix, not tied to a roadmap item.
+
 ## 2026-07-12 — eval-bridge: add `sketch` target + isolate spawned-claude from repo hooks `[chore]`
 - **What:** In-app "generate sketch" failed with `Unknown expand target "sketch"`. Root cause was
   dev-path routing: `VITE_EVAL_BRIDGE_URL` is set, so the client routes `/dna-expand` to the local

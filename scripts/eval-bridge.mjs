@@ -40,7 +40,7 @@ const CLAUDE_TIMEOUT_MS = Number(process.env.EVAL_CLAUDE_TIMEOUT_MS ?? 6 * 60 * 
 // Model routing — override via env to switch tiers without code changes.
 // E.g. EVAL_PROSE_MODEL=sonnet to cut cost on bulk rewrites.
 const MODEL_PLANNING = process.env.EVAL_PLANNING_MODEL || "opus"; // structural decisions, beat/outline work
-const MODEL_PROSE    = process.env.EVAL_PROSE_MODEL    || "opus"; // prose writing (default opus, can be overridden to sonnet)
+const MODEL_PROSE    = process.env.EVAL_PROSE_MODEL    || "sonnet"; // prose writing (default opus, can be overridden to sonnet)
 const MODEL_SUMMARY  = process.env.EVAL_SUMMARY_MODEL  || "haiku"; // short summaries, image-prompt composition
 
 const cors = {

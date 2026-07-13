@@ -7,9 +7,9 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
 import { backlinkIndex, beatsInOrder, byId, childrenOf, isEntityKind, newId, pillarOf, refsOf, scenesInOrder, type BookSettings, type DnaIssue, type DnaNode } from "@/features/dna/lib/novelDna";
-import { bootstrapLoglineFromBrief, ensureSeed } from "@/features/dna/lib/dnaExpand";
+import { ensureSeed } from "@/features/dna/lib/dnaExpand";
 import { KIND_LEVEL } from "@/features/dna/lib/dnaSchema";
-import { briefIdea, type Brief } from "@/lib/brief";
+import type { Brief } from "@/lib/brief";
 import { AgentRail } from "@/features/dna/components/AgentRail";
 import { TreeOverviewTab } from "@/features/dna/components/TreeOverviewTab";
 import { DnaAnalysis } from "@/features/dna/components/DnaAnalysis";
@@ -158,10 +158,6 @@ export default function DnaTreePage() {
     const { error: err } = await supabase.from("books").update({ brief: next }).eq("id", bookId);
     if (err) throw new Error(err.message);
     setSettings((prev) => ({ ...prev, word_target: next.scope?.word_target }));
-    // The moment idea is submitted, ensure the seed exists and kick off a real logline draft in the
-    // background — bootstrapLoglineFromBrief is idempotent (a no-op once the logline has moved past the
-    // raw idea placeholder), so this is safe to fire on every idea save.
-    if ("idea" in patch) void bootstrapLoglineFromBrief(bookId, next.idea);
   }, [brief, bookId]);
 
   // Seed an empty tree: create the root `seed` node, prefilling its logline from the brief's idea.
@@ -187,17 +183,12 @@ export default function DnaTreePage() {
         word_target: loadedBrief?.scope?.word_target });
       const loaded = (nodeRows ?? []) as DnaNode[];
       // Bootstrap the ROOT: the agent can't create a parent-less seed node, so an empty tree gets one
-      // automatically (the seed = the logline origin, derived from the brief idea). The agent builds
-      // everything below it — this replaces the old manual "seed the tree" button.
+      // automatically (the seed = the logline origin, left empty until the author or agent drafts it).
+      // The agent builds everything below it — this replaces the old manual "seed the tree" button.
       if (loaded.length === 0) {
-        const idea = briefIdea(loadedBrief)?.trim();
         try {
-          const seed = await ensureSeed(bookId, idea);
+          const seed = await ensureSeed(bookId);
           setNodes([seed]); setOpenSet((p) => new Set(p).add(seed.id));
-          // Safety net for a seed that already exists with an idea but no draft yet (e.g. the brief was
-          // saved from a surface that predates this, or the fire-and-forget call from that save never
-          // landed) — bootstrapLoglineFromBrief is idempotent, so this is a no-op once it's already drafted.
-          if (idea) void bootstrapLoglineFromBrief(bookId, idea);
           return;
         } catch { /* leave the tree empty; the live subscription still reflects reality */ }
       }

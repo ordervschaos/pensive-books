@@ -155,23 +155,27 @@ export default function AiCalls() {
     }
   };
 
-  // Load on mount, then poll so calls from an in-flight task (eval, scan, revise build…) appear
-  // without a manual reload. load() never flips `loading`, so the poll updates silently. The poll
-  // pauses while the tab is hidden so a forgotten background tab can't keep hitting the DB forever.
+  // Load on mount, then stay live via Realtime so calls from an in-flight task (eval, scan, revise
+  // build…) appear without a manual reload. Both tables are published (20260713100000). A Realtime
+  // event is only a SIGNAL here — ai_calls rows carry large system/input/output blobs, so we debounce
+  // and re-read through the existing metadata-only `load()` rather than trusting the broadcast payload
+  // (same reasoning as useLatestTaskRow's refetch-on-signal pattern).
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | null = null;
-    const start = () => {
-      if (timer) return;
-      load();
-      timer = setInterval(load, 4000);
+    load();
+    let refetchTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefetch = () => {
+      if (refetchTimer) clearTimeout(refetchTimer);
+      refetchTimer = setTimeout(load, 200);
     };
-    const stop = () => {
-      if (timer) { clearInterval(timer); timer = null; }
+    const channel = supabase
+      .channel(`admin_ai_calls_${Math.random().toString(36).slice(2)}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: AI_CALLS }, scheduleRefetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: AI_CALL_EVALS }, scheduleRefetch)
+      .subscribe();
+    return () => {
+      if (refetchTimer) clearTimeout(refetchTimer);
+      supabase.removeChannel(channel);
     };
-    const onVisibility = () => (document.hidden ? stop() : start());
-    onVisibility(); // start now if the tab is visible
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => { stop(); document.removeEventListener("visibilitychange", onVisibility); };
   }, []);
 
   // Deep-link: /admin/ai-calls?call=<id> opens that call's detail directly (e.g. from a page's

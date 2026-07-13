@@ -794,8 +794,21 @@ CRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md
       // the plot-skeleton slots the sheet must deliver, each on exactly ONE beat marked with "slot". Craft
       // lines are guidance-by-name (like tentpoles) — a job description honored in the sheet's own words.
       const structure = structureForBook(nodes);
+      // The template's acts carry a CUMULATIVE target_pct (Weiland: .25/.75/1) — turn it into per-act SPANS so
+      // the model sizes each act to its share of the book. This is the fix for the starved-Act-2 failure: the
+      // slot list alone never told the model Act 2 (Confrontation) is HALF the book, so it split beats evenly.
+      const actSpans = structure
+        ? structure.acts.map((a, i) => {
+            const start = i === 0 ? 0 : structure!.acts[i - 1].target_pct;
+            return { n: i + 1, title: a.title, purpose: a.purpose, start, end: a.target_pct, span: a.target_pct - start };
+          })
+        : [];
+      const longestActSpan = actSpans.reduce((m, a) => Math.max(m, a.span), 0);
       const structureBlock = structure
         ? `STRUCTURE TEMPLATE — ${structure.label}. The sheet must deliver every SLOT below, each carried by EXACTLY ONE beat, in this order, landing near its stated % of the whole book (interstitial beats between slots are welcome). Mark the carrying beat with "slot": "<key>".\n` +
+          `ACT PROPORTIONS — allocate beats so each act fills its SPAN of the book (an act's beat count ∝ its span; the longest act gets the most beats — never split beats evenly across acts):\n` +
+          actSpans.map((a) => `- Act ${a.n} ${a.title} — ${Math.round(a.start * 100)}%→${Math.round(a.end * 100)}% (${Math.round(a.span * 100)}% of the book${a.span >= longestActSpan ? ", the LONGEST — most beats" : ""}): ${a.purpose}`).join("\n") + "\n" +
+          `SLOTS:\n` +
           structure.slots.map((s) => `- ${s.key} (${s.label}, ~${Math.round(s.at * 100)}%, act ${s.act}${s.polarity ? `, ends ${s.polarity}` : ""}): ${s.craft}`).join("\n")
         : "";
       const beatCtx = [
@@ -830,8 +843,8 @@ CRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md
       const system = `You are a story architect writing the ENTIRE BOOK'S BEAT SHEET in ONE pass — every beat of every act at once, so you can see the whole sequence. Honor every LOCKED ancestor and the MANDATE verbatim. Rules:${mintThreads ? `
 - FIRST design the THREAD REGISTRY: 3–6 open loops (a promise set up early, paid off later) this book runs on — mysteries, foreshadowed reveals, setup→payoff arcs. Give each a short NAME, a "promise" (what's opened), and a "payoff" (how it closes). Then schedule them across the beats below. Emit them in a top-level "threads" array.${arcCast.length ? `
 - ALSO mint each of these characters' ARC thread (they carry a declared lie): ${arcCast.map((c) => cName(c)).join(", ")}. One per character — kind "arc", "character" = their name, promise = the LIE as it will be DRAMATIZED early (shown in action, not stated), payoff = the moment the TRUTH is accepted or fatally refused. Schedule each arc across the beats like any other thread (setup early, advance through the middle, pay off at that character's turn).` : ""}` : ""}
-- ${structure ? "3 to 5" : "2 to 4"} beats per act; each beat links to the prior with "therefore" or "but" (escalating causality).${structure ? `
-- DELIVER the STRUCTURE TEMPLATE: every slot listed above lands on exactly ONE beat — mark that beat with "slot": "<key>" — in template order, positioned so the beat sits near the slot's stated % of the whole sheet. Honor each slot's craft in your own words (guidance, not a script line); a slot marked "ends down/up" fixes that beat's polarity.` : ""}
+- ${structure ? "3 to 6" : "2 to 4"} beats per act${structure ? ", PROPORTIONAL to each act's span in ACT PROPORTIONS above — the longest act (~half the book) gets roughly double the beats of a short act; never split beats evenly" : ""}; each beat links to the prior with "therefore" or "but" (escalating causality).${structure ? `
+- DELIVER the STRUCTURE TEMPLATE: every slot listed above lands on exactly ONE beat — mark that beat with "slot": "<key>" — in template order, positioned so the beat sits near the slot's stated % of the whole sheet. Honor each slot's craft in your own words (guidance, not a script line); a slot marked "ends down/up" fixes that beat's polarity. A slot named as a hard TURN (midpoint, plot points) must be a real external reversal on the page, never a quiet internal shift.` : ""}
 - ${POLARITY_CRAFT}
 - Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats that develop it in between. Reference threads BY NAME.
 - ${CAUSALITY_CRAFT}${tentpoles.length ? `\n- HONOR every TENTPOLE: each names an emotional/scene quality the story must deliver (a feel, an image, a turn) — not a line to reproduce. Pick the ONE beat whose turn embodies it and reference the tentpole BY NAME in "realizes"; write the beat's summary in your own words. Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}${statePreconds.length ? `\n- ESTABLISH every STATE PRECONDITION: each game's win SPENDS resources/states (listed above). For each, an EARLIER beat must establish it (list its key in that beat's "establishes") BEFORE the beat that resolves the game — you cannot spend a resource the story never acquired (no "she had enough all along"). Make the establishing a real turn.` : ""}
@@ -839,7 +852,10 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
       // Browser-streamed path: hand back the assembled request; the client streams it via /api/stream-prose,
       // then calls back with phase "finalize" (mirrors the prose `prepare` split, todo/dna-streaming-proxy.md).
       if (phase === "prepare") {
-        return json({ prepared: { system, userContent: `${beatCtx}\n\nWrite the whole beat sheet. JSON only.`, model, max_tokens: 8000, provider: await getActiveProvider() } });
+        // 16000 not 8000: a REASONING model (deepseek-v4-pro) counts its thinking phase INSIDE max_tokens, so
+        // 8000 left the beat-sheet JSON truncated mid-array (the silent degrade behind book 1237's unslotted
+        // sheet). The sheet itself is bounded; the extra ceiling is headroom for the reasoning that precedes it.
+        return json({ prepared: { system, userContent: `${beatCtx}\n\nWrite the whole beat sheet. JSON only.`, model, max_tokens: 16000, provider: await getActiveProvider() } });
       }
       if (phase !== "finalize") return json({ error: "beatsheet requires phase 'prepare' or 'finalize'" }, 400);
       if (!rawText) return json({ error: "finalize requires rawText" }, 400);
@@ -980,8 +996,21 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
         const { issues, ptr } = lintBeats(beats);
         if (!issues.length) return finish();
         const violations = issues.map((iss) => `- ${ptr.get(iss.nodeId ?? "") ?? iss.nodeId}: [${iss.rule}] ${iss.message}`).join("\n");
-        const repairUser = `${beatCtx}\n\nYou produced this beat sheet:\n${JSON.stringify({ beats: rawBeats })}\n\nThe story engine flagged these STRUCTURAL problems in it:\n${violations}\n\nFix ONLY these problems — adjust the offending beats' connector / needs / establishes / resolves so each flagged link is earned (a "therefore" beat must "need" a state key an EARLIER beat "establishes"; a played game must be "resolved"). Keep every other beat unchanged; do not add or remove beats. Re-output the COMPLETE beat sheet as JSON in the SAME schema. JSON only.`;
-        return json({ needsRepair: true, repairPrepared: { system, userContent: repairUser, model, max_tokens: 8000 } });
+        // Compose fix instructions per the CLASS of rule that fired. The old prompt spoke ONLY of causality/game
+        // repair (connector/needs/establishes/resolves) and forbade adding beats — so a sheet that skipped the
+        // structure slots (the 1237 failure) was handed a repair turn that never told it how to fix slots, and
+        // couldn't insert the beat a missing signpost needs. Branch the guidance, and relax the no-add rule for
+        // slots only (a missing Midpoint/Pinch may be a real hole, not a mislabel).
+        const hasSlotIssue = issues.some((iss) => iss.rule.startsWith("slot_"));
+        const hasCausalIssue = issues.some((iss) => !iss.rule.startsWith("slot_"));
+        const fixLines: string[] = [];
+        if (hasCausalIssue) fixLines.push(`For causality/game flags: adjust the offending beats' connector / needs / establishes / resolves so each flagged link is earned (a "therefore" beat must "need" a state key an EARLIER beat "establishes"; a played game must be "resolved").`);
+        if (hasSlotIssue) fixLines.push(`For structure-slot flags: honor the STRUCTURE TEMPLATE above — every listed slot is carried by EXACTLY ONE beat, marked "slot": "<key>", in template order, near its stated % of the whole sheet. For "slot_missing": add "slot" to the single existing beat that already does that job; if NO beat does it, INSERT a new beat that does (a missing Midpoint/Pinch is a real structural hole, not a label). For "slot_misordered"/"slot_misplaced": move the slot tag to the beat at the correct order/position (or reorder the beats) so the skeleton lands in template order and proportion. Never tag two beats with the same slot.`);
+        const constraint = hasSlotIssue
+          ? `Change only what these fixes require. You MAY add or reorder beats solely to deliver a missing/misordered structural slot; otherwise keep beats unchanged.`
+          : `Keep every other beat unchanged; do not add or remove beats.`;
+        const repairUser = `${beatCtx}\n\nYou produced this beat sheet:\n${JSON.stringify({ beats: rawBeats })}\n\nThe story engine flagged these STRUCTURAL problems in it:\n${violations}\n\nFix ONLY these problems.\n${fixLines.join("\n")}\n${constraint}\nRe-output the COMPLETE beat sheet as JSON in the SAME schema. JSON only.`;
+        return json({ needsRepair: true, repairPrepared: { system, userContent: repairUser, model, max_tokens: 16000 } }); // reasoning headroom — see the prepare-phase note
       }
 
       // Second finalize call: a repair pass was streamed back. Accept it only if it doesn't INCREASE the
