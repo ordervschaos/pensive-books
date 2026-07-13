@@ -16,6 +16,16 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-13 — Thin book-agent index.ts to the HTTP router `[chore]`
+- **What:** Follow-up to the 8-module split — index.ts was still 845 lines because the durable-loop engine lived there. Moved advance()+chain+ackWith+rejectAndChain+sleep → `advance.ts` (400), the eager-ack/titling passes → `ack.ts` (137), and the transcript pure-helpers (compaction, sentinels, cache-breakpoints, book-state injection) → `transcript.ts` (141). index.ts is now **184 lines** = just the Deno.serve request router. Verbatim block-move via build script; behavior unchanged.
+- **Files:** `supabase/functions/book-agent/{index,advance,ack,transcript}.ts`. Verified: `deno check` on the entry (whole graph) clean bar the pre-existing EdgeRuntime-global noise; every moved symbol defined exactly once.
+- **PM impact:** none.
+
+## 2026-07-13 — Fix AdminPromptPeek escaped-JSON soup `[chore]`
+- **What:** The admin raw-request peek in AgentRail rendered `messages` via one blind `JSON.stringify(input, null, 2)`, so every text block's real newlines/quotes got re-escaped into unreadable `\n`/`\"` soup. Rewrote to walk the Anthropic-shaped message array structurally: per message role, per content part — text parts render as plain wrapped text (real newlines), non-text parts (tool_use/tool_result/etc.) get their own pretty JSON. `system` unchanged (was already a raw string).
+- **Files/commits:** `apps/web/src/features/dna/components/agentRail/AdminPromptPeek.tsx` (uncommitted). Verified: `tsc -p tsconfig.app.json --noEmit` clean.
+- **PM impact:** none — pure debug-UI readability fix.
+
 ## 2026-07-13 — Split book-agent/index.ts into 8 modules `[chore]`
 - **What:** Full file split of the 1974-line edge function into a clean import DAG: `shared.ts` (types/constants/nodeHandle/schema), `prompts.ts`, `tools.ts` (tool schemas), `exec-tools.ts`, `verify.ts`, `proposals.ts`, `context.ts` (threadSystem+digest), `index.ts` (router+advance loop, now 845 lines). Follows the earlier `ackWith`/`rejectAndChain`/`chain` dedup. Pure verbatim block-move (build script sliced ranges — no prompt-string retyping); behavior unchanged. Also removed a stray `/` typo at `advance(...);/` that a concurrent IDE edit left in, breaking compilation.
 - **Files:** `supabase/functions/book-agent/{index,shared,prompts,tools,exec-tools,verify,proposals,context}.ts` (uncommitted). Verified: `deno check` on the entry (whole graph) clean — only the pre-existing `EdgeRuntime`-global noise; every moved symbol defined exactly once.
