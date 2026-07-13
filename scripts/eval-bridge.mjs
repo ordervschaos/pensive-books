@@ -1,7 +1,12 @@
 #!/usr/bin/env node
-// Local bridge between the web UI and Claude Code. The browser can't run a CLI,
-// so this tiny server does it: routes AI calls to `claude -p` (headless Claude Code)
-// instead of the Anthropic API, costing nothing extra on a CC subscription.
+// Local server + module that routes AI calls to `claude -p` (headless Claude Code) instead of a metered
+// API, costing nothing extra on a CC subscription. The web UI no longer uses this directly (its AI
+// features route through @/lib/localFn's VITE_LOCAL_FUNCTIONS_URL + scripts/claude-local-shim.mjs
+// instead, which rides the REAL edge functions rather than reimplementing them — see
+// doc_1783662297825.md). This file lives on as a special-case tool: a shared module (runDnaExpand,
+// SUPABASE_URL, sbHeaders) for standalone analysis/experiment scripts (dna-causality-probe.mjs,
+// dna-flow-test.mjs, model-prose-compare.mjs, etc.) and an ad-hoc HTTP harness for
+// prose-context-experiment.mjs. NOT kept in lockstep with edge fn changes — don't treat it as a mirror.
 //
 //   node scripts/eval-bridge.mjs            # listens on http://localhost:8787
 //

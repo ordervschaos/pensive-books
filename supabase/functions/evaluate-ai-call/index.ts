@@ -6,14 +6,14 @@
 //     → background: judge via the shared callLLM chokepoint (the judge call is itself logged to
 //       ai_calls as fn='judge-ai-call'), then UPDATE the eval row with scores/findings/amendments.
 //
-// On demand only — nothing auto-evaluates. The dev bridge has a parallel /eval-call that runs the
-// same judgement via local Claude Code (and can ground 'code' amendments in the real repo).
+// On demand only — nothing auto-evaluates. Locally, getJudgeModel() rides the claude-local shim
+// (scripts/claude-local-shim.mjs) instead of the metered API when CLAUDE_LOCAL_URL is set.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { runInBackground, serviceClient } from "../_shared/task.ts";
 import { callLLM, textFromLLM } from "../_shared/llm.ts";
-import { JUDGE_MODEL, JUDGE_SYSTEM, buildJudgeUser, parseJudgement } from "../_shared/judge.ts";
+import { getJudgeModel, JUDGE_SYSTEM, buildJudgeUser, parseJudgement } from "../_shared/judge.ts";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -42,16 +42,17 @@ Deno.serve(async (req: Request) => {
 
 
     const service = serviceClient();
+    const judgeModel = getJudgeModel();
     const { data: row, error: insertError } = await service
       .from("ai_call_evals")
-      .insert({ ai_call_id: call.id, book_id: call.book_id, status: "running", judge_model: JUDGE_MODEL })
+      .insert({ ai_call_id: call.id, book_id: call.book_id, status: "running", judge_model: judgeModel })
       .select()
       .single();
     if (insertError || !row) return json({ error: "Could not start eval" }, 500);
 
     runInBackground(service, "ai_call_evals", row.id, "evaluate-ai-call", async () => {
       const data = await callLLM({
-        model: JUDGE_MODEL,
+        model: judgeModel,
         max_tokens: 2000,
         system: [{ type: "text", text: JUDGE_SYSTEM, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: buildJudgeUser(call) }],

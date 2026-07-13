@@ -6,7 +6,7 @@
 // (observed_establishes + continuity_flags) and fold the delta forward. Sequential = O(n) calls, and each
 // call's context is bounded by the ledger, not the whole prior manuscript (the O(n²) read-back it replaces).
 import { supabase } from "@/integrations/supabase/client";
-import { BRIDGE, bridgeFetch } from "@/lib/bridge";
+import { invokeFn } from "@/lib/localFn";
 import { sendAgentMessage } from "@/features/dna/lib/agentThread";
 import {
   analysisText, byId, entityRegistryBlock, scenesInOrder, traceDiff, validate,
@@ -17,19 +17,9 @@ export interface FactReadResult { facts: LedgerFact[]; contradictions: Continuit
 
 /** Run the read for ONE scene against the canon folded so far. `entities` is the entityRegistryBlock the read
  *  grounds facts against (Phase-1). `scene.value_shift` (when present) also asks the read to judge value
- *  embodiment (R2). Bridge in dev, edge fn in prod. */
+ *  embodiment (R2). Locally-served fn (VITE_LOCAL_FUNCTIONS_URL) or deployed edge fn. */
 export async function invokeReadFacts(bookId: number, ledgerIn: LedgerFact[], scene: { id: string; summary?: string; prose: string; value_shift?: ValueShift }, entities?: string): Promise<FactReadResult> {
-  if (BRIDGE) {
-    const r = await bridgeFetch("/read-facts", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookId, ledgerIn, scene, entities }),
-    });
-    if (!r.ok) throw new Error(`read-facts bridge ${r.status}: ${await r.text()}`);
-    const d = await r.json();
-    // The bridge's read-facts mirror doesn't implement the fingerprint task (deliberately not synced —
-    // doc_1783542000000.md §2d); `d?.fingerprint` is simply always undefined there, degrading gracefully.
-    return { facts: d?.facts ?? [], contradictions: d?.contradictions ?? [], valueCarrier: d?.valueCarrier, fingerprint: d?.fingerprint };
-  }
-  const { data, error } = await supabase.functions.invoke("read-facts", { body: { bookId, ledgerIn, scene, entities } });
+  const { data, error } = await invokeFn<FactReadResult>("read-facts", { body: { bookId, ledgerIn, scene, entities } });
   if (error) throw error;
   return { facts: data?.facts ?? [], contradictions: data?.contradictions ?? [], valueCarrier: data?.valueCarrier, fingerprint: data?.fingerprint };
 }

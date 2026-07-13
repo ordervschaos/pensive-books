@@ -9,7 +9,7 @@
 // node (the level that made the promise), sealed by a hash of the exact input sent — the lint recomputes that hash
 // off the live tree to tell a fresh verdict from a stale one.
 import { supabase } from "@/integrations/supabase/client";
-import { BRIDGE, bridgeFetch } from "@/lib/bridge";
+import { invokeFn } from "@/lib/localFn";
 import { sendAgentMessage } from "@/features/dna/lib/agentThread";
 import {
   analysisText, buildShapeReadInput, shapeReadHash, validate,
@@ -23,18 +23,11 @@ export { buildShapeReadInput, shapeReadHash } from "@/features/dna/lib/novelDna"
 /** One row of the read's verdict: which acts carry a movement (inferred), and how faithfully they deliver it. */
 export interface ShapeFit { movement: number; actIds: string[]; fit: number; worst?: string; note?: string }
 
-/** Run the read: bridge in dev (localhost:8787), edge fn in prod. Returns one fit row per movement. */
+/** Run the read: locally-served fn (VITE_LOCAL_FUNCTIONS_URL) or deployed edge fn. Returns one fit row per movement. */
 export async function invokeShapeRead(bookId: number, input: ShapeReadInput): Promise<ShapeFit[]> {
-  if (BRIDGE) {
-    const r = await bridgeFetch("/read-shape", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookId, ...input }),
-    });
-    if (!r.ok) throw new Error(`read-shape bridge ${r.status}: ${await r.text()}`);
-    return ((await r.json())?.fits ?? []) as ShapeFit[];
-  }
-  const { data, error } = await supabase.functions.invoke("read-shape", { body: { bookId, ...input } });
+  const { data, error } = await invokeFn<{ fits?: ShapeFit[] }>("read-shape", { body: { bookId, ...input } });
   if (error) throw error;
-  return (data?.fits ?? []) as ShapeFit[];
+  return data?.fits ?? [];
 }
 
 /** Write the verdict back onto the PREMISE node (a targeted patch touching only observed_shape_fit +

@@ -7,7 +7,7 @@
 // `readings`) — the tree stays the single source of truth, and observedSeries/observedGap derive the 3rd
 // trace + the read_gap lint from it. The author reviews the gaps, then hands them to the editor agent.
 import { supabase } from "@/integrations/supabase/client";
-import { BRIDGE, bridgeFetch } from "@/lib/bridge";
+import { invokeFn } from "@/lib/localFn";
 import { sendAgentMessage } from "@/features/dna/lib/agentThread";
 import {
   analysisText, beatsInOrder, byId, childrenOf, validate,
@@ -37,18 +37,11 @@ export function buildMeterReadInput(nodes: DnaNode[]): MeterReadInput {
   return { beats, meters };
 }
 
-/** Run the read: bridge in dev (localhost:8787), edge fn in prod. Returns one reading per (beat, meter). */
+/** Run the read: locally-served fn (VITE_LOCAL_FUNCTIONS_URL) or deployed edge fn. Returns one reading per (beat, meter). */
 export async function invokeMeterRead(bookId: number, input: MeterReadInput): Promise<ObservedReading[]> {
-  if (BRIDGE) {
-    const r = await bridgeFetch("/read-meters", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookId, ...input }),
-    });
-    if (!r.ok) throw new Error(`read-meters bridge ${r.status}: ${await r.text()}`);
-    return ((await r.json())?.readings ?? []) as ObservedReading[];
-  }
-  const { data, error } = await supabase.functions.invoke("read-meters", { body: { bookId, ...input } });
+  const { data, error } = await invokeFn<{ readings?: ObservedReading[] }>("read-meters", { body: { bookId, ...input } });
   if (error) throw error;
-  return (data?.readings ?? []) as ObservedReading[];
+  return data?.readings ?? [];
 }
 
 /** Write the observed readings back onto the beat nodes (a targeted patch touching ONLY observed_readings —

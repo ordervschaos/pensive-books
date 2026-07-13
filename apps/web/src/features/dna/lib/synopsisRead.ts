@@ -10,7 +10,7 @@
 // PILLAR node (the level that owns the whole plan), sealed by a hash of the exact input sent — the lint
 // recomputes that hash off the live tree to tell a fresh verdict from a stale one.
 import { supabase } from "@/integrations/supabase/client";
-import { BRIDGE, bridgeFetch } from "@/lib/bridge";
+import { invokeFn } from "@/lib/localFn";
 import { sendAgentMessage } from "@/features/dna/lib/agentThread";
 import {
   analysisText, buildSynopsisReadInput, synopsisReadHash, validate,
@@ -24,18 +24,11 @@ export { buildSynopsisReadInput, synopsisReadHash } from "@/features/dna/lib/nov
 /** One row of the read's verdict: a craft axis's 1–5 score, its one-line note, and the beat most responsible. */
 export interface CraftRow { axis: string; score: number; note?: string; worst?: string }
 
-/** Run the read: bridge in dev (localhost:8787), edge fn in prod. Returns one row per craft axis. */
+/** Run the read: locally-served fn (VITE_LOCAL_FUNCTIONS_URL) or deployed edge fn. Returns one row per craft axis. */
 export async function invokeSynopsisRead(bookId: number, input: SynopsisReadInput): Promise<CraftRow[]> {
-  if (BRIDGE) {
-    const r = await bridgeFetch("/read-synopsis", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookId, input }),
-    });
-    if (!r.ok) throw new Error(`read-synopsis bridge ${r.status}: ${await r.text()}`);
-    return ((await r.json())?.craft ?? []) as CraftRow[];
-  }
-  const { data, error } = await supabase.functions.invoke("read-synopsis", { body: { bookId, input } });
+  const { data, error } = await invokeFn<{ craft?: CraftRow[] }>("read-synopsis", { body: { bookId, input } });
   if (error) throw error;
-  return (data?.craft ?? []) as CraftRow[];
+  return data?.craft ?? [];
 }
 
 /** Write the verdict back onto the PILLAR node (a targeted patch touching only observed_craft +

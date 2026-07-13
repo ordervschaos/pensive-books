@@ -363,7 +363,7 @@ export default function DnaArchitecturePage() {
               {["▭ book_nodes", "▭ book_agent_runs", "▭ book_agent_sessions", "▭ book_tree_versions", "▭ ai_calls (llm log)", "▭ pages (exit)"].map((x) => <div key={x} className="arch-lane-item db">{x}</div>)}
             </div>
           </div>
-          <p className="arch-note">Deploy split: web engine + UI (<code>features/dna/</code>) · edge fns (<code>supabase/functions/</code>) · dev bridge (<code>scripts/eval-bridge.mjs</code>, mirror every edge change) · schema lock (<code>dna-schema.json ↔ dnaSchema.ts</code>).</p>
+          <p className="arch-note">Deploy split: web engine + UI (<code>features/dna/</code>) · edge fns (<code>supabase/functions/</code>) · local dev override (<code>@/lib/localFn</code> + <code>claude-local-shim.mjs</code>, rides the real edge fns) · schema lock (<code>dna-schema.json ↔ dnaSchema.ts</code>).</p>
         </section>
 
         {/* ── 5 · the driver ────────────────────────────────────── */}
@@ -489,7 +489,7 @@ export default function DnaArchitecturePage() {
           <div className="arch-deploy">
             <div className="arch-deploy-card"><b>Web engine + UI</b><code>apps/web/src/features/dna/</code>pure engine runs client-side · read FEATURE.md first</div>
             <div className="arch-deploy-card"><b>Edge fns</b><code>supabase/functions/&lt;name&gt;/</code>ride _shared/&#123;llm · task · access · brief&#125;</div>
-            <div className="arch-deploy-card"><b>Dev bridge</b><code>scripts/eval-bridge.mjs</code>reimplements the edge pipeline for localhost:8787 — mirror every edge change</div>
+            <div className="arch-deploy-card"><b>Local dev override</b><code>@/lib/localFn</code>points reads/reviser/judge at a locally-served fn (claude-local shim) — same code, no mirror to maintain</div>
             <div className="arch-deploy-card"><b>Parity + schema lock</b><code>novelDna.parity.test.ts · dnaSchema.artifact.test.ts</code>fail on twin drift or schema drift</div>
           </div>
         </section>

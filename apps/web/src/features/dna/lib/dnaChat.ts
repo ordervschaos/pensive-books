@@ -1,15 +1,11 @@
-// dnaChat — client for the per-stage DNA reviser (dna-chat edge fn, bridge in dev). The edge fn owns the
-// dna_chats thread; the rail watches it over Realtime. A proposed change rides in pending_proposal as node
-// OPS the author reviews, then applies to book_nodes here. See docs/novel-dna-spec.md.
-import { supabase } from "@/integrations/supabase/client";
-import { BRIDGE, bridgeFetch } from "@/lib/bridge";
+// dnaChat — shared node-op vocabulary: proposal types, description/diff-preview rendering, the fail-closed
+// validation boundary, and applyNodeOps (the one path anything writes book_nodes through). Originally also
+// housed the per-stage DNA reviser's client (dna-chat edge fn + dna_chats table); that per-stage chat is
+// gone (superseded by the single AgentRail/book-agent thread — docs/agent-rail.md), so only the reusable
+// op machinery below remains.
 import { deleteNode, loadTree, saveNode } from "@/features/dna/lib/bookNodes";
 import { blastRadius, byId, editContent, emptyNode, PARENT_KIND, pillarOf, SINGLETON_KINDS, stampInput, type DnaNode, type NodeContent, type NodeKind } from "@/features/dna/lib/novelDna";
 import { KIND_LEVEL, LADDER_NEXT, sanitizeContent, validateContent, VALID_KINDS } from "@/features/dna/lib/dnaSchema";
-import type { StageKey } from "@/features/dna/lib/dnaJourney";
-
-export interface DnaChatMessage { role: "user" | "assistant"; text: string; ts: string; plan?: string }
-export interface DnaSession { messages: DnaChatMessage[]; pending_proposal: DnaProposal | null; ended_at: string }
 
 // A node to create, with its own descendants — the unit of a rebuild (replace_children). Nesting follows
 // the ladder (act→beat→scene), so children's kinds are implied by their parent's.
@@ -27,25 +23,8 @@ export type NodeOp =
   // Surgical prose patch (agent lint fixes): swap the FIRST occurrence of `find` in a scene's
   // content.prose.text. Tiny where a whole-text edit is ~2.6k tokens, so dozens batch in one proposal.
   | { op: "replace_text"; id: string; find: string; replace: string };
-export interface DnaProposal { summary: string; ops: NodeOp[] }
 
 const countSubtree = (subs?: NewSubtree[]): number => (subs ?? []).reduce((n, s) => n + 1 + countSubtree(s.children), 0);
-
-/** Send one message in a (book, stage) thread. The edge fn appends + persists; the rail re-reads over Realtime.
- *  `analysis` = the three-axis story analysis (pacing/promises/topography/lints), computed client-side from the
- *  live tree (the engine lives in the web app) and handed to the reviser so it can act on drift/dangling/sag. */
-export async function sendDnaMessage(bookId: number, stage: StageKey, message: string, analysis?: string): Promise<void> {
-  const body = { bookId, stage, message, analysis };
-  if (BRIDGE) {
-    const r = await bridgeFetch(`/dna-chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
-    return;
-  }
-  const { data, error } = await supabase.functions.invoke("dna-chat", { body });
-  if (error) throw error;
-  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
-}
 
 // ── Proposal preview ──────────────────────────────────────────────────────────────────────────────
 // Resolve a proposal's ops against the LIVE tree into render-ready rows, so the rail can show the author
@@ -237,7 +216,6 @@ export function validateOps(ops: NodeOp[], nodes: DnaNode[]): OpValidation {
 
 /** Run a set of node ops against book_nodes (edit/add/delete), honoring LOCKED nodes and the schema. Only
  *  VALID ops land (validateOps is the fail-closed gate); the returned `rejected` lets callers report why.
- *  The reusable core shared by the per-stage chat (applyDnaProposal) and the omni-rail agent.
  *  `callId` (optional) = the ai_calls row that generated `ops` (the dna-expand engine's response) —
  *  stamped onto every node these ops touch as `last_ai_call_id`, for the tree's view-details panel.
  *  Omitted (not passed) by callers whose ops aren't attributable to one engine call (e.g. the chat
@@ -307,42 +285,3 @@ export async function applyNodeOps(bookId: number, ops: NodeOp[], callId?: numbe
   return validation;
 }
 
-/** Apply a reviewed proposal: run its node ops against book_nodes, then clear the pending proposal. Returns
- *  the validation so the UI can report any ops that were rejected at the boundary (and didn't land). */
-export async function applyDnaProposal(bookId: number, stage: StageKey, proposal: DnaProposal): Promise<OpValidation> {
-  const validation = await applyNodeOps(bookId, proposal.ops);
-  await clearDnaProposal(bookId, stage);
-  return validation;
-}
-
-/** Discard the pending proposal without applying it. */
-export async function clearDnaProposal(bookId: number, stage: StageKey): Promise<void> {
-  await supabase.from("dna_chats").update({ pending_proposal: null }).eq("book_id", bookId).eq("stage", stage);
-}
-
-/** Archive the current thread into `sessions` and start a fresh conversation. */
-export async function startNewDnaSession(bookId: number, stage: StageKey): Promise<void> {
-  const { data } = await supabase.from("dna_chats").select("messages, pending_proposal, sessions").eq("book_id", bookId).eq("stage", stage).maybeSingle();
-  const messages = Array.isArray(data?.messages) ? (data!.messages as DnaChatMessage[]) : [];
-  if (messages.length === 0) return; // nothing to archive
-  const sessions = Array.isArray(data?.sessions) ? (data!.sessions as DnaSession[]) : [];
-  const archived: DnaSession = { messages, pending_proposal: (data?.pending_proposal as DnaProposal | null) ?? null, ended_at: new Date().toISOString() };
-  await supabase.from("dna_chats").update({ messages: [], pending_proposal: null, sessions: [archived, ...sessions], status: "idle" })
-    .eq("book_id", bookId).eq("stage", stage);
-}
-
-/** Restore a past session as the live thread, archiving the current one. */
-export async function resumeDnaSession(bookId: number, stage: StageKey, index: number): Promise<void> {
-  const { data } = await supabase.from("dna_chats").select("messages, pending_proposal, sessions").eq("book_id", bookId).eq("stage", stage).maybeSingle();
-  const sessions = Array.isArray(data?.sessions) ? (data!.sessions as DnaSession[]) : [];
-  const target = sessions[index];
-  if (!target) return;
-  const messages = Array.isArray(data?.messages) ? (data!.messages as DnaChatMessage[]) : [];
-  const remaining = sessions.filter((_, i) => i !== index);
-  const nextSessions: DnaSession[] =
-    messages.length > 0
-      ? [{ messages, pending_proposal: (data?.pending_proposal as DnaProposal | null) ?? null, ended_at: new Date().toISOString() }, ...remaining]
-      : remaining;
-  await supabase.from("dna_chats").update({ messages: target.messages, pending_proposal: target.pending_proposal ?? null, sessions: nextSessions, status: "idle" })
-    .eq("book_id", bookId).eq("stage", stage);
-}

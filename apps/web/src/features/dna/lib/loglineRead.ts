@@ -7,8 +7,8 @@
 // The tree is the single source of truth, so (like the other reads) the CLIENT assembles the read's input
 // and writes its output back; the edge fn / bridge is a stateless prompt→JSON call. The verdict lands on the
 // SEED node (the level that owns the logline), sealed by a hash of the exact input sent.
+import { invokeFn } from "@/lib/localFn";
 import { supabase } from "@/integrations/supabase/client";
-import { BRIDGE, bridgeFetch } from "@/lib/bridge";
 import { sendAgentMessage } from "@/features/dna/lib/agentThread";
 import {
   analysisText, buildBriefFitInput, briefFitHash, validate,
@@ -22,18 +22,11 @@ export { buildBriefFitInput, briefFitHash } from "@/features/dna/lib/novelDna";
 /** One row of the read's verdict: a brief-fidelity axis's 1–5 score and its one-line note. */
 export interface BriefFitRow { axis: string; score: number; note?: string }
 
-/** Run the read: bridge in dev (localhost:8787), edge fn in prod. Returns one row per axis. */
+/** Run the read: locally-served fn (VITE_LOCAL_FUNCTIONS_URL) or deployed edge fn. Returns one row per axis. */
 export async function invokeBriefRead(bookId: number, input: BriefFitInput): Promise<BriefFitRow[]> {
-  if (BRIDGE) {
-    const r = await bridgeFetch("/read-logline", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookId, input }),
-    });
-    if (!r.ok) throw new Error(`read-logline bridge ${r.status}: ${await r.text()}`);
-    return ((await r.json())?.brief_fit ?? []) as BriefFitRow[];
-  }
-  const { data, error } = await supabase.functions.invoke("read-logline", { body: { bookId, input } });
+  const { data, error } = await invokeFn<{ brief_fit?: BriefFitRow[] }>("read-logline", { body: { bookId, input } });
   if (error) throw error;
-  return (data?.brief_fit ?? []) as BriefFitRow[];
+  return data?.brief_fit ?? [];
 }
 
 /** Write the verdict back onto the SEED node (a targeted patch touching only observed_brief_fit +

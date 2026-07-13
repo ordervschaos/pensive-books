@@ -7,7 +7,12 @@
 
 import { extractJsonBlock } from "./json.ts";
 
-export const JUDGE_MODEL = "claude-sonnet-4-6";
+// Local-only default (mirrors model-config.ts's localBridgeUp trick): when this worker has
+// CLAUDE_LOCAL_URL in its own env — never true when deployed — judging rides the claude-local shim
+// instead of the metered API. Prod always gets the fixed model.
+export function getJudgeModel(): string {
+  return Deno.env.get("CLAUDE_LOCAL_URL") ? "claude-local" : "claude-sonnet-4-6";
+}
 
 // Keep the judge prompt bounded — some calls (a full-book eval) carry a whole manuscript.
 const CTX_CAP = 24_000;

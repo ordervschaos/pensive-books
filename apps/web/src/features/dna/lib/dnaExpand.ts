@@ -1,8 +1,8 @@
-// dnaExpand — Phase 5: the "expand" verb. Calls dna-expand (bridge in dev, edge in prod) and applies the
+// dnaExpand — Phase 5: the "expand" verb. Calls dna-expand (locally-served fn or deployed edge fn) and applies the
 // result as ONE authoritative value (not proposals): child nodes get the generated content (source=ai,
 // accepted); a scene gets its prose. The author then edits / regenerates / locks. See novel-dna-spec.md §6.
 import { supabase } from "@/integrations/supabase/client";
-import { BRIDGE, bridgeFetch } from "@/lib/bridge";
+import { invokeFn } from "@/lib/localFn";
 import { deleteNode, loadTree, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
 import { byId, deepMergeContent, emptyNode, gameTwins, newId, PARENT_KIND, pillarOf, stampInput, stampProse, stampSketch, type BeatContent, type DnaNode, type GameContent, type MeterContent, type NodeContent, type NodeKind, type RenderBrief, type SceneContent, type SceneSketch, type TentpoleContent, type ThreadContent, type ThreadRef, type VoiceContent } from "@/features/dna/lib/novelDna";
 import { stageGeneratedProposal, type AgentProposal } from "@/features/dna/lib/agentThread";
@@ -34,7 +34,7 @@ interface ExpandResult {
   // The ai_calls row that produced this result's content — from dna-expand's `meta.loggedCallId` (direct
   // targets) or the stream-prose proxy's logged row (prose/beatsheet). Stamped onto the committed node(s)
   // as `last_ai_call_id` for the tree's view-details panel. Absent for phase:"prepare"/needsRepair replies
-  // (no content committed yet) and for the BRIDGE dev path (doesn't log to ai_calls).
+  // (no content committed yet).
   callId?: number | null;
 }
 
@@ -91,7 +91,7 @@ async function invokeWithRetry(body: Record<string, unknown>, signal?: AbortSign
     const timeout = AbortSignal.timeout(ATTEMPT_TIMEOUT_MS);
     const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
     try {
-      const { data, error } = await supabase.functions.invoke("dna-expand", { body, signal: combined });
+      const { data, error } = await invokeFn<ExpandResult>("dna-expand", { body, signal: combined });
       if (error) throw error;
       if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
       return data as ExpandResult;
@@ -181,12 +181,6 @@ async function streamText(prepared: PreparedProse, signal?: AbortSignal, kind: s
 }
 
 async function callExpand(bookId: number, nodeId: string, target: string, signal?: AbortSignal, brief?: RenderBrief): Promise<ExpandResult> {
-  if (BRIDGE) {
-    const r = await bridgeFetch(`/dna-expand`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bookId, nodeId, target, brief }), signal });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
-    return d as ExpandResult;
-  }
   // Prose: two hops — a fast `prepare` invoke (context + v2 digest + the agent's curated brief, under the
   // worker ceiling) then an off-worker stream of the long generation. Everything else: one invoke with retry.
   if (target === "prose") {

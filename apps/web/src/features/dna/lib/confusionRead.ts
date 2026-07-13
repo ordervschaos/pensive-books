@@ -9,7 +9,7 @@
 // a truncated recap. The read writes `confusion_flags` onto the flagged scenes (parallel to continuity_flags);
 // the engine's reader_confusion lint surfaces them, and the findings hand off to the editor agent.
 import { supabase } from "@/integrations/supabase/client";
-import { BRIDGE, bridgeFetch } from "@/lib/bridge";
+import { invokeFn } from "@/lib/localFn";
 import { sendAgentMessage } from "@/features/dna/lib/agentThread";
 import {
   analysisText, byId, chapters, validate,
@@ -75,17 +75,12 @@ export function buildConfusionReadInput(nodes: DnaNode[]): ConfusionReadInput {
 export const judgedSceneIds = (input: ConfusionReadInput, chaptersRead: number): string[] =>
   input.chapters.slice(0, chaptersRead).flatMap((c) => c.scenes.map((s) => s.sceneId));
 
-/** Run the read: bridge in dev (localhost:8787), edge fn in prod. One call covers as many chapters as fit. */
+/** Run the read: locally-served fn (VITE_LOCAL_FUNCTIONS_URL) or deployed edge fn. One call covers as many
+ *  chapters as fit. */
 export async function invokeConfusionRead(bookId: number, input: ConfusionReadInput): Promise<ConfusionReadResult> {
-  if (BRIDGE) {
-    const r = await bridgeFetch("/read-confusion", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookId, ...input }),
-    });
-    if (!r.ok) throw new Error(`read-confusion bridge ${r.status}: ${await r.text()}`);
-    const d = await r.json();
-    return { flags: d?.flags ?? [], truncated: !!d?.truncated, chaptersRead: d?.chaptersRead ?? input.chapters.length };
-  }
-  const { data, error } = await supabase.functions.invoke("read-confusion", { body: { bookId, ...input } });
+  const { data, error } = await invokeFn<{ flags?: SceneConfusionFlag[]; truncated?: boolean; chaptersRead?: number }>(
+    "read-confusion", { body: { bookId, ...input } },
+  );
   if (error) throw error;
   return { flags: data?.flags ?? [], truncated: !!data?.truncated, chaptersRead: data?.chaptersRead ?? input.chapters.length };
 }

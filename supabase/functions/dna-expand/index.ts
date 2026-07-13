@@ -5,8 +5,8 @@
 //   client → POST { bookId, nodeId } → load node + ancestors + mandate → Claude → { children } | { prose }
 //
 // Locked ancestors are hard constraints; accepted siblings give local coherence. Scene → prose fills the
-// scene's own text. The LLM host is chosen per-call in callLLM (the ai_provider switch); the bridge
-// (scripts/eval-bridge.mjs) mirrors this for dev.
+// scene's own text. The LLM host is chosen per-call in callLLM (the ai_provider switch); dev can also
+// route this same fn through @/lib/localFn's local-serve override to ride the claude-local shim.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { BRIDGE, bridgeFetch } from "@/lib/bridge";
+import { invokeFn } from "@/lib/localFn";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -196,21 +196,15 @@ export default function AiCalls() {
   const fns = useMemo(() => Array.from(new Set(calls.map((c) => c.fn))).sort(), [calls]);
   const visible = fnFilter === "all" ? calls : calls.filter((c) => c.fn === fnFilter);
 
-  // Judge one call: bridge in dev (free, Claude Code), edge otherwise. Then poll its evals until a
-  // terminal row lands (ai_call_evals isn't in the realtime publication — polling keeps it simple).
+  // Judge one call, then poll its evals until a terminal row lands (ai_call_evals isn't in the realtime
+  // publication — polling keeps it simple). Locally-served fn (free, claude-local shim) or deployed edge fn.
   const judge = async (call: AiCall) => {
     if (judging.has(call.id)) return;
     setJudging((s) => new Set(s).add(call.id));
     try {
-      if (BRIDGE) {
-        const r = await bridgeFetch(`/eval-call/${call.id}`, { method: "POST" });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.error || `bridge ${r.status}`);
-      } else {
-        const { error: invErr } = await supabase.functions.invoke("evaluate-ai-call", { body: { aiCallId: call.id } });
-        if (invErr) throw invErr;
-      }
-      // Poll for the result (bridge is already done; edge fills async).
+      const { error: invErr } = await invokeFn("evaluate-ai-call", { body: { aiCallId: call.id } });
+      if (invErr) throw invErr;
+      // Poll for the result.
       for (let i = 0; i < 45; i++) {
         const { data } = await supabase.from(AI_CALL_EVALS).select("*").eq("ai_call_id", call.id).order("id", { ascending: false }).limit(1);
         const row = (data?.[0] as unknown as AiCallEval | undefined);

@@ -101,7 +101,13 @@ export function isToolCapable(model: string): boolean {
   return !TOOL_INCAPABLE_MODELS.has(model);
 }
 
+// `localBridgeUp`-style default (mirrors getRoleModels' agent role, see resolveRoleModels above): when
+// this worker has CLAUDE_LOCAL_URL in its own env — never true when deployed, only ever set in a
+// developer's gitignored supabase/functions/.env — `high` defaults to claude-local instead of the
+// shared admin_settings tier. Prod is unaffected: it never has the env var, so this branch never fires
+// there, and the shared `ai_model_tier` row (read by every deployed caller too) is never touched.
 export async function getActiveModels(): Promise<{ high: string; low: string }> {
+  const localBridgeUp = !!Deno.env.get("CLAUDE_LOCAL_URL");
   try {
     const { data } = await serviceClient()
       .from("admin_settings")
@@ -109,7 +115,8 @@ export async function getActiveModels(): Promise<{ high: string; low: string }> 
       .eq("key", "ai_model_tier")
       .single();
     const tier = (data?.value as ModelTier) ?? "sonnet";
-    return TIER_MODELS[tier] ?? TIER_MODELS.sonnet;
+    const base = TIER_MODELS[tier] ?? TIER_MODELS.sonnet;
+    return localBridgeUp ? { high: "claude-local", low: base.low } : base;
   } catch {
     return TIER_MODELS.sonnet;
   }

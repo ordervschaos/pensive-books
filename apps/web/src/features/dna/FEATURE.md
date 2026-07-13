@@ -51,23 +51,32 @@ Routes are registered in `apps/web/src/App.tsx`.
 ## Edge functions — `supabase/functions/` (cannot move; see below)
 
 Invoked by the web layer above:
-`dna-expand` · `dna-chat` · `book-agent` · `read-meters` · `read-facts` · `read-shape` · `read-synopsis` · `read-confusion` · `read-logline` · `read-premise` · `dna-decompose` (imported-draft semantic ascent; NOT bridge-mirrored — dev invokes the deployed fn directly)
+`dna-expand` · `book-agent` · `read-meters` · `read-facts` · `read-shape` · `read-synopsis` · `read-confusion` · `read-logline` · `read-premise` · `evaluate-ai-call` · `dna-decompose` (imported-draft semantic ascent)
+
+`dna-chat` has **zero live callers** as of the eval-bridge cleanup (2026-07-13) —
+its client (`sendDnaMessage` + the `dna_chats` session helpers in `lib/dnaChat.ts`)
+was the per-stage DNA reviser, superseded by the single AgentRail/book-agent
+thread. Candidate for deletion (edge fn + `dna_chats` table); not yet removed.
 
 The committed schema artifact `supabase/functions/_shared/dna-schema.json` is the
-edge/bridge mirror of `lib/dnaSchema.ts`; the lock test
-`lib/dnaSchema.artifact.test.ts` fails if they drift.
+mirror of `lib/dnaSchema.ts`; the lock test `lib/dnaSchema.artifact.test.ts` fails
+if they drift.
 
-## Dev bridge — `scripts/eval-bridge.mjs`
+## Local dev override — `@/lib/localFn`
 
-Reimplements the edge pipeline for local dev (web calls `localhost:8787`, not the
-deployed fn). **Every edge change must also land here** or features break only in dev.
+Points the reads/reviser/judge fetches above at a locally-served function
+(`VITE_LOCAL_FUNCTIONS_URL`, needs `supabase functions serve` + the claude-local
+shim running) instead of the deployed one — same edge-fn code either way, so
+there's no separate pipeline to keep in sync. `scripts/eval-bridge.mjs` (which DID
+reimplement the pipeline for `localhost:8787`) is no longer in this path; it lives
+on only as a utility module for standalone analysis scripts.
 
 ---
 
 ## Shared substrate it rides (stays shared — do NOT fold into the feature)
 
 **Web** (via `@/` alias, depth-independent): `@/integrations/supabase/client`,
-`@/lib/bridge`, `@/lib/brief`, `@/lib/foundations`, `@/lib/stopRun` (universal
+`@/lib/localFn`, `@/lib/brief`, `@/lib/foundations`, `@/lib/stopRun` (universal
 stop chokepoint), `@/hooks/useLatestTaskRow`, `@/hooks/use-toast`,
 `@/components/book/shared/*` (studioUi, useChatScroll), `@/components/ui/*`.
 
@@ -90,5 +99,5 @@ would regress logging, durability, and unified-stop.
    other functions. Moving them would force duplicating those chokepoints.
 
 So the feature is **physically split by deploy target, logically unified by this
-manifest.** When extending DNA: web code → here; edge code → `supabase/functions/`
-(mirror into `scripts/eval-bridge.mjs`); update this file.
+manifest.** When extending DNA: web code → here; edge code → `supabase/functions/`;
+update this file.
