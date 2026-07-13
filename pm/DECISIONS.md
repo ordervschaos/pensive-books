@@ -6,6 +6,36 @@
 
 ## Log
 
+### 2026-07-13 — "Zero callers" audits must check real invocation logs + the deployed branch, not static grep
+A dead-code audit (retiring eval-bridge, then auditing ~20 candidate edge fns) grepped only the
+current feature branch's client code for callers. That branch is 43 commits ahead of `main`, and
+`main` — not this branch — is what Vercel `pensive` actually deploys to production. `main` still
+ships UI (`ladder.ts`, `revisionChat.ts`, `beatSheet.ts`) this branch already deleted as unmerged
+pivot work, so functions that looked dead here were receiving real production traffic. `dna-chat`
+(deleted+undeployed, since restored) had a real call on 2026-07-10; `revise-chat` (on the delete
+list, not yet executed) had one on 2026-07-11. The `dna_chats` Postgres table was dropped after
+confirming it wasn't *empty* (15 rows) but without checking *recency* — real data loss, PITR is
+disabled, recovery is a dashboard-driven restore from the 07-13 08:30 daily backup, not yet done.
+Rule going forward: a fn/table is only "dead" once BOTH (a) the actually-deployed branch has no
+caller, not just the branch you're sitting on, and (b) `ai_calls`/table-row timestamps show no
+recent real activity — static grep alone is not sufficient evidence for a destructive action.
+Root cause (two divergent realities — a long-lived feature branch and a stale `main`) is being
+addressed by merging this branch to `main` so there is one deployed source of truth.
+
+### 2026-07-13 — Ratified the guidance-system redesign: interview-first discovery + three-state objective injection
+The agent rail's guidance measured only tree completeness (`currentObjective` ladder), so fresh
+books got "generate logline options" when the right move is interviewing the author, and concrete
+asks got the objective injected anyway (intent pollution). Ratified design (full executable plan in
+`docs/agent-guidance-system.md`): (D1) vision document at `books.brief.vision` — no migration;
+(D2) direct-write non-terminal `update_vision` tool — first break from proposals-only, justified
+because it records the author's own words; (D3) Interview as the premise stage's first substep,
+grandfathered done for books past seed; (D4) three-state `<current_objective>` injection — omit on
+concrete ask, inject on Next-nudge/empty ask, ALWAYS inject in auto mode; (D5) vision renders only
+behind a `briefContext` opt, book-agent-only in v1 (byte-stability for every other prompt);
+(D6) no server-initiated turns — the existing greeting + next-step card carries the kickoff.
+Replaces: always-on objective marked "subordinate" (anchor-not-fence alone wasn't enough).
+Implementation delegated to a smaller-model session against the plan doc.
+
 ### 2026-07-10 — Squashed 135 migrations into one baseline dump; `supabase start` now bootstraps from empty
 `supabase start`/`db pull` had never worked from an empty database: the earliest migration
 (`20250127000000_create_page_chats.sql`) already assumed `public.pages` existed, but no migration in
