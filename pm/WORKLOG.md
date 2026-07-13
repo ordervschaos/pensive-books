@@ -16,6 +16,35 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-13 — Fix grounding-line repetition (live-reported bug) `[ship]`
+- **What:** User saw the same-day grounding line (turn-grounding ship, above/earlier) repeat 10x
+  identically in the rail ("Step 5/5 · Prose — Scenes — Scene 8 of 10..."). Root cause: the line
+  collapsed to just the objective headline whenever focus/mentioned/skill were empty (the common
+  case on auto-continue turns), so it repeated verbatim every turn. Fix: dropped the objective
+  headline (redundant with the "next step" card); now emits one entry per concrete action
+  ("Loaded the scene-craft playbook.", "Loaded scene "X" in full."), matching the existing
+  read_node/read_skill tool-step phrasing, and deduped against steps since the last user/answer
+  message so a multi-turn auto action doesn't re-announce unchanged context every turn.
+- **Files/commits:** `supabase/functions/book-agent/index.ts` (threadSystem + call site),
+  `docs/agent-turn-grounding.md` rewritten with a "first attempt, and why it was wrong" section.
+  Deployed to prod.
+- **PM impact:** none beyond the existing AgentRail STATE.md row (already covers the grounding-line
+  ship; this is a same-day correction, not a new capability).
+
+## 2026-07-13 — Per-node content history + revert `[ship]`
+- **What:** Fine-grained node audit log so an author can see a single node's content timeline, tell
+  exactly what an AI op changed, and revert one node to an earlier state. New `book_node_revisions`
+  table + `SECURITY DEFINER` trigger on `book_nodes` captures every content-changing write
+  (source-agnostic: agent / manual / bridge); state-based full-content snapshots; keep-50/node;
+  precise AI attribution (`ai_call_id` set only when `last_ai_call_id` changes on that write).
+  `NodeHistory` timeline wired into the existing `NodeDetailsModal` with field-level diff + restore.
+  Verified end-to-end at the DB layer (trigger fires/skips correctly, attribution, forward-moving
+  revert); UI typechecks but not yet browser-driven.
+- **Files:** `supabase/migrations/20260713110000_book_node_revisions.sql` (pushed),
+  `apps/web/src/features/dna/lib/nodeRevisions.ts`, `components/tree/modals.tsx` (NodeHistory + shared
+  `specRows`). Uncommitted.
+- **PM impact:** none — adjacent to M1 (author trust/transparency), not a Now-slot item. No promotion.
+
 ## 2026-07-13 — Agent turn grounding line `[ship]`
 - **What:** The rail showed only a generic "thinking…" spinner during a turn's model call (up to
   ~100s). `threadSystem()` (book-agent/index.ts) already computes everything needed for a status

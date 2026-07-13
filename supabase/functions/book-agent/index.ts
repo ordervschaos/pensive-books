@@ -197,6 +197,12 @@ function scopedKinds(scope: Aspect[] | null): Set<string> | null {
 }
 const ALL_NODE_KINDS = ["seed", "premise", "pillar", "act", "beat", "scene", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "meter", "voice_profile"];
 
+// Self-chain: re-invoke ourselves to drive the run's next turn (the durable loop's step edge). No-op
+// outside the edge runtime (local/tests), where EdgeRuntime is undefined.
+function chain(runId: number) {
+  if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -242,7 +248,7 @@ Deno.serve(async (req: Request) => {
       // terminal leaves the flag stuck true, which would otherwise cancel THIS resumed turn on its first
       // advance() (the top-of-function check reads it unconditionally).
       await service.from("book_agent_runs").update({ status: "running", steps: row.steps, cancel_requested: false }).eq("id", row.id);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId: row.id }));
+      chain(row.id);
       return json({ status: "running", runId: row.id }, 202);
     }
 
@@ -271,7 +277,7 @@ Deno.serve(async (req: Request) => {
         .update({ transcript, steps, pending: null, status: "running", cancel_requested: false })
         .eq("id", row.id);
       if (error) throw new Error(error.message);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId: row.id }));
+      chain(row.id);
       return json({ status: "running", runId: row.id }, 202);
     }
 
@@ -335,7 +341,7 @@ Deno.serve(async (req: Request) => {
           .single();
         if (insErr) throw new Error(insErr.message);
         const id = (run as { id: number }).id;
-        if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId: id }));
+        chain(id);
         return json({ status: "running", runId: id }, 202);
       }
 
@@ -347,7 +353,7 @@ Deno.serve(async (req: Request) => {
         .update({ transcript, steps, status: "running", turns: 0, pending: null, error: null, cancel_requested: false, context_scope: scope, context_analysis: analysis, context_objective: objective, context_attached_ids: attachedIds, context_effort: effort, context_auto: auto })
         .eq("id", thread.id);
       if (error) throw new Error(error.message);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId: thread.id }));
+      chain(thread.id);
       return json({ status: "running", runId: thread.id }, 202);
     }
 
@@ -418,12 +424,17 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
     // intent hydration inside threadSystem (nodes the message names get their full plan inlined).
     const authorAsk = latestAuthorAsk(baseTranscript);
     // `auto` (autonomous mode: never park, commit own picks) computed above for the turn ceiling.
-    const { instructions, bookState, grounding } = await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto, row.context_objective, row.context_attached_ids, authorAsk);
-    // Grounding line (docs/agent-turn-grounding.md): surfaces what this turn's context assembly found
-    // (focus/mentioned counts, objective headline, matched craft brief) BEFORE the model call, so the
-    // author sees the agent is grounded during the wait rather than silence. Folded into the same
-    // pre-call write below — no extra round-trip.
-    if (grounding) baseSteps = [...baseSteps, { t: "read", label: grounding } as AgentStep];
+    const { instructions, bookState, groundingLabels } = await threadSystem(service, row.book_id, scope, row.context_analysis, effort, auto, row.context_objective, row.context_attached_ids, authorAsk);
+    // Grounding steps (docs/agent-turn-grounding.md): surface what got silently pre-loaded this turn
+    // (skill briefs, focus/mentioned node content) BEFORE the model call, so the author sees concrete
+    // activity during the wait instead of a bare spinner. Folded into the same pre-call write below — no
+    // extra round-trip. Deduped against this turn-cluster (since the last user/answer step): an auto run
+    // re-injects the SAME skill/nodes every turn while nothing changed, and repeating the identical line
+    // turn after turn is noise (this was the "10 identical Step 5/5 lines" bug), not information.
+    const sinceUser = new Set<string>();
+    for (let i = baseSteps.length - 1; i >= 0 && baseSteps[i].t !== "user" && baseSteps[i].t !== "answer"; i--) sinceUser.add(baseSteps[i].label);
+    const freshGrounding = groundingLabels.filter((label) => !sinceUser.has(label));
+    if (freshGrounding.length) baseSteps = [...baseSteps, ...freshGrounding.map((label) => ({ t: "read", label } as AgentStep))];
     const tools = threadToolsFor(scope);
     // Count the turn BEFORE the call: a hard worker death mid-call still consumes budget, so a
     // crash-looping run hits MAX_TURNS instead of being revived forever by the watchdog.
@@ -488,7 +499,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       // Transient API failure/timeout: chain again (turn budget already spent bounds retries).
       console.error(`book-agent run ${runId} call failed (turn ${turns}), retrying:`, e);
       await sleep(2000);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
+      chain(runId);
       return;
     }
     clearInterval(cancelPoll);
@@ -550,7 +561,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
+      chain(runId);
       return;
     }
 
@@ -578,7 +589,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
+      chain(runId);
       return;
     }
 
@@ -606,7 +617,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
+      chain(runId);
       return;
     }
 
@@ -627,7 +638,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
+      chain(runId);
       return;
     }
 
@@ -659,7 +670,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
       }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
+      chain(runId);
       return;
     }
     // ── ask_author parks the run; sibling read results ride along in `pending` ──
@@ -695,7 +706,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
         });
       }
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
+      chain(runId);
       return;
     }
 
@@ -717,7 +728,7 @@ async function advance(service: SupabaseClient, apiKey: string, runId: number) {
           }],
         });
         await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-        if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
+        chain(runId);
         return;
       }
     }
@@ -1748,7 +1759,7 @@ async function proposeOptions(
 // the tree changes after every apply, and carrying it at position 0 invalidated the whole cached prefix
 // (system + entire transcript) on every turn. Each node is a DIGEST — handle/gist + causal spine, full
 // content via read_node (see digestNode).
-async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null, authorAsk = ""): Promise<{ instructions: string; bookState: string; grounding: string }> {
+async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspect[] | null, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null, authorAsk = ""): Promise<{ instructions: string; bookState: string; groundingLabels: string[] }> {
   const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
   const b = book as { name?: string; brief?: Brief } | null;
   const { data: rows } = await service
@@ -1959,19 +1970,16 @@ async function threadSystem(service: SupabaseClient, bookId: number, scope: Aspe
     ? "\n\n<autonomous_mode>\nThe author has stepped away and CANNOT review, pick, or answer. Carry every request all the way to a finished result yourself, then conclude:\n- BATCH INDEPENDENT CHANGES: when the request decomposes into edits that don't depend on each other (fixing several lint hits across different scenes, touching several unrelated nodes), make them ALL in ONE propose_node_ops call — its ops is an array, capped at roughly 6-8 ops. Split into separate turns ONLY when a later change needs to see an earlier one applied first, OR when there are more than ~6-8 independent fixes — for a lint pass with many scattered hits (echoed phrases across a dozen+ scenes), don't read every implicated scene first to build a complete inventory before proposing anything: fix a handful, propose+apply that batch, then continue with the next handful next turn. Gathering everything up front outgrows the context window and causes a read/re-read loop that never converges. Render ONE scene per turn with propose_prose_render. Changes are APPLIED LIVE immediately — there is no review step, and your NEXT turn shows the updated tree/scene. Don't say \"I propose\" or wait for approval; just make the change (or request the render), then continue.\n- READ THEN ACT — don't over-read, and don't read in series. The tree in <book_state> is a DIGEST (handle/gist + causal spine). When changes need nodes' full detail (a beat's whole summary, a character's profile, a scene's prose), issue ALL the read_node/search_nodes calls for them in ONE turn — but only for the node(s) you're about to change. Don't sweep the tree; the digest is enough to decide what to touch.\n- At a GENUINE creative fork — a decision that shapes the story (an ending's direction, killing a character, a structural pivot) — call ask_author anyway, stating the question, your options, and which one you're choosing. In autonomous mode it never parks: the system answers instantly telling you to proceed with your stated choice, and the fork is journaled for the author to review later. Small mechanical choices don't warrant it.\n- Prefer to commit directly: when you'd weigh options, just pick the strongest and write it with propose_node_ops. (Avoid propose_options in autonomous mode — there's no one to pick.)\n- ALWAYS CONCLUDE: once the request is fully handled, call finish with a one-line summary of what you changed. Don't stop mid-thought after a change — keep going until you finish.\n</autonomous_mode>"
     : "";
 
-  // Grounding line (docs/agent-turn-grounding.md): a one-line summary of what THIS turn's context assembly
-  // found, written to `steps` as a 'read' activity line before the LLM call — so the author sees the agent
-  // is grounded (which nodes it's anchored on, what rung it's driving, which craft brief loaded) during the
-  // possibly-long wait for the model's first token, not just silence. Built from values already computed
-  // above; always emitted when non-empty (no turn-to-turn dedup — a repeated line during a long auto run is
-  // itself a useful "still on track" signal, not noise).
-  const headline = liveObjective?.split("\n").find((l) => l.startsWith("▸"))?.replace(/^▸\s*/, "").trim();
-  const grounding = [
-    focusNodes.length ? `${focusNodes.length} in focus` : "",
-    mentioned.length ? `${mentioned.length} mentioned` : "",
-    headline ? `▸ ${headline}` : "",
-    askSkills.length ? `brief: ${askSkills.map((s) => s.name).join(", ")}` : "",
-  ].filter(Boolean).join(" · ");
+  // Eager grounding steps (docs/agent-turn-grounding.md): the skill briefs and focus/mentioned nodes
+  // injected above happen SILENTLY — the model never chose them via a tool call, so nothing was logged and
+  // the author saw nothing but a spinner. Mirror the exact phrasing already used for the explicit
+  // read_skill/read_node tool steps (execTool, below) so pre-injected context reads the same as chosen
+  // context: "Loaded the X playbook.", "Loaded {kind} "{label}" in full." Caller dedups against what's
+  // already logged this turn-cluster (see call site) — an auto run re-injects the SAME skill/nodes turn
+  // after turn while nothing has changed, and re-announcing that is noise, not information.
+  const groundingLabels: string[] = [];
+  for (const s of (askSkills.length ? askSkills : matchSkills(liveObjective ?? ""))) groundingLabels.push(`Loaded the ${s.name} playbook.`);
+  for (const n of [...focusNodes, ...mentioned]) groundingLabels.push(`Loaded ${n.kind} “${nodeHandle(n.content)}” in full.`);
 
-  return { instructions: `${SYSTEM_THREAD}${scopeLine}${effortLine}${autoLine}`, bookState: blocks.join("\n\n"), grounding };
+  return { instructions: `${SYSTEM_THREAD}${scopeLine}${effortLine}${autoLine}`, bookState: blocks.join("\n\n"), groundingLabels };
 }
