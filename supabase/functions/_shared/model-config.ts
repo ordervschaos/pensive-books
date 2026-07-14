@@ -140,29 +140,37 @@ export const ROLE_TIER_KEYS: Record<ModelRole, string> = {
 //
 // `localBridgeUp` is the ONE non-admin_settings input: whether CLAUDE_LOCAL_URL is configured in THIS
 // worker's own env (never true when deployed — it's a laptop-only, gitignored secret). When true AND the
-// admin hasn't set an explicit agent override, the agent role defaults to claude-local instead of the base
-// tier's high. This is a default, not a mandate — an explicit ai_model_tier_agent (even in local dev, e.g.
-// to test hermes) still wins, so it can never silently override a deliberate choice. It also never touches
-// admin_settings itself, so prod's shared ai_model_tier_agent is unaffected regardless of what any single
-// developer's laptop is doing.
+// admin hasn't set an explicit override for a role, that role defaults to claude-local instead of the base
+// tier's high — so a developer with the shim up runs the WHOLE high tier (agent reasoning, structural JSON,
+// AND prose) on their subscription-billed Claude rather than a metered API host. This also sidesteps a
+// reasoning-model failure mode on the metered path: DeepSeek bills reasoning INSIDE max_tokens and defaults
+// to high effort, so a tight structural call (e.g. the scene sketch, 1200 tokens) can have its whole budget
+// eaten by reasoning and return empty content. This is a default, not a mandate — an explicit per-role tier
+// (even in local dev, e.g. to test hermes) still wins, so it can never silently override a deliberate choice.
+// It also never touches admin_settings itself, so prod's shared tiers are unaffected regardless of what any
+// single developer's laptop is doing.
 export function resolveRoleModels(
   tiers: Partial<Record<string, ModelTier>>,
   localBridgeUp = false,
 ): { agent: string; structure: string; prose: string; low: string } {
   const base = TIER_MODELS[(tiers.ai_model_tier as ModelTier) ?? "sonnet"] ?? TIER_MODELS.sonnet;
   const highOf = (t?: ModelTier) => (t && TIER_MODELS[t]?.high) || base.high;
+  // Per role: an explicit override always wins; otherwise the shim (when up) is the local-dev default, else
+  // the base tier's high. Identical to the base high when the shim is down and no override is set.
+  const roleHigh = (key: string) => {
+    const override = tiers[key];
+    return !override && localBridgeUp ? "claude-local" : highOf(override);
+  };
   // The agent role drives a tool-use loop, so it can't run on a tool-incapable model (e.g. hermes). If the
   // resolved model can't do tools, prefer the base tier's high (keeps an Anthropic base on Anthropic, an
   // OpenRouter base on OpenRouter); only if THAT is also tool-incapable drop to the OpenRouter default. So
   // an admin who sets hermes globally for its prose still gets a working, in-family agent — no OpenRouter 404.
   const toolCapableAgent = (m: string) =>
     isToolCapable(m) ? m : isToolCapable(base.high) ? base.high : AGENT_FALLBACK_MODEL;
-  const agentOverride = tiers[ROLE_TIER_KEYS.agent];
-  const agentHigh = !agentOverride && localBridgeUp ? "claude-local" : highOf(agentOverride);
   return {
-    agent: toolCapableAgent(agentHigh),
-    structure: highOf(tiers[ROLE_TIER_KEYS.structure]),
-    prose: highOf(tiers[ROLE_TIER_KEYS.prose]),
+    agent: toolCapableAgent(roleHigh(ROLE_TIER_KEYS.agent)),
+    structure: roleHigh(ROLE_TIER_KEYS.structure),
+    prose: roleHigh(ROLE_TIER_KEYS.prose),
     low: base.low,
   };
 }

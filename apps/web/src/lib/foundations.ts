@@ -49,13 +49,6 @@ export interface Foundations {
   cast?: CastMember[];
   tentpoles?: Tentpole[];
   voice_exemplar?: FNode;
-  // The book's "house look" — a single visual-style direction every scene/portrait STYLE line inherits,
-  // so illustrations stay coherent across the whole book. Author-set; folded into the image composers.
-  // `art_theme` records which preset was chosen (or "custom") for UI highlight only — the composers read
-  // `art_direction`. `image_model` is the chosen render-model key (see IMAGE_MODEL_OPTIONS).
-  art_direction?: string;
-  art_theme?: string;
-  image_model?: string;
   // F2: stable relationship definitions (mutable per-page charges live in PageState.relationship_states)
   relationships?: Relationship[];
   // F3a: pinned world/setting node (changes prose → included in fingerprint)
@@ -63,43 +56,6 @@ export interface Foundations {
   // F4a: narration mode (person/tense/distance) — book-level prose default
   narration?: Narration;
 }
-
-// ── Book-level image look: theme presets + render-model choice ───────────────
-// A theme just fills `art_direction` with a style string the composers fold into every STYLE line — so
-// every illustration in the book shares one look. `id` is stored in `art_theme` for highlight; `prompt`
-// is the actual text written to `art_direction`. "Custom" = author free-text (no preset).
-export interface ArtTheme { id: string; label: string; hint: string; prompt: string }
-export const ART_THEMES: ArtTheme[] = [
-  { id: "hyperreal", label: "Hyper-real", hint: "true-to-life photography",
-    prompt: "Photorealistic photography with true-to-life detail — natural skin texture, fabric weave, and physically accurate materials, shallow depth of field holding crisp focus on the subject, soft directional key light with a gentle fill, neutral cinematic colour grade, shot as if on a full-frame camera with a fast prime lens." },
-  { id: "cinematic", label: "Cinematic", hint: "painterly film still",
-    prompt: "Cinematic painterly digital illustration with rich atmospheric, volumetric lighting, a naturalistic yet heightened palette of deep teals and warm amber accents, soft film-grain texture and shallow focus, composed and graded like a prestige-drama key frame." },
-  { id: "watercolour", label: "Watercolour", hint: "soft washes, paper grain",
-    prompt: "Soft watercolour painting on cold-press paper — visible grain and granulation, bleeding wet-on-wet washes and translucent layered glazes in muted earth tones, delicate hand-inked contour lines, gentle and airy with generous breathing negative space." },
-  { id: "lofi", label: "Lo-fi", hint: "warm, grainy, cozy",
-    prompt: "Lo-fi illustration with a warm muted palette, soft analog film grain and noise, cozy nostalgic flatness, gentle cel gradients and a faint VHS-era haze, the unhurried mood of a quiet late-afternoon." },
-  { id: "comic", label: "Comic", hint: "ink lines, flat colour",
-    prompt: "Bold comic-book illustration — clean confident ink outlines of varying weight, flat cel shading with crisp shadow shapes, halftone Ben-Day dot texture, dynamic high-contrast saturated colours, rendered like a modern graphic-novel panel." },
-  { id: "sketch", label: "Ink sketch", hint: "pencil & hatching",
-    prompt: "Loose pencil-and-ink sketch — expressive hatching and cross-hatching, energetic gesture lines, smudged graphite tones over subtle ink washes, monochrome on warm sketchbook paper, the immediacy of a life-drawing study." },
-  { id: "anime", label: "Anime", hint: "cel-shaded, vibrant",
-    prompt: "Modern anime illustration — clean precise linework, soft cel shading with crisp highlights, expressive faces and luminous eyes, a vibrant yet harmonious palette with delicate gradient skies, rendered like a high-budget production still." },
-  { id: "storybook", label: "Storybook", hint: "warm, whimsical gouache",
-    prompt: "Classic children's storybook illustration — soft textured gouache and coloured-pencil grain, a warm whimsical palette, rounded gentle forms and cozy hand-painted detail, tender storybook lighting in the manner of golden-age picture books." },
-  { id: "noir", label: "Noir", hint: "high-contrast shadow",
-    prompt: "High-contrast film-noir rendering — deep crushed shadows and stark rim highlights, desaturated near-monochrome with a single selective colour accent, moody chiaroscuro and venetian-blind light, the smoke-and-rain mood of 1940s crime cinema." },
-  { id: "oil", label: "Oil painting", hint: "brushwork, old-master",
-    prompt: "Rich oil painting with visible brushwork and impasto texture throughout, classical old-master lighting, a deep saturated palette of warm siennas, ochres, and umbers with cool shadow-tones, rendered in the manner of golden-age portraiture." },
-];
-
-// Render models the author can switch between. Mirror of IMAGE_MODELS keys in _shared/image.ts; the
-// edge resolves the key to a slug, so adding one here means adding it there too.
-export interface ImageModelOption { id: string; label: string; hint: string }
-export const IMAGE_MODEL_OPTIONS: ImageModelOption[] = [
-  { id: "gemini-3", label: "Gemini 3 Pro", hint: "best likeness across scenes" },
-  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", hint: "faster, looser likeness" },
-];
-export const DEFAULT_IMAGE_MODEL = "gemini-3";
 
 /** books.spine: the one-paragraph throughline (text) plus its brief edge-hash and author pin. */
 export interface SpineNode {

@@ -209,6 +209,56 @@ export async function* streamProse(body: PrepareReq, authToken: string, onLogId?
     userId = await verifyJwt(authToken);
     inputChars = body.system.length + body.userContent.length;
 
+    // claude-local: the laptop-only subscription shim (scripts/claude-local-shim.mjs), which model-config's
+    // resolveRoleModels resolves prose/structure to when CLAUDE_LOCAL_URL is set in the edge env. It's a
+    // sentinel, not a real model id, and the shim is NON-streaming (runs `claude -p`, returns one complete
+    // Anthropic Messages JSON) — so we short-circuit BEFORE resolveRoute (which has no claude-local host and
+    // would misroute it to Anthropic) and yield the whole reply as a single chunk. Only ever reached in local
+    // dev: prod never resolves a role to claude-local (localBridgeUp is false when deployed), so the shim's
+    // absence there is moot. This proxy runs on the host (Vite dev / Vercel fn), not the Docker edge worker,
+    // so it reaches the shim at 127.0.0.1 — CLAUDE_LOCAL_URL in functions/.env uses host.docker.internal,
+    // which only resolves from inside the container; override here with CLAUDE_LOCAL_PROXY_URL if needed.
+    if (body.model === "claude-local") {
+      const shimUrl = process.env.CLAUDE_LOCAL_PROXY_URL
+        || `http://127.0.0.1:${process.env.CLAUDE_LOCAL_SHIM_PORT || "8788"}/v1/messages`;
+      logId = await logStreamStart(body, userId, "claude-local" as unknown as Provider);
+      onLogId?.(logId);
+      // The shim is NON-streaming: it runs `claude -p` and returns one complete Messages JSON only when the
+      // whole (60–120s) generation finishes. The browser's streamText aborts after STREAM_IDLE_MS (45s) with
+      // NO bytes, so a naive `await fetch` here yields nothing for the full run and the client kills it as a
+      // stall. Emit a heartbeat (STREAM_HEARTBEAT, stripped client-side) every HB_MS while the shim works, so
+      // the client's idle timer keeps resetting — the same trick the reasoning-model SSE branches use per frame.
+      let shimResult: { ok: boolean; status: number; body: string } | null = null;
+      let shimErr: unknown = null;
+      const shimPromise = fetch(shimUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: body.model,
+          max_tokens: body.max_tokens ?? 8000,
+          system: body.system,
+          messages: [{ role: "user", content: body.userContent }],
+        }),
+      }).then(async (r) => { shimResult = { ok: r.ok, status: r.status, body: await r.text() }; })
+        .catch((e) => { shimErr = e; });
+      const HB_MS = 20_000;
+      while (!shimResult && !shimErr) {
+        await Promise.race([shimPromise, new Promise((r) => setTimeout(r, HB_MS))]);
+        if (!shimResult && !shimErr) yield STREAM_HEARTBEAT;
+      }
+      if (shimErr) throw new ProxyError(502, `claude-local fetch failed: ${shimErr instanceof Error ? shimErr.message : String(shimErr)}`);
+      if (!shimResult!.ok) throw new ProxyError(502, `claude-local ${shimResult!.status}: ${shimResult!.body.slice(0, 300)}`);
+      let full = "";
+      try {
+        const j = JSON.parse(shimResult!.body) as { content?: Array<{ type?: string; text?: string }> };
+        full = (j?.content ?? []).filter((b) => b?.type === "text" && typeof b.text === "string").map((b) => b.text).join("");
+      } catch { throw new ProxyError(502, "claude-local returned unparsable JSON"); }
+      chars += full.length;
+      output += full;
+      if (full) yield full;
+      return;
+    }
+
     // Anthropic SSE is a different shape from everyone else's (typed frames, no [DONE]), so the two wire
     // formats get their own branches. `route` decides which host runs the model; the OpenAI-compatible
     // hosts (OpenRouter / MuleRouter / DeepSeek) then share one parser. Resolved before the 'running' row is

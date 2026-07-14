@@ -141,10 +141,17 @@ function buildSystemPrompt(body) {
 // a value that LOOKS like an option) — verified live: "unknown option '--- conversation so far ---...'".
 function buildUserPrompt(body) {
   const transcript = (body.messages ?? []).map(flattenMessage).filter(Boolean).join("\n\n");
+  const hasTools = Array.isArray(body.tools) && body.tools.length > 0;
   return [
     "Conversation so far:",
     transcript,
-    "Respond now, as the assistant, following the JSON reply format in the system prompt.",
+    // Only tool calls get the {tool}/{text} envelope protocol (see toolEnvelopeBlock). A plain generation
+    // call (sketch/prose/structure — no tools) must NOT be told to follow a JSON reply format: its own
+    // prompt already says what to emit (JSON for a sketch, raw prose for a page), and pointing it at a
+    // nonexistent envelope risks wrapping prose in JSON.
+    hasTools
+      ? "Respond now, as the assistant, following the JSON reply format in the system prompt."
+      : "Respond now, as the assistant.",
   ].filter(Boolean).join("\n\n");
 }
 
@@ -190,9 +197,26 @@ function extractEnvelope(raw) {
   }
 }
 
-function toAnthropicResponse(raw, requestedModel) {
-  const envelope = extractEnvelope(raw);
+function toAnthropicResponse(raw, requestedModel, hasTools) {
   const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  // Plain generation (no tools requested): the completion IS the reply — a scene sketch's domain JSON, a
+  // page's prose, any structured text the caller's OWN prompt asked for. toolEnvelopeBlock only injects the
+  // {tool}/{text} protocol when tools are present, so there is no envelope to parse here; pass the raw
+  // completion through verbatim as a text block. (Demanding an envelope for these calls is exactly what
+  // broke sketch/prose once model-config routed the structure+prose roles to this shim in local dev.)
+  if (!hasTools) {
+    return {
+      id: `msg_local_${stamp}`,
+      type: "message",
+      role: "assistant",
+      model: requestedModel,
+      content: [{ type: "text", text: raw.trim() }],
+      stop_reason: "end_turn",
+      stop_sequence: null,
+      usage: { input_tokens: null, output_tokens: null },
+    };
+  }
+  const envelope = extractEnvelope(raw);
   if (envelope && typeof envelope.tool === "string") {
     return {
       id: `msg_local_${stamp}`,
@@ -316,7 +340,8 @@ const server = createServer(async (req, res) => {
       `→ claude -p [model=${body.model ?? "?"} messages=${body.messages?.length ?? 0} tools=${body.tools?.length ?? 0}] "${userPrompt.slice(0, 80).replace(/\n/g, " ")}…"`,
     );
     const raw = await runClaudeLocal(systemPrompt, userPrompt);
-    const data = toAnthropicResponse(raw, body.model);
+    const hasTools = Array.isArray(body.tools) && body.tools.length > 0;
+    const data = toAnthropicResponse(raw, body.model, hasTools);
     const latencyS = ((Date.now() - started) / 1000).toFixed(1);
     console.log(`← ${data.stop_reason} in ${latencyS}s`);
     res.writeHead(200, { "content-type": "application/json" });
