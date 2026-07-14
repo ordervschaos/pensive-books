@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { invokeFn } from "@/lib/localFn";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,7 @@ const AI_CALL_EVALS: string = "ai_call_evals";
 const AI_CALL_LIST_COLUMNS =
   "id, created_at, book_id, user_id, task_table, task_id, fn, source, status, model, provider, node_id, operation, input_tokens, output_tokens, latency_ms, stop_reason, error";
 const AI_CALL_HEAVY_COLUMNS = "system, input, output, artifacts";
+const PAGE_SIZE = 50;
 
 interface AiCall {
   id: number;
@@ -105,17 +106,21 @@ export default function AiCalls() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fnFilter, setFnFilter] = useState<string>("all");
+  const [fns, setFns] = useState<string[]>([]);
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
   const [selected, setSelected] = useState<AiCall | null>(null);
   const [judging, setJudging] = useState<Set<number>>(new Set());
 
   const load = async () => {
-    const [{ data: callRows, error: e1 }, { data: evalRows, error: e2 }] = await Promise.all([
-      supabase.from(AI_CALLS).select(AI_CALL_LIST_COLUMNS).order("id", { ascending: false }).limit(200),
-      supabase.from(AI_CALL_EVALS).select("*").order("id", { ascending: false }).limit(400),
-    ]);
-    if (e1 || e2) { setError((e1 ?? e2)!.message); setLoading(false); return; }
+    let query = supabase.from(AI_CALLS).select(AI_CALL_LIST_COLUMNS, { count: "exact" }).order("id", { ascending: false });
+    if (fnFilter !== "all") query = query.eq("fn", fnFilter);
+    const from = page * PAGE_SIZE;
+    const { data: callRows, error: e1, count } = await query.range(from, from + PAGE_SIZE - 1);
+    if (e1) { setError(e1.message); setLoading(false); return; }
     const rows = (callRows ?? []) as unknown as AiCall[];
     setCalls(rows);
+    setTotalCount(count ?? 0);
 
     // Load profiles for all distinct user_ids recorded on the calls themselves.
     const userIds = [...new Set(rows.map((c) => c.user_id).filter(Boolean))] as string[];
@@ -131,6 +136,12 @@ export default function AiCalls() {
       }
     }
 
+    // Evals for just this page's calls — pagination made a flat recent-N eval fetch meaningless.
+    const ids = rows.map((c) => c.id);
+    const { data: evalRows, error: e2 } = ids.length
+      ? await supabase.from(AI_CALL_EVALS).select("*").in("ai_call_id", ids).order("id", { ascending: false })
+      : { data: [] as unknown[], error: null };
+    if (e2) { setError(e2.message); setLoading(false); return; }
     const map = new Map<number, AiCallEval[]>();
     for (const ev of (evalRows ?? []) as unknown as AiCallEval[]) {
       const arr = map.get(ev.ai_call_id) ?? [];
@@ -176,6 +187,15 @@ export default function AiCalls() {
       if (refetchTimer) clearTimeout(refetchTimer);
       supabase.removeChannel(channel);
     };
+  }, [page, fnFilter]);
+
+  // Filter chips need the full distinct `fn` set, not just the current page — fetched once, cheap
+  // (single column, capped sample) rather than re-derived from whatever page happens to be loaded.
+  useEffect(() => {
+    void (async () => {
+      const { data } = await supabase.from(AI_CALLS).select("fn").order("id", { ascending: false }).limit(1000);
+      if (data) setFns([...new Set((data as { fn: string }[]).map((r) => r.fn))].sort());
+    })();
   }, []);
 
   // Deep-link: /admin/ai-calls?call=<id> opens that call's detail directly (e.g. from a page's
@@ -193,8 +213,7 @@ export default function AiCalls() {
     })();
   }, []);
 
-  const fns = useMemo(() => Array.from(new Set(calls.map((c) => c.fn))).sort(), [calls]);
-  const visible = fnFilter === "all" ? calls : calls.filter((c) => c.fn === fnFilter);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   // Judge one call, then poll its evals until a terminal row lands (ai_call_evals isn't in the realtime
   // publication — polling keeps it simple). Locally-served fn (free, claude-local shim) or deployed edge fn.
@@ -253,13 +272,13 @@ export default function AiCalls() {
 
       <div className="flex items-center gap-2 flex-wrap">
         <button
-          onClick={() => setFnFilter("all")}
+          onClick={() => { setFnFilter("all"); setPage(0); }}
           className={`text-xs rounded-full px-3 py-1 border ${fnFilter === "all" ? "bg-foreground text-background" : "text-muted-foreground"}`}
-        >all ({calls.length})</button>
+        >all</button>
         {fns.map((fn) => (
           <button
             key={fn}
-            onClick={() => setFnFilter(fn)}
+            onClick={() => { setFnFilter(fn); setPage(0); }}
             className={`text-xs rounded-full px-3 py-1 border ${fnFilter === fn ? "bg-foreground text-background" : "text-muted-foreground"}`}
           >{fn}</button>
         ))}
@@ -284,7 +303,7 @@ export default function AiCalls() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {visible.map((c) => {
+            {calls.map((c) => {
               const ev = latestEval(c.id);
               const score = avgScore(ev?.scores ?? null);
               return (
@@ -356,11 +375,22 @@ export default function AiCalls() {
                 </TableRow>
               );
             })}
-            {visible.length === 0 && (
+            {calls.length === 0 && (
               <TableRow><TableCell colSpan={12} className="text-center text-muted-foreground py-8">No AI calls yet — run something AI in the app.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
+      </div>
+
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>
+          {totalCount === 0 ? "0 calls" : `${page * PAGE_SIZE + 1}–${Math.min(totalCount, (page + 1) * PAGE_SIZE)} of ${totalCount}`}
+        </span>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>Prev</Button>
+          <span>page {page + 1} of {totalPages}</span>
+          <Button size="sm" variant="outline" disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
+        </div>
       </div>
 
       <CallDialog

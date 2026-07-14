@@ -16,6 +16,16 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-14 — Paginated admin AI Calls table `[chore]`
+- **What:** `/admin/ai-calls` was a flat "latest 200" list with client-side fn filtering. Switched to server-side pagination (50/page, `range()`+`count:"exact"`), moved fn filter into the query (was silently only filtering whatever 200 rows happened to be loaded), added Prev/Next controls, and scoped the evals fetch to just the visible page's call ids instead of a flat recent-400 guess. Verified live in Chrome: paging and fn-filter+paging compose correctly (e.g. `dna-expand-stream` → 246 rows / 5 pages).
+- **Files/commits:** `apps/web/src/pages/admin/AiCalls.tsx` (uncommitted).
+- **PM impact:** none — internal admin/debug tool, not roadmap-tracked.
+
+## 2026-07-14 — Explained seed/premise separation in the DNA tree `[chore]`
+- **What:** User asked why the SEED node only has `logline` and why it isn't merged with premise. Answered from `docs/dna/01-seed-premise.md`: seed.logline (concrete: protagonist/inciting/goal/obstacle/stakes) and premise.dramatic_question (deliberately wider) are different resolution-ladder rungs with separate accept/lock checkpoints (`dnaJourney.ts` derived state machine gates premise on seedDone) — merging would collapse two jobs into one field and lose the staged handoff. No code changed.
+- **Files/commits:** none (docs read only); wrote `doc_1784013394436.md` (explanation) and `learning_1784013394436_seed-premise-merge.md` (gitignored) to the repo root.
+- **PM impact:** none.
+
 ## 2026-07-14 — Merged `feat/ai-provider-switch` to `main` and pushed `[ship]`
 - **What:** Landed the branch: DeepSeek provider switch, claude-local shim extended to structure/prose roles (closes the wip below), vision→structure agent work, and the interview-first guidance system — 6 commits, no conflicts. Working tree had pending edits from the prior wip entry; committed those first (`0413327`), fast-forwarded local `main` to `origin/main` (was 46 behind), merged `--no-ff` (`4cf4ba6`), pre-push typecheck/tests/lint all passed, pushed to `origin/main`.
 - **Files/commits:** merge commit `4cf4ba6` (47 files); pre-merge commit `0413327` on the feature branch. `feat/ai-provider-switch` now fully in `main`.
