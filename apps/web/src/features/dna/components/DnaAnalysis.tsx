@@ -1,22 +1,16 @@
 // DnaAnalysis — surfaces the three analytic axes (schema §6) in the studio: PACING (turning point vs
 // target_pct), PROMISES (the unified obligation ledger — thread/game/state_key/tentpole/entity_intro debt,
 // pressure-ordered), TOPOGRAPHY (the value-polarity strip), and the structural LINTS. Pure projection of the
-// tree (no generation, no mutation — Waive lives on Overview's actionable PromisesPanel) — the conformance
+// tree (no generation, no mutation — Waive lives on the analytics tab's PromisesPanel) — the conformance
 // backstop the author reads, the same report the dna-flow eval prints, now in the UI. Collapsible; defaults
 // open once there's structure to analyze.
 import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, TriangleAlert } from "lucide-react";
 import { Eyebrow } from "@/components/book/shared/studioUi";
 import { isHollowCausalLink } from "@/features/dna/components/tree/nodeDisplay";
-import { causality, openObligations, pacing, topography, validate, type DnaNode, type ObligationKind } from "@/features/dna/lib/novelDna";
+import { byId, causality, openObligations, pacing, topography, validate, type DnaNode } from "@/features/dna/lib/novelDna";
 import type { BookSettings } from "@/features/dna/lib/novelDna";
-import type { StageKey } from "@/features/dna/lib/dnaJourney";
-
-// Which stage a debt's node lives on (for the report's jump-link) — mirrors DnaOverview's KIND_STAGE.
-// state_key has no backing node (a bare causal key), so it's the one kind with no stage — no jump-link.
-const OBLIGATION_STAGE: Record<ObligationKind, StageKey | null> = {
-  thread: "structure", game: "foundations", tentpole: "foundations", entity_intro: "foundations", contract: "foundations", state_key: null,
-};
+import { KIND_STAGE, type StageKey } from "@/features/dna/lib/dnaJourney";
 
 // onOpen wires every analytic row to the node it's about (the act/thread/scene/beat) so the read-only
 // report is also a jump-table into the owning stage. hideLints drops the conformance section for surfaces
@@ -25,10 +19,11 @@ export function DnaAnalysis({ nodes, settings, onOpen, hideLints, defaultOpen = 
   nodes: DnaNode[]; settings: BookSettings; onOpen?: (key: StageKey, focusId?: string) => void; hideLints?: boolean; defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const index = byId(nodes);
   const pace = pacing(nodes);
   // PROMISES — the unified obligation ledger (thread/game/state_key/tentpole/entity_intro), pressure-ordered,
   // OUTSTANDING debt only (a settled book should read empty here, same as "no lints"). Read-only: this report
-  // never mutates the tree — the Waive gesture lives on the Overview's actionable PromisesPanel instead.
+  // never mutates the tree — the Waive gesture lives on the analytics tab's actionable PromisesPanel instead.
   const debts = openObligations(nodes);
   const topo = topography(nodes);
   const causal = causality(nodes);
@@ -88,7 +83,10 @@ export function DnaAnalysis({ nodes, settings, onOpen, hideLints, defaultOpen = 
             <section className="space-y-1">
               <p className="pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">promises · debt owed to the reader</p>
               {debts.map((o) => {
-                const stage = OBLIGATION_STAGE[o.kind];
+                // The debt's stage IS its backing node's stage — one lookup through KIND_STAGE, no second
+                // table to drift. A `state_key` debt has no backing node, so it resolves to no jump-link.
+                const backing = index.get(o.ref);
+                const stage: StageKey | undefined = backing ? KIND_STAGE[backing.kind] : undefined;
                 const label = (
                   <>
                     <span className="pv-mono shrink-0 text-[9px] uppercase tracking-[0.06em] text-[hsl(var(--pv-text-faint))]">{o.kind === "entity_intro" ? "meet" : o.kind === "state_key" ? "state" : o.kind === "contract" ? "genre" : o.kind}</span>

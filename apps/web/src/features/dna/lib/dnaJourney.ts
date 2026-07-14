@@ -8,6 +8,18 @@ import type { Brief } from "@/lib/brief";
 
 export type StageKey = "premise" | "foundations" | "structure" | "scenes" | "draft";
 
+// Which stage OWNS a node kind — the one map from a node to the surface that edits it, so any report (an
+// issue, an obligation, a lint) can turn a node id into a jump-link. Lives here, next to StageKey, because
+// it's domain data, not UI: every surface that jumps somewhere reads THIS, never its own copy.
+// game lives in Foundations (a contest is a species of world rule); thread is edited on the Overview.
+export const KIND_STAGE: Record<NodeKind, StageKey> = {
+  seed: "premise", premise: "premise",
+  pillar: "foundations", character: "foundations", relationship: "foundations", tentpole: "foundations", world_fact: "foundations", location: "foundations", voice_profile: "foundations", game: "foundations",
+  act: "structure", beat: "structure", thread: "structure",
+  meter: "foundations",
+  scene: "scenes",
+};
+
 export interface DnaStage { key: StageKey; label: string; caption: string }
 
 // The ladder, lowest resolution → highest. Foundations carries the entity branch; Structure the spine.

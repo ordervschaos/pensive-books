@@ -1,34 +1,20 @@
-// DnaOverview — the studio's home/dashboard, the first thing you see. It answers three questions at a
-// glance: (1) what's the SHAPE of the book right now (the parent→child tree, collapsed to a map); (2) what's
-// the NEXT MOVE (the live "now" stage + its first open sub-step, with quick jumps into the optional branches
-// that are also available); (3) what's WRONG (the conformance lints + render blockers, each a click away from
-// the stage that owns it). Pure projection of the tree + journey — no generation happens here; every action
-// navigates into the stage that holds the real verb. Reuses the engine (validate/renderBlockers) and the
-// journey (stageSubsteps) so this never drifts from what the stages themselves compute.
-import { useRef, useState, type ReactNode } from "react";
-import { ArrowRight, Activity, BookOpen, Check, GitBranch, HandCoins, Network, Sparkles, TriangleAlert, Waypoints } from "lucide-react";
+// DnaOverview — the studio's home/dashboard, the first thing you see. It answers two questions: (1) what's the
+// NEXT MOVE (the live "now" stage + its first open sub-step, with quick jumps into the optional branches that
+// are also available); (2) what's WRONG (the conformance lints + render blockers, each a click away from the
+// stage that owns it) — plus the Threads registry (edited here, a cross-cutting whole-book concern) and the
+// tree as a navigable map. The read-only ANALYTIC projections (shape diagram · story map · census · promises
+// ledger · pacing/topography) live on the analytics tab now — one place to comprehend the whole book, so this
+// dashboard stays actionable. Reuses the engine (validate/renderBlockers) and the journey (stageSubsteps) so
+// this never drifts from what the stages themselves compute.
+import { useRef, type ReactNode } from "react";
+import { ArrowRight, BookOpen, Check, GitBranch, Sparkles, TriangleAlert, Waypoints } from "lucide-react";
 import { ActionLink, Eyebrow, Hero, Panel, StageHead } from "@/components/book/shared/studioUi";
-import { DnaFullDiagram } from "@/features/dna/components/DnaStageDiagram";
-import { DnaStoryMap } from "@/features/dna/components/DnaStoryMap";
-import { DnaAnalysis } from "@/features/dna/components/DnaAnalysis";
-import { STAGE_KINDS, stageSubsteps, type JourneyStage, type StageKey } from "@/features/dna/lib/dnaJourney";
-import { patchNodeContent } from "@/features/dna/lib/bookNodes";
+import { KIND_STAGE, STAGE_KINDS, stageSubsteps, type JourneyStage, type StageKey } from "@/features/dna/lib/dnaJourney";
 import type { Brief } from "@/lib/brief";
 import {
-  byId, childrenOf, isProseStale, isStale, obligationLedger, openObligations, validate,
-  type BookSettings, type DnaNode, type NodeKind, type Obligation, type SceneContent,
+  byId, childrenOf, isProseStale, isStale, validate,
+  type BookSettings, type DnaNode, type NodeKind,
 } from "@/features/dna/lib/novelDna";
-
-// Which stage owns a node kind (so an issue on a node jumps to the right stage). game lives in Foundations
-// (a contest is a species of world rule); thread is edited here on the Overview, so thread-issue clicks are
-// special-cased to scroll to the Threads panel rather than routed by this map (the value is just a fallback).
-const KIND_STAGE: Record<NodeKind, StageKey> = {
-  seed: "premise", premise: "premise",
-  pillar: "foundations", character: "foundations", relationship: "foundations", tentpole: "foundations", world_fact: "foundations", location: "foundations", voice_profile: "foundations", game: "foundations",
-  act: "structure", beat: "structure", thread: "structure",
-  meter: "foundations",
-  scene: "scenes",
-};
 
 const FAINT = "text-[hsl(var(--pv-text-faint))]";
 const MUTED = "text-[hsl(var(--pv-text-muted))]";
@@ -60,70 +46,6 @@ function ShapeRow({ node, index, label, title, meta, depth, onOpen }: {
   );
 }
 
-// PROMISES — the obligation ledger, pressure-ordered (novelDna.obligationLedger/openObligations): every debt
-// the book owes the reader, across all six axes (thread/game/state_key/tentpole/entity_intro/contract —
-// contract is the GENRE promise, a meter's compiled target curve), stalest-open first. A row with a backing
-// node (everything but state_key — a bare causal key, nothing to point at) gets a Waive action: the author's
-// direct "leave this open on purpose" gesture (a sequel hook, or "we're not chasing this convention"), same
-// field (`content.waived`) the agent proposes via propose_node_ops — the manual, no-agent-round-trip path.
-const KIND_LABEL: Record<Obligation["kind"], string> = {
-  thread: "thread", game: "game", state_key: "state key", tentpole: "tentpole", entity_intro: "meet", contract: "genre",
-};
-
-function PromiseRow({ o, node, onOpen, index }: { o: Obligation; node?: DnaNode; onOpen: (k: StageKey, focusId?: string) => void; index: Map<string, DnaNode> }) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const waive = async () => {
-    if (!node) return;
-    setBusy(true); setErr(null);
-    try { await patchNodeContent(node, { waived: true }); }
-    catch (e) { setErr(String((e as Error)?.message ?? e)); }
-    finally { setBusy(false); }
-  };
-  return (
-    <div className="flex items-start justify-between gap-3 py-1">
-      <button type="button" className="group flex min-w-0 flex-1 items-start gap-2 text-left"
-        onClick={() => node && onOpen(KIND_STAGE[node.kind] ?? "structure", node.id)}>
-        <span className={`mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full ${o.state === "open" ? "bg-amber-500" : "bg-[hsl(var(--pv-text-faint))]/60"}`} />
-        <p className="pv-serif min-w-0 text-[12px] leading-snug">
-          <span className={`pv-mono mr-1.5 text-[9px] uppercase tracking-[0.08em] ${FAINT}`}>{KIND_LABEL[o.kind]}</span>
-          <span className="font-medium text-foreground">"{o.name}"</span>
-          {o.promise && <span className={`ml-1 ${MUTED}`}>— {o.promise.slice(0, 90)}</span>}
-          <span className={`ml-1.5 pv-mono text-[9px] ${FAINT}`}>
-            ({o.state}{o.quiet ? ` · quiet ${o.quiet}` : ""})
-          </span>
-          {node && <ArrowRight className={`ml-1 inline h-2.5 w-2.5 opacity-0 transition-opacity group-hover:opacity-100 ${FAINT}`} />}
-        </p>
-      </button>
-      {node && (
-        <ActionLink tone="faint" busy={busy} onClick={waive} className="shrink-0 text-[10px]">Waive</ActionLink>
-      )}
-      {err && <span className="pv-mono text-[9px] text-rose-500">{err}</span>}
-    </div>
-  );
-}
-
-function PromisesPanel({ nodes, index, onOpen }: { nodes: DnaNode[]; index: Map<string, DnaNode>; onOpen: (k: StageKey, focusId?: string) => void }) {
-  const ledger = obligationLedger(nodes);
-  const open = openObligations(nodes);
-  const settled = ledger.length - open.length;
-  return (
-    <Panel variant="soft" className="px-4 py-3.5">
-      <div className="mb-2.5 flex items-center gap-2">
-        <HandCoins className={`h-3.5 w-3.5 ${FAINT}`} />
-        <Eyebrow tone="muted">Promises — what this book still owes the reader{ledger.length > 0 ? ` (${settled}/${ledger.length} settled)` : ""}</Eyebrow>
-      </div>
-      {ledger.length === 0 && <p className="pv-serif text-[13px] italic text-[hsl(var(--pv-text-faint))]">Nothing tracked yet — a thread, game, tentpole, or cast member starts owing a promise once it's accepted.</p>}
-      {ledger.length > 0 && open.length === 0 && <p className="pv-serif text-[13px] text-emerald-500">Every promise is paid or waived.</p>}
-      {open.length > 0 && (
-        <div className="mt-1 divide-y divide-[hsl(var(--pv-border-soft))]/40">
-          {open.map((o) => <PromiseRow key={o.id} o={o} node={index.get(o.ref)} onOpen={onOpen} index={index} />)}
-        </div>
-      )}
-    </Panel>
-  );
-}
-
 export function DnaOverview({ bookId, nodes, settings, stages, nowKey, brief, onSkipInterview, onOpen, onChanged, renderCard }: {
   bookId: number; nodes: DnaNode[]; settings: BookSettings; stages: JourneyStage[]; nowKey: StageKey; onOpen: (k: StageKey, focusId?: string) => void; onChanged: () => void;
   // The journey's first rung (the discovery interview) is gated on the BRIEF, not the tree — so the sub-step
@@ -142,8 +64,7 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, brief, on
 
   const [seed, premise, pillar] = [first("seed"), first("premise"), first("pillar")];
   const acts = of("act");
-  const beats = of("beat"), scenes = of("scene"), threads = of("thread");
-  const drafted = scenes.filter((s) => str((s.content as SceneContent).prose?.text)).length;
+  const threads = of("thread");
 
   // ── Next move: the live now-stage + its first open sub-step, plus the optional branches also available now.
   const nowStage = stages.find((s) => s.key === nowKey)!;
@@ -167,16 +88,10 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, brief, on
   const sceneCountOf = (m: DnaNode) =>
     childrenOf(nodes, m.id).filter((b) => b.kind === "beat").reduce((a, b) => a + childrenOf(nodes, b.id).filter((s) => s.kind === "scene").length, 0);
 
-  const stat = (label: string, n: number, total?: number) => (
-    <span className={`pv-mono text-[10px] uppercase tracking-[0.1em] ${n === 0 ? FAINT : MUTED}`}>
-      <b className={`font-semibold ${n === 0 ? FAINT : "text-foreground"}`}>{total != null ? `${n}/${total}` : n}</b> {label}
-    </span>
-  );
-
   return (
     <>
       <StageHead eyebrow="Overview" title={settings.title || "Untitled"}
-        caption="The shape of your book's DNA — what's built, what's next, and what needs a look." />
+        caption="What's next and what needs a look. The analytics tab has the full read — shape, story map, promises, meters." />
 
       {/* NEXT MOVE — the obvious thing to do, loud. */}
       {allDone ? (
@@ -207,47 +122,6 @@ export function DnaOverview({ bookId, nodes, settings, stages, nowKey, brief, on
           ))}
         </div>
       )}
-
-      {/* THE SHAPE (visual) — the whole DNA as one connected pipeline, live; each band jumps to its stage. */}
-      <Panel variant="soft" className="px-4 py-3.5">
-        <div className="mb-2.5 flex items-center gap-2">
-          <Network className={`h-3.5 w-3.5 ${FAINT}`} />
-          <Eyebrow tone="muted">The shape — root → web → spine → scenes → pages</Eyebrow>
-        </div>
-        <DnaFullDiagram nodes={nodes} onOpen={onOpen} />
-      </Panel>
-
-      {/* STORY MAP — the detailed spine: the emotional contour over every beat (∴/↯ connectors, ↗/↘ turns)
-          and its scenes; click any row to drill straight to that node. */}
-      {acts.length > 0 && (
-        <Panel variant="soft" className="px-4 py-3.5">
-          <div className="mb-2.5 flex items-center gap-2">
-            <Activity className={`h-3.5 w-3.5 ${FAINT}`} />
-            <Eyebrow tone="muted">Story map — the shape of the telling, beat by beat</Eyebrow>
-          </div>
-          <DnaStoryMap nodes={nodes} onOpen={onOpen} />
-        </Panel>
-      )}
-
-      {/* AT A GLANCE — the census. */}
-      <Panel variant="soft" className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
-        {stat("acts", acts.length)}
-        {stat("beats", beats.length)}
-        {stat("scenes", scenes.length)}
-        {scenes.length > 0 && stat("drafted", drafted, scenes.length)}
-        {of("character").length > 0 && stat("cast", of("character").length)}
-        {of("thread").length > 0 && stat("threads", of("thread").length)}
-        {of("game").length > 0 && stat("games", of("game").length)}
-      </Panel>
-
-      {/* STORY ANALYSIS — the analytic axes (pacing/promises/topography/causality), consolidated here so the
-          stages stay actionable. Each row jumps to the node it's about; lints are hidden because the issues
-          panel below already lists them with stage links. */}
-      {acts.length > 0 && <DnaAnalysis nodes={nodes} settings={settings} onOpen={onOpen} hideLints defaultOpen={false} />}
-
-      {/* PROMISES — the obligation ledger across all five debt axes, pressure-ordered, with a manual Waive
-          gesture. The Threads panel below is the detail EDITOR for one of those axes; this is the debt VIEW. */}
-      <PromisesPanel nodes={nodes} index={index} onOpen={onOpen} />
 
       {/* THREADS — the promise registry (setup → payoff). A cross-cutting whole-book concern, so it's edited
           here on the dashboard rather than nested in the sequential spine. Uses the studio's own node card. */}

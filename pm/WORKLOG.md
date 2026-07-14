@@ -16,6 +16,27 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-14 — `KIND_STAGE` node→stage map added to `dnaJourney.ts` `[wip]`
+- **What:** A `KIND_STAGE: Record<NodeKind, StageKey>` map landed in `dnaJourney.ts` (12 lines) — one lookup from a node kind to the stage/surface that edits it, so reports (issues/obligations/lints) can turn a node id into a jump-link. This change appeared mid-session from outside this conversation (likely a concurrent session also working the DNA feature) — cataloguing it as observed, not authored here.
+- **Files/commits:** `apps/web/src/features/dna/lib/dnaJourney.ts` (uncommitted).
+- **PM impact:** none — no context on completion status; flagging as wip pending its own session's wrap-up.
+
+## 2026-07-14 — `/books/dna/new`: name-only book creation `[ship]`
+- **What:** Added a fast path into the DNA studio — asks for just a book name, inserts the row (`brief: {}`, everything else defaults), and navigates straight to `/books/{id}/dna/tree`, which self-bootstraps its root `book_nodes` via existing `ensureSeed` on first load. No cover/subtitle/author step; the full `/books/new` flow is untouched for that.
+- **Verified:** `tsc -p tsconfig.app.json` clean; dev server confirms the route resolves (200). Live browser click-through was skipped — the shared chrome-devtools-mcp profile was locked by other concurrent sessions.
+- **Files/commits:** `apps/web/src/features/dna/pages/DnaNewBookPage.tsx` (new), `apps/web/src/App.tsx` (route registered above `/books/:bookSlug`) — both uncommitted.
+- **PM impact:** none — small UX addition, not a Now-slot item.
+
+## 2026-07-14 — Analytics tab split off Overview `[ship]`
+- **What:** Lifted the read-only ANALYTIC projections (census/shape/story-map/promises) out of `DnaOverview` into a new `components/tree/analyticsPanels.tsx`, so `DnaOverview` stays the ACTIONABLE half (next move · threads · issues · navigable tree) and the `analytics` tab becomes the one place to comprehend the whole book. `FEATURE.md` updated to match.
+- **Files/commits:** `apps/web/src/features/dna/components/tree/analyticsPanels.tsx` (new), `apps/web/src/features/dna/components/DnaOverview.tsx`, `apps/web/src/features/dna/pages/DnaTreePage.tsx`, `apps/web/src/features/dna/FEATURE.md` (all uncommitted).
+- **PM impact:** none — internal tree UI reorganization, not a Now-slot item.
+
+## 2026-07-14 — Frontier engine design: options, not one next step `[wip]`
+- **What:** Design session on the guidance layer's core flaw: `currentObjective` is a serial single-anchor scheduler, but the tree's true state is a *frontier* — the set of all legal advancing moves (fill leaf, add children, expand act/beat, prose scene, settle promise, deepen pillar). Proposed `frontier(nodes,brief)→Move[]` (pure, twinned) + `rank(moves,mode)` policy layer — the agent's two modes (fulfill user objective vs drive to completion) become two policies over one mechanism; completion = zero required moves. Confirmed the count-based done-gate bug: `stageComplete.scenes = scenes.length>=1`, so beats with no scenes are invisible to "prose complete" — `stageProgress` already computes the coverage chain but was never wired into the gates. 3-phase migration sketched (frontier read-only + dev pane → objective rides it → `<available_moves>` injection + options UI).
+- **Files/commits:** `doc_1784029961843.md` (design doc, uncommitted); no code changed.
+- **PM impact:** none yet — awaiting author's go on Phase 1.
+
 ## 2026-07-14 — Vision panel: the interview gets a read/edit surface `[ship]`
 - **What:** Closes the write-only gap found earlier today. `brief.vision` (the interview's capture) now renders in the tree as a collapsible `VISION — THE INTERVIEW` section under the brief origin — all 8 sections, each inline-editable, with a status line (`6 of 8 sections · compiled 7/14/2026`) and a `vision ✓` marker in the collapsed brief summary so it stays discoverable on a past-premise book. Edits merge section-wise (same shape as the agent's `update_vision`), so a hand edit and an agent capture are indistinguishable downstream; `compiled_at`/`skipped` are shown as status, never edited. Presentation-only — no schema, no edge fn, no new fetch (the brief was already Realtime-subscribed).
 - **Verified:** typecheck clean (`tsc -p tsconfig.app.json`); driven live in Chrome on book 1257 — vision renders with all 6 captured sections; hand-edited an empty section and confirmed the write round-tripped to `books.brief.vision` in the DB with `compiled_at` + sibling sections preserved. Test edit reverted afterward.

@@ -13,6 +13,7 @@ import type { Brief } from "@/lib/brief";
 import { AgentRail } from "@/features/dna/components/AgentRail";
 import { TreeOverviewTab } from "@/features/dna/components/TreeOverviewTab";
 import { DnaAnalysis } from "@/features/dna/components/DnaAnalysis";
+import { CensusPanel, PromisesPanel, ShapePanel, StoryMapPanel } from "@/features/dna/components/tree/analyticsPanels";
 import { type AgentProposal } from "@/features/dna/lib/agentThread";
 import { buildJourney, dnaHealth, DNA_STAGES, STAGE_KINDS, type StageKey } from "@/features/dna/lib/dnaJourney";
 import { useToast } from "@/hooks/use-toast";
@@ -713,12 +714,22 @@ export default function DnaTreePage() {
         <VoiceFeelPanel nodes={nodes} index={index} asPage onJump={(id) => { navigate(treePath); jumpTo(id); }} />
       )}
 
-      {/* ── analytics tab: the one comprehensive "what's wrong" surface — deterministic lints, every semantic
-          read trigger (Shape/Craft/Cold-read/Meter-trace via MetersPane, continuity ledger via LedgerPane),
-          then pacing/promises/topography. Read-only projection of the tree; every row deep-links back into
-          the structural tree via goToNode / openStage. ── */}
+      {/* ── analytics tab: the ONE surface for understanding the whole book at once. Two halves, in order:
+          WHAT IT IS (census · shape pipeline · story map — the projections lifted off the Overview so the
+          dashboard stays actionable) then WHAT'S WRONG (deterministic lints, every semantic read trigger —
+          Shape/Craft/Cold-read/meters-over-the-spine via MetersPane, continuity via LedgerPane — then
+          promises/pacing/topography). Read-only projection of the tree; every row deep-links back into the
+          structural tree via goToNode / openStage. ── */}
       {tab === "analytics" && (
         <div style={{ padding: "16px" }}>
+          {/* WHAT IT IS — census · the DNA pipeline · the beat-by-beat story map. Pure projections; each row
+              jumps into the stage that owns the node (openStage), so this reads as a map, not a dead report. */}
+          <div className="mb-5 space-y-4">
+            <CensusPanel nodes={nodes} />
+            <ShapePanel nodes={nodes} onOpen={openStage} />
+            <StoryMapPanel nodes={nodes} onOpen={openStage} />
+          </div>
+
           {/* full health readout (the detail behind the header pip) */}
           <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap", marginBottom: 16 }}>
             {([["complete", health.completeness], ["strong", health.strength]] as const).map(([label, val]) => (
@@ -761,7 +772,14 @@ export default function DnaTreePage() {
           {/* continuity ledger — same LedgerPane the standalone /dna/ledger route renders. */}
           <LedgerPane nodes={nodes} bookId={bookId} bookSlug={bookSlug ?? ""} />
 
-          {/* pacing · promises · topography (lints hidden here — shown in the list above) */}
+          {/* PROMISES — the obligation ledger across all six debt axes, pressure-ordered, with the manual
+              Waive gesture (the one mutation on this tab). DnaAnalysis below reports the same debts read-only;
+              this is the actionable view, so it sits first. */}
+          <div className="my-4">
+            <PromisesPanel nodes={nodes} index={index} onOpen={openStage} />
+          </div>
+
+          {/* pacing · topography · causality (lints hidden here — shown in the list above) */}
           <DnaAnalysis nodes={nodes} settings={settings} onOpen={openStage} hideLints />
         </div>
       )}

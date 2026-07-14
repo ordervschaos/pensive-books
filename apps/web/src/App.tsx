@@ -32,6 +32,7 @@ const ProfileEdit = lazy(() => import("@/pages/user/profile/ProfileEdit"));
 const MyBooks = lazy(() => import("@/pages/books/index/MyBooks"));
 const NewBook = lazy(() => import("@/pages/books/new/NewBook"));
 const BookDetails = lazy(() => import("@/pages/books/show/BookDetails"));
+const DnaNewBookPage = lazy(() => import("@/features/dna/pages/DnaNewBookPage"));
 const DnaJsonPage = lazy(() => import("@/features/dna/pages/DnaJsonPage"));
 const DnaTreePage = lazy(() => import("@/features/dna/pages/DnaTreePage"));
 const DnaMetersPage = lazy(() => import("@/features/dna/pages/DnaMetersPage"));
@@ -181,6 +182,7 @@ export default function App() {
                         <Route path="/user/profile/edit" element={<ProfileEdit />} />
                         <Route path="/books" element={<MyBooks />} />
                         <Route path="/books/new" element={<NewBook />} />
+                        <Route path="/books/dna/new" element={<DnaNewBookPage />} />
                         <Route path="/books/:bookSlug/versions/:versionId/pages/:pageSlug" element={<VersionPageView />} />
                         <Route path="/books/:bookSlug/versions/:versionId" element={<VersionPreview />} />
                         <Route path="/books/:bookSlug/versions" element={<VersionHistoryPage />} />
