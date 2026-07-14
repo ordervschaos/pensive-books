@@ -65,6 +65,17 @@ function draftedMarker(content: Record<string, unknown> | null | undefined): str
   return typeof words === "number" && words > 0 ? `prose: "${words.toLocaleString()}w"` : "undrafted";
 }
 
+// Inline a named scene's prose (intent hydration), bounded so up to 4 named scenes can't blow the turn's
+// token budget. ~1200 words is enough to carry most whole scenes; longer ones keep the head + tail — the
+// two edges a continuity/wording ask reasons over — with the middle dropped (read_node pulls the rest).
+const PROSE_INLINE_CAP = 7200;
+function boundInlineProse(text: string): string {
+  if (text.length <= PROSE_INLINE_CAP) return text;
+  const half = Math.floor(PROSE_INLINE_CAP / 2);
+  const dropped = text.length - half * 2;
+  return `${text.slice(0, half)}\n\n…[${dropped.toLocaleString()} chars of the middle omitted — read_node for the whole scene]…\n\n${text.slice(-half)}`;
+}
+
 // One-line digest of a node: handle/gist + compact spine (prose + verbose fields dropped; read_node for full).
 function digestNode(kind: string, content: Record<string, unknown> | null | undefined): string {
   const fields = DIGEST_FIELDS[kind];
@@ -201,14 +212,27 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
   };
   const mentionedText = mentioned.map((n) => {
     const content: Record<string, unknown> = { ...(n.content ?? {}) };
-    const words = (content.prose as { words?: unknown } | undefined)?.words;
+    const prose = content.prose as { words?: unknown; text?: unknown } | undefined;
+    const words = prose?.words;
     delete content.prose;
     const num = seqOf(n) ? ` ${seqOf(n)}/${n.kind === "scene" ? totalScenes : totalBeats}` : "";
-    const proseNote = typeof words === "number" && words > 0 ? ` (has prose, ${words.toLocaleString()}w — read_node for the text)` : "";
+    // A named scene is usually named BECAUSE its text is the subject (a continuity seam, an echoed
+    // line, wording to fix), so inline the prose (bounded) right here instead of a "read_node for the
+    // text" pointer. That collapses the extra read_node round-trip the agent would otherwise spend —
+    // a whole self-chain link (row write + cold reinvoke + full prefill) — before it can even answer.
+    // Only scenes hold prose; long prose keeps head+tail (the seam a continuity ask cares about).
+    let proseBlock = "";
+    let proseNote = "";
+    if (n.kind === "scene" && typeof prose?.text === "string" && prose.text.trim()) {
+      const wlabel = typeof words === "number" && words > 0 ? `${words.toLocaleString()}w` : "drafted";
+      proseBlock = `\nprose (${wlabel}):\n${boundInlineProse(prose.text.trim())}`;
+    } else if (typeof words === "number" && words > 0) {
+      proseNote = ` (has prose, ${words.toLocaleString()}w — read_node for the text)`;
+    }
     const kidCounts = new Map<string, number>();
     for (const k of nodes) if (k.parent_id === n.id) kidCounts.set(k.kind, (kidCounts.get(k.kind) ?? 0) + 1);
     const kidsNote = kidCounts.size ? ` · children: ${[...kidCounts].map(([k, c]) => `${c} ${k}${c > 1 ? "s" : ""}`).join(", ")} (an edit here STALES them)` : "";
-    return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}${num} “${nodeHandle(n.content)}”${proseNote}\npath: ${pathOf(n)}${kidsNote}\n${JSON.stringify(content)}`;
+    return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind}${num} “${nodeHandle(n.content)}”${proseNote}\npath: ${pathOf(n)}${kidsNote}\n${JSON.stringify(content)}${proseBlock}`;
   }).join("\n\n") + (mentioned.length ? `\n\n${schemaFor([...new Set(mentioned.map((n) => n.kind))])}` : "");
 
 
@@ -293,7 +317,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
     focus ? `<focus note="the author attached these nodes to work on — their FULL content is inlined here; lead with them">\n${focus}\n</focus>` : "",
     // Intent hydration (above): the message's named targets, pre-read. Sits beside <focus> — same shape,
     // derived from the ask instead of a manual attach.
-    mentionedText ? `<mentioned note="nodes the author's latest message references — full plan content inlined (prose omitted; read_node for prose) so you can act on the ask directly">\n${mentionedText}\n</mentioned>` : "",
+    mentionedText ? `<mentioned note="nodes the author's latest message references — full plan content inlined, and for named SCENES their prose too (long prose keeps head+tail; read_node for the omitted middle) so you can act on the ask directly WITHOUT a read_node round-trip">\n${mentionedText}\n</mentioned>` : "",
     // Skill briefs (agent-skills.ts): the playbooks whose triggers match the ask, pre-injected so the
     // matched job arrives with its full technique — no read_skill round-trip. Deterministic (regex on
     // the ask), so a retried link re-derives the identical prompt; read_skill covers missed triggers.
