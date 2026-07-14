@@ -3,7 +3,7 @@ import { ImageIcon, Play, Pencil, Download, ChevronDown, Sparkles } from "lucide
 import { useToast } from "@/hooks/use-toast";
 import { generateAndDownloadEPUB, generatePDFWithPrintDialog, generateAndDownloadMarkdown } from "@/lib/download";
 import { useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -42,6 +42,8 @@ interface BookInfoProps {
   briefSlot?: React.ReactNode;
   /** Open the AI build Studio (author view) — shown as a button beside Continue writing. */
   onOpenStudio?: () => void;
+  /** Keep parent page state in sync after inline title autosaves. */
+  onTitleChange?: (title: string) => void;
 }
 
 export const BookInfo = ({
@@ -62,7 +64,8 @@ export const BookInfo = ({
   wordCount,
   wordTarget,
   briefSlot,
-  onOpenStudio
+  onOpenStudio,
+  onTitleChange
 }: BookInfoProps) => {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -71,11 +74,100 @@ export const BookInfo = ({
   const [uploading, setUploading] = useState(false);
   const [isEditCoverOpen, setIsEditCoverOpen] = useState(false);
   const [currentCoverUrl, setCurrentCoverUrl] = useState(coverUrl);
+  const [isTitleEditing, setIsTitleEditing] = useState(false);
+  const [titleValue, setTitleValue] = useState(name);
+  const [isTitleSaving, setIsTitleSaving] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const titleSaveTimerRef = useRef<number | null>(null);
+  const lastSavedTitleRef = useRef(name);
 
   // Sync coverUrl prop changes with local state
   useEffect(() => {
     setCurrentCoverUrl(coverUrl);
   }, [coverUrl]);
+
+  useEffect(() => {
+    lastSavedTitleRef.current = name;
+    if (!isTitleEditing) {
+      setTitleValue(name);
+    }
+  }, [name, isTitleEditing]);
+
+  useEffect(() => {
+    if (!isTitleEditing) return;
+    const input = titleInputRef.current;
+    input?.focus();
+    const end = input?.value.length ?? 0;
+    input?.setSelectionRange(end, end);
+  }, [isTitleEditing]);
+
+  useEffect(() => {
+    return () => {
+      if (titleSaveTimerRef.current !== null) {
+        window.clearTimeout(titleSaveTimerRef.current);
+      }
+    };
+  }, []);
+
+  const saveTitle = async (nextTitle: string) => {
+    const trimmedTitle = nextTitle.trim();
+
+    if (!trimmedTitle) {
+      return;
+    }
+
+    if (trimmedTitle === lastSavedTitleRef.current) {
+      return;
+    }
+
+    try {
+      setIsTitleSaving(true);
+      const { error } = await supabase
+        .from('books')
+        .update({ name: trimmedTitle })
+        .eq('id', bookId);
+
+      if (error) throw error;
+
+      lastSavedTitleRef.current = trimmedTitle;
+      setTitleValue(trimmedTitle);
+      onTitleChange?.(trimmedTitle);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error saving title",
+        description: error instanceof Error ? error.message : "An error occurred"
+      });
+    } finally {
+      setIsTitleSaving(false);
+    }
+  };
+
+  const scheduleTitleSave = (nextTitle: string) => {
+    if (titleSaveTimerRef.current !== null) {
+      window.clearTimeout(titleSaveTimerRef.current);
+    }
+
+    titleSaveTimerRef.current = window.setTimeout(() => {
+      titleSaveTimerRef.current = null;
+      void saveTitle(nextTitle);
+    }, 700);
+  };
+
+  const flushTitleSave = () => {
+    if (titleSaveTimerRef.current !== null) {
+      window.clearTimeout(titleSaveTimerRef.current);
+      titleSaveTimerRef.current = null;
+    }
+
+    const trimmedTitle = titleValue.trim();
+    if (!trimmedTitle) {
+      setTitleValue(lastSavedTitleRef.current);
+      return;
+    }
+
+    void saveTitle(trimmedTitle);
+  };
 
   const handleDownloadPDF = async () => {
     const result = await generatePDFWithPrintDialog({ 
@@ -408,9 +500,61 @@ export const BookInfo = ({
               <div className="pv-eyebrow">
                 {canEdit ? "You're writing · private" : "Reading"}
               </div>
-              <h1 className="pv-display mt-3 text-[40px] font-normal italic leading-[1.02] tracking-tight text-foreground md:text-[56px]">
-                {name}
-              </h1>
+              {canEdit ? (
+                isTitleEditing ? (
+                  <Input
+                    ref={titleInputRef}
+                    value={titleValue}
+                    onChange={(event) => {
+                      const nextTitle = event.target.value;
+                      setTitleValue(nextTitle);
+                      scheduleTitleSave(nextTitle);
+                    }}
+                    onBlur={() => {
+                      flushTitleSave();
+                      setIsTitleEditing(false);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        flushTitleSave();
+                        setIsTitleEditing(false);
+                      }
+                      if (event.key === "Escape") {
+                        if (titleSaveTimerRef.current !== null) {
+                          window.clearTimeout(titleSaveTimerRef.current);
+                          titleSaveTimerRef.current = null;
+                        }
+                        setTitleValue(lastSavedTitleRef.current);
+                        setIsTitleEditing(false);
+                      }
+                    }}
+                    aria-label="Book title"
+                    className="pv-display mt-2 h-auto w-full max-w-[720px] rounded-none border-0 border-b border-[hsl(var(--pv-border))] bg-transparent px-0 pb-1 pt-0 text-[40px] font-normal italic leading-[1.02] tracking-tight text-foreground shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 md:text-[56px]"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsTitleEditing(true)}
+                    className="group mt-3 block max-w-[720px] cursor-text text-left"
+                    title="Edit title"
+                  >
+                    <span className="pv-display text-[40px] font-normal italic leading-[1.02] tracking-tight text-foreground decoration-[hsl(var(--pv-border))] underline-offset-8 group-hover:underline md:text-[56px]">
+                      {titleValue}
+                    </span>
+                    <Pencil className="ml-3 inline-block h-5 w-5 translate-y-[-0.35em] text-[hsl(var(--pv-text-muted))] opacity-0 transition-opacity group-hover:opacity-100" />
+                  </button>
+                )
+              ) : (
+                <h1 className="pv-display mt-3 text-[40px] font-normal italic leading-[1.02] tracking-tight text-foreground md:text-[56px]">
+                  {name}
+                </h1>
+              )}
+              {canEdit && isTitleSaving && (
+                <div className="pv-mono mt-2 text-[10px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-muted))]">
+                  Saving title...
+                </div>
+              )}
               {subtitle && (
                 <p className="pv-serif mt-3 max-w-[600px] text-[18px] leading-snug text-[hsl(var(--pv-text-muted))]">
                   {subtitle}
