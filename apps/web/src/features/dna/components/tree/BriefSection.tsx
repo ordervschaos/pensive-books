@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CONTENT_TYPES, SCOPE_BANDS, briefIdea, type Brief } from "@/lib/brief";
+import { CONTENT_TYPES, SCOPE_BANDS, briefIdea, type Brief, type BriefVision } from "@/lib/brief";
 import { ConnectorTick, detailRowStyle, inputStyle, KIND_COLOR, labelStyle, MONO, SERIF, T } from "./treeChrome";
 
 // ── Brief section — rendered inside the seed when expanded ───────────────────
@@ -118,6 +118,96 @@ function BriefSection({ brief, onSave, depth, onCollapse }: { brief: Brief | nul
   );
 }
 
+// ── Vision — the interview's artifact ────────────────────────────────────────
+// brief.vision is what the agent's `update_vision` tool captures during the discovery interview (the
+// premise stage's first rung), in the AUTHOR's own words. It already had two MACHINE consumers — the
+// journey's done-gate (dnaJourney: compiled_at/skipped advances Interview → Seed) and the generation
+// prompt (_shared/brief.ts, opts.vision) — but no human one, so it read as write-only: the author
+// answered the interview and never saw their answers again. This is the read/edit surface. Editing is
+// hand-authoring over the agent's capture; each section replaces that section wholesale, exactly as
+// update_vision does. compiled_at / skipped are status, not fields — shown, never edited here.
+const VISION_SECTIONS: { key: keyof BriefVision; label: string }[] = [
+  { key: "characters", label: "characters" },
+  { key: "world_setting", label: "world / setting" },
+  { key: "plot_points", label: "plot points" },
+  { key: "themes_aims", label: "themes / aims" },
+  { key: "influences", label: "influences" },
+  { key: "constraints", label: "constraints" },
+  { key: "open_questions", label: "open questions" },
+  { key: "notes", label: "notes" },
+];
+
+function visionStatus(vision: BriefVision | undefined): string {
+  const filled = VISION_SECTIONS.filter((s) => (vision?.[s.key] as string | undefined)?.trim()).length;
+  if (vision?.skipped) return "skipped";
+  if (!filled) return "not captured yet — the interview writes here";
+  const when = vision?.compiled_at ? new Date(vision.compiled_at).toLocaleDateString() : null;
+  return `${filled} of ${VISION_SECTIONS.length} sections${when ? ` · compiled ${when}` : " · in progress"}`;
+}
+
+function VisionSection({ brief, onSave, depth }: {
+  brief: Brief | null; onSave: (patch: Partial<Brief>) => Promise<void>; depth: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => { if (editingKey) inputRef.current?.focus(); }, [editingKey]);
+
+  const vision = brief?.vision;
+
+  // Section-wise merge — same shape as the agent's update_vision write, so a hand edit and an agent
+  // capture are indistinguishable downstream. An emptied section is deleted, not left as "".
+  const commit = async (key: keyof BriefVision, value: string) => {
+    setBusy(true);
+    setEditingKey(null);
+    const next: BriefVision = { ...(vision ?? {}) };
+    if (value.trim()) next[key] = value.trim() as never;
+    else delete next[key];
+    try { await onSave({ vision: next }); }
+    catch (e) { alert(`Save failed: ${(e as Error).message}`); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <>
+      <div style={{ ...detailRowStyle(depth), cursor: "pointer" }}
+        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+        title={open ? "collapse the vision" : "expand the vision — what you told the interview"}>
+        <ConnectorTick depth={depth} />
+        <span style={{ width: 12, flexShrink: 0 }} />
+        <span style={{ fontSize: 9, color: T.muted, marginRight: 2 }}>{open ? "▾" : "▸"}</span>
+        <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: T.accent, flexShrink: 0 }}>vision — the interview</span>
+        <span style={{ fontFamily: SERIF, fontSize: 12.5, color: T.muted, fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {visionStatus(vision)}
+        </span>
+      </div>
+
+      {open && VISION_SECTIONS.map(({ key, label }) => {
+        const value = (vision?.[key] as string | undefined) ?? "";
+        return (
+          <BriefFieldRow key={key} label={label} depth={depth + 1} display={value} onEdit={() => { setDraft(value); setEditingKey(key); }}>
+            {editingKey === key && (
+              <textarea
+                ref={inputRef} value={draft} disabled={busy}
+                rows={Math.min(14, Math.max(3, draft.split("\n").length + 1))}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={() => { void commit(key, draft); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") { e.preventDefault(); setEditingKey(null); }
+                  else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void commit(key, draft); }
+                }}
+                style={{ ...inputStyle, flex: 1, resize: "vertical" }}
+              />
+            )}
+          </BriefFieldRow>
+        );
+      })}
+    </>
+  );
+}
+
 // ── Brief origin (step 0) ─────────────────────────────────────────────────────
 // The brief is the ORIGIN — book-level input on books.brief, NOT a tree node. The seed (= the logline) is
 // step 1, DERIVED from it (docs/dna-studio-analysis.md §1). So the brief renders here, ABOVE the tree, with a
@@ -130,7 +220,10 @@ function briefSummary(brief: Brief | null): string {
   const tone = Array.isArray(brief?.tone) ? brief.tone.join(", ") : "";
   const idea = briefIdea(brief)?.trim();
   const ideaShort = idea ? (idea.length > 70 ? `${idea.slice(0, 70)}…` : idea) : "";
-  return [brief?.genre, tone, heat, brief?.scope?.word_target ? `${brief.scope.word_target.toLocaleString()} words` : "", ideaShort ? `"${ideaShort}"` : ""]
+  // Flag a captured vision even when collapsed — otherwise the interview stays invisible on a
+  // past-premise book, which is exactly how it went unnoticed in the first place.
+  const hasVision = VISION_SECTIONS.some((s) => (brief?.vision?.[s.key] as string | undefined)?.trim());
+  return [brief?.genre, tone, heat, brief?.scope?.word_target ? `${brief.scope.word_target.toLocaleString()} words` : "", ideaShort ? `"${ideaShort}"` : "", hasVision ? "vision ✓" : ""]
     .filter(Boolean).join(" · ");
 }
 
@@ -158,6 +251,8 @@ export function BriefOrigin({ brief, onSave, open = true, onToggleOpen }: {
   return (
     <div style={{ borderBottom: `1px solid ${T.borderSoft}`, paddingBottom: 8 }}>
       <BriefSection brief={brief} onSave={onSave} depth={1} onCollapse={onToggleOpen ? () => onToggleOpen(false) : undefined} />
+      {/* The interview's capture — part of the ORIGIN, alongside the mandate fields it sits next to. */}
+      <VisionSection brief={brief} onSave={onSave} depth={1} />
       <div style={{ padding: "8px 16px 2px 20px", display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ color: KIND_COLOR.seed, fontSize: 13, lineHeight: 1 }}>↓</span>
         <span style={{ fontFamily: SERIF, fontSize: 12.5, color: T.muted, fontStyle: "italic" }}>
