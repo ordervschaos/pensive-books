@@ -16,6 +16,17 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-14 — Vision panel: the interview gets a read/edit surface `[ship]`
+- **What:** Closes the write-only gap found earlier today. `brief.vision` (the interview's capture) now renders in the tree as a collapsible `VISION — THE INTERVIEW` section under the brief origin — all 8 sections, each inline-editable, with a status line (`6 of 8 sections · compiled 7/14/2026`) and a `vision ✓` marker in the collapsed brief summary so it stays discoverable on a past-premise book. Edits merge section-wise (same shape as the agent's `update_vision`), so a hand edit and an agent capture are indistinguishable downstream; `compiled_at`/`skipped` are shown as status, never edited. Presentation-only — no schema, no edge fn, no new fetch (the brief was already Realtime-subscribed).
+- **Verified:** typecheck clean (`tsc -p tsconfig.app.json`); driven live in Chrome on book 1257 — vision renders with all 6 captured sections; hand-edited an empty section and confirmed the write round-tripped to `books.brief.vision` in the DB with `compiled_at` + sibling sections preserved. Test edit reverted afterward.
+- **Files/commits:** `apps/web/src/features/dna/components/tree/BriefSection.tsx` (uncommitted).
+- **PM impact:** none — a UX gap fix, not a Now-slot item; M1 priorities unchanged.
+
+## 2026-07-14 — Interview vision is write-only: saved but never surfaced `[wip]`
+- **What:** Investigated "where did the interview answers go?" on book 1257. They ARE saved — `books.brief.vision` is fully populated and compiled (`compiled_at 2026-07-14T07:58Z`: characters, world_setting, plot_points, influences, open_questions, notes). The write path (agent `update_vision`) works. The gap is presentation: `brief.vision` is consumed only as the journey done-gate (`dnaJourney.ts`) and as prompt context (`_shared/brief.ts` `opts.vision`), while the visible brief panel `BriefSection.tsx` renders only the 7 structured fields (idea/genre/audience/tone/success_criteria/word_target/content_type) and has no `vision` branch. So the interview is a write-only artifact from the author's POV. Fix is small + additive: a read/edit block for `brief.vision` under `BriefOrigin`. No code changed this session.
+- **Files/commits:** none (investigation). Relevant: `apps/web/src/features/dna/components/tree/BriefSection.tsx`, `apps/web/src/features/dna/lib/dnaJourney.ts`, `supabase/functions/_shared/brief.ts`, `supabase/functions/book-agent/exec-tools.ts`.
+- **PM impact:** none (wip — finding recorded, fix not yet built or scheduled).
+
 ## 2026-07-14 — Paginated admin AI Calls table `[chore]`
 - **What:** `/admin/ai-calls` was a flat "latest 200" list with client-side fn filtering. Switched to server-side pagination (50/page, `range()`+`count:"exact"`), moved fn filter into the query (was silently only filtering whatever 200 rows happened to be loaded), added Prev/Next controls, and scoped the evals fetch to just the visible page's call ids instead of a flat recent-400 guess. Verified live in Chrome: paging and fn-filter+paging compose correctly (e.g. `dna-expand-stream` → 246 rows / 5 pages).
 - **Files/commits:** `apps/web/src/pages/admin/AiCalls.tsx` (uncommitted).
