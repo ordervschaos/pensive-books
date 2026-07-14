@@ -9,8 +9,8 @@
 //   client → POST { bookId, beats:[{beatId,summary,prose}], meters:[{id,name,kind,low,high,min,max}] }
 //          → one Claude call → { readings: [{ beatId, meterId, value }] }
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
+import { userClient as createUserClient } from "../_shared/task.ts";
 import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
@@ -23,8 +23,7 @@ const MAX_PROSE_CHARS = 4000; // per-beat cap so a long book stays inside one ca
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const userClient = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      { global: { headers: { Authorization: req.headers.get("Authorization")! } } });
+    const userClient = createUserClient(req.headers.get("Authorization") ?? "");
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: "Unauthorized" }, 401);
 

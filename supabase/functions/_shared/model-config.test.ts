@@ -68,19 +68,23 @@ Deno.test("ai_model_tier_agent=claude-local sends only the agent role to the loc
   assertEquals(r.prose, "claude-sonnet-4-6");
 });
 
-// localBridgeUp: the CLAUDE_LOCAL_URL-is-set signal getRoleModels() passes in. It's a DEFAULT for the agent
-// role, never a mandate — see resolveRoleModels' doc comment. These pin that precedence and its blast radius.
+// localBridgeUp: the CLAUDE_LOCAL_URL-is-set signal getRoleModels() passes in. It's a DEFAULT for every high
+// role (agent, structure, prose), never a mandate — see resolveRoleModels' doc comment. These pin that
+// precedence and its blast radius.
 
-Deno.test("localBridgeUp=true with no agent override defaults the agent role to claude-local", () => {
+Deno.test("localBridgeUp=true with no overrides defaults the whole high tier to claude-local", () => {
   const r = resolveRoleModels({ ai_model_tier: "sonnet" }, true);
   assertEquals(r.agent, "claude-local");
-  assertEquals(r.structure, "claude-sonnet-4-6"); // only the agent role defaults — structure/prose untouched
-  assertEquals(r.prose, "claude-sonnet-4-6");
+  assertEquals(r.structure, "claude-local"); // structure (e.g. scene sketch) rides the shim too now
+  assertEquals(r.prose, "claude-local");
+  assertEquals(r.low, "claude-haiku-4-5-20251001"); // low tier is unaffected — only high roles ride the bridge
 });
 
 Deno.test("localBridgeUp=false (the deployed/no-shim case) never defaults to claude-local", () => {
   const r = resolveRoleModels({ ai_model_tier: "sonnet" }, false);
   assertEquals(r.agent, "claude-sonnet-4-6");
+  assertEquals(r.structure, "claude-sonnet-4-6");
+  assertEquals(r.prose, "claude-sonnet-4-6");
 });
 
 Deno.test("an explicit ai_model_tier_agent override wins over localBridgeUp — a deliberate local choice is never clobbered", () => {
@@ -88,12 +92,12 @@ Deno.test("an explicit ai_model_tier_agent override wins over localBridgeUp — 
   // hermes is tool-incapable, so the usual tool fence applies on top of the explicit override — the point
   // here is that localBridgeUp did NOT silently substitute claude-local for the admin's explicit pick.
   assertEquals(r.agent, "claude-sonnet-4-6"); // fenced to the tool-capable base, not claude-local
+  assertEquals(r.structure, "claude-local"); // structure had no override, so it still defaults to the shim
 });
 
-Deno.test("localBridgeUp never affects structure/prose — only the agent role rides the bridge by default", () => {
-  const r = resolveRoleModels({ ai_model_tier: "opus" }, true);
-  assertEquals(r.agent, "claude-local");
-  assertEquals(r.structure, "claude-opus-4-8");
-  assertEquals(r.prose, "claude-opus-4-8");
-  assertEquals(r.low, "claude-haiku-4-5-20251001");
+Deno.test("an explicit per-role override wins over localBridgeUp for structure/prose too", () => {
+  const r = resolveRoleModels({ ai_model_tier: "opus", ai_model_tier_structure: "sonnet" }, true);
+  assertEquals(r.structure, "claude-sonnet-4-6"); // explicit override stands
+  assertEquals(r.prose, "claude-local");          // no prose override → defaults to the shim
+  assertEquals(r.agent, "claude-local");          // no agent override → defaults to the shim
 });

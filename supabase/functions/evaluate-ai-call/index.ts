@@ -9,9 +9,8 @@
 // On demand only — nothing auto-evaluates. Locally, getJudgeModel() rides the claude-local shim
 // (scripts/claude-local-shim.mjs) instead of the metered API when CLAUDE_LOCAL_URL is set.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { runInBackground, serviceClient } from "../_shared/task.ts";
+import { runInBackground, serviceClient, userClient as createUserClient } from "../_shared/task.ts";
 import { callLLM, textFromLLM } from "../_shared/llm.ts";
 import { getJudgeModel, JUDGE_SYSTEM, buildJudgeUser, parseJudgement } from "../_shared/judge.ts";
 
@@ -19,11 +18,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const userClient = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      { global: { headers: { Authorization: req.headers.get("Authorization")! } } }
-    );
+    const userClient = createUserClient(req.headers.get("Authorization") ?? "");
 
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return json({ error: "Unauthorized" }, 401);

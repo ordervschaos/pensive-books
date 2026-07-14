@@ -10,8 +10,8 @@
 //   client → POST { bookId, chapters:[{chapterIndex,priorContext,scenes:[{sceneId,prose}]}] }
 //          → one Claude call over as many chapters as fit → { flags:[{sceneId,kind,note}], truncated, chaptersRead }
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
+import { userClient as createUserClient } from "../_shared/task.ts";
 import { callLLM, textFromLLM, type CallMeta } from "../_shared/llm.ts";
 import { getActiveModels } from "../_shared/model-config.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
@@ -29,8 +29,7 @@ const MAX_FLAGS_PER_SCENE = 5;
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const userClient = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      { global: { headers: { Authorization: req.headers.get("Authorization")! } } });
+    const userClient = createUserClient(req.headers.get("Authorization") ?? "");
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: "Unauthorized" }, 401);
 

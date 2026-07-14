@@ -19,8 +19,8 @@ vi.mock("@/features/dna/lib/bookNodes", () => {
 import * as bookNodes from "@/features/dna/lib/bookNodes";
 const store = (bookNodes as unknown as { __store: DnaNode[] }).__store;
 
-const beatNode = (content: BeatContent): DnaNode => ({
-  id: "b1", book_id: 1, parent_id: "a1", level: 3, kind: "beat", position: 0, content: content as NodeContent,
+const beatNode = (content: BeatContent, position = 0): DnaNode => ({
+  id: "b1", book_id: 1, parent_id: "a1", level: 3, kind: "beat", position, content: content as NodeContent,
   authoring: { source: "user", locked: false, status: "accepted" },
 });
 const scene = (): SceneContent => ({ value_shift: { value: "v", from: "a", to: "b" } });
@@ -29,8 +29,8 @@ describe("realizeScenesFromBeat — causal plan distribution (§3d)", () => {
   it("puts needs on the FIRST scene and establishes on the LAST (multi-scene beat)", () => {
     const scenes = [scene(), scene(), scene()];
     realizeScenesFromBeat(
-      beatNode({ needs: ["door_open"], establishes: ["ledger_settled"], grounds_in: ["wf1"], resolves: [{ ref: "g1", outcome: "won" }] }),
-      scenes, 1,
+      beatNode({ needs: ["door_open"], establishes: ["ledger_settled"], grounds_in: ["wf1"], resolves: [{ ref: "g1", outcome: "won" }] }, 1),
+      scenes,
     );
     // needs (consumed at entry) → first scene; establishes (produced when the turn lands) → last scene.
     expect(scenes[0].needs).toEqual(["door_open"]);
@@ -47,7 +47,7 @@ describe("realizeScenesFromBeat — causal plan distribution (§3d)", () => {
 
   it("keeps both on the sole scene of a single-scene beat (first === last — no regression)", () => {
     const scenes = [scene()];
-    realizeScenesFromBeat(beatNode({ needs: ["n"], establishes: ["e"] }), scenes, 1);
+    realizeScenesFromBeat(beatNode({ needs: ["n"], establishes: ["e"] }, 1), scenes);
     expect(scenes[0].needs).toEqual(["n"]);
     expect(scenes[0].establishes).toEqual(["e"]);
   });
@@ -55,8 +55,8 @@ describe("realizeScenesFromBeat — causal plan distribution (§3d)", () => {
   it("still inherits polarity, thread anchors (first scene), plays (first), and distributes tentpoles in order", () => {
     const scenes = [scene(), scene()];
     realizeScenesFromBeat(
-      beatNode({ polarity: "down", threads: [{ ref: "t1", role: "setup" }], realizes: ["tp1", "tp2"], plays: ["g1"] }),
-      scenes, 1,
+      beatNode({ polarity: "down", threads: [{ ref: "t1", role: "setup" }], realizes: ["tp1", "tp2"], plays: ["g1"] }, 1),
+      scenes,
     );
     expect(scenes[0].value_shift?.polarity).toBe("down");
     expect(scenes[0].threads).toEqual([{ ref: "t1", role: "setup" }]);
@@ -65,10 +65,23 @@ describe("realizeScenesFromBeat — causal plan distribution (§3d)", () => {
     expect(scenes[1].realizes_tentpole).toBe("tp2");
   });
 
-  it("opens a chapter on the first scene when the beat starts at reading position 0", () => {
+  it("opens a chapter on the first scene of the ACT's first beat (position 0)", () => {
     const scenes = [scene()];
-    realizeScenesFromBeat(beatNode({ summary: "The arrival — everything shifts." }), scenes, 0);
+    realizeScenesFromBeat(beatNode({ summary: "The arrival — everything shifts." }, 0), scenes);
     expect(scenes[0].chapter_start?.title).toBeTruthy();
+  });
+
+  it("does NOT open a chapter for a beat that isn't its act's first (position > 0)", () => {
+    const scenes = [scene()];
+    realizeScenesFromBeat(beatNode({ summary: "The arrival — everything shifts." }, 1), scenes);
+    expect(scenes[0].chapter_start).toBeUndefined();
+  });
+
+  it("titles the chapter from the ACT, not the beat, when the act has a title", () => {
+    const scenes = [scene()];
+    const act: DnaNode = { id: "a1", book_id: 1, parent_id: null, level: 2, kind: "act", position: 0, content: { title: "Act One: The Setup" }, authoring: { source: "user", locked: false, status: "accepted" } };
+    realizeScenesFromBeat(beatNode({ summary: "The arrival — everything shifts." }, 0), scenes, act);
+    expect(scenes[0].chapter_start?.title).toBe("Act One: The Setup");
   });
 });
 

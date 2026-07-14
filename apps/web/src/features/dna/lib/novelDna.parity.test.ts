@@ -9,6 +9,7 @@ import * as edge from "../../../../../../supabase/functions/_shared/novel-dna.ts
 import * as webJ from "@/features/dna/lib/dnaJourney";
 import * as edgeJ from "../../../../../../supabase/functions/_shared/dna-journey.ts";
 import type { DnaNode, NodeKind, BookSettings } from "@/features/dna/lib/novelDna";
+import type { Brief } from "@/lib/brief";
 
 let seq = 0;
 const mk = (kind: NodeKind, over: Partial<DnaNode> & { content?: Record<string, unknown> } = {}): DnaNode => ({
@@ -623,8 +624,25 @@ describe("ledgerAt (Phase 3)", () => {
 // The guided-flow objective (dna-journey twin) is what threadSystem re-derives live each chain link (P1.2);
 // lock it to the web dnaJourney.
 describe("dna-journey edge twin ↔ web dnaJourney parity", () => {
-  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["endgameBook", endgameBook()]];
+  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["endgameBook", endgameBook()], ["freshBook", []]];
+  // The interview rung's gate lives in the BRIEF, not the tree (brief.vision) — so the twins must agree
+  // across the brief axis too: no brief at all, a compiled vision, and an explicitly skipped one.
+  const briefs: [string, Brief | null][] = [
+    ["noBrief", null],
+    ["emptyVision", { genre: "fantasy" }],
+    ["visionCompiled", { genre: "fantasy", vision: { characters: "a cartographer", compiled_at: "2026-07-13T00:00:00.000Z" } }],
+    ["visionSkipped", { genre: "fantasy", vision: { skipped: true } }],
+  ];
   for (const [fxName, nodes] of fixtures) {
+    for (const [bName, brief] of briefs) {
+      it(`currentObjective agrees on ${fxName} + ${bName}`, () => {
+        const opts = { bookSlug: "42", brief };
+        expect(edgeJ.currentObjective(nodes, opts)).toBe(webJ.currentObjective(nodes, opts));
+      });
+      it(`stageSubsteps(premise) agrees on ${fxName} + ${bName}`, () => {
+        expect(j(edgeJ.stageSubsteps("premise", nodes, brief))).toBe(j(webJ.stageSubsteps("premise", nodes, brief)));
+      });
+    }
     it(`currentObjective agrees on ${fxName}`, () => {
       const opts = { bookSlug: "42" };
       expect(edgeJ.currentObjective(nodes, opts)).toBe(webJ.currentObjective(nodes, opts));

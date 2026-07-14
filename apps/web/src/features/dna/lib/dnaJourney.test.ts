@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildJourney, currentObjective, dnaHealth, stageComplete, stageSubsteps } from "@/features/dna/lib/dnaJourney";
 import type { DnaNode, NodeKind } from "@/features/dna/lib/novelDna";
+import type { Brief } from "@/lib/brief";
 
 let seq = 0;
 const mk = (kind: NodeKind, content: Record<string, unknown> = {}, status: "empty" | "draft" | "accepted" = "accepted", parent_id: string | null = null): DnaNode => ({
@@ -42,16 +43,53 @@ describe("dna journey", () => {
 
 describe("stageSubsteps", () => {
   const byKey = (subs: ReturnType<typeof stageSubsteps>) => Object.fromEntries(subs.map((s) => [s.key, s]));
+  // A brief whose discovery interview is finished — the gate that lets the seed become the now-step.
+  const compiled: Brief = { vision: { characters: "a clerk", compiled_at: "2026-07-13T00:00:00.000Z" } };
 
   it("Seed blocks Premise — Premise is locked until the seed is an accepted logline", () => {
-    // a draft (not accepted) seed: Seed is the NOW move, Premise stays blocked
-    const draftSeed = byKey(stageSubsteps("premise", [mk("seed", { logline: "x" }, "draft")]));
+    // a draft (not accepted) seed, interview already done: Seed is the NOW move, Premise stays blocked
+    const draftSeed = byKey(stageSubsteps("premise", [mk("seed", { logline: "x" }, "draft")], compiled));
     expect(draftSeed.seed.status).toBe("now");
     expect(draftSeed.premise.status).toBe("locked");
     // accepted seed unblocks Premise as the next move
-    const okSeed = byKey(stageSubsteps("premise", [mk("seed", { logline: "x" })]));
+    const okSeed = byKey(stageSubsteps("premise", [mk("seed", { logline: "x" })], compiled));
     expect(okSeed.seed.status).toBe("done");
     expect(okSeed.premise.status).toBe("now");
+  });
+
+  // The discovery regime: the premise stage opens with an INTERVIEW whose artifact lives in the brief
+  // (brief.vision), not the tree — so an author is asked about the book in their head before anything is
+  // generated for them. Its gate is compiled_at (or an explicit skip); a book already past the seed is
+  // grandfathered done so no existing book regresses into an interview it never had.
+  it("Interview is the first rung on a fresh book, and it blocks the Seed", () => {
+    const subs = byKey(stageSubsteps("premise", [], null));
+    expect(subs.interview.status).toBe("now");
+    expect(subs.seed.status).toBe("locked");
+  });
+
+  it("a compiled (or skipped) vision advances the now-step to the Seed", () => {
+    expect(byKey(stageSubsteps("premise", [], compiled)).seed.status).toBe("now");
+    expect(byKey(stageSubsteps("premise", [], { vision: { skipped: true } })).seed.status).toBe("now");
+    expect(byKey(stageSubsteps("premise", [], compiled)).interview.status).toBe("done");
+  });
+
+  it("grandfathers an existing book: an accepted seed marks the interview done with no vision at all", () => {
+    const subs = byKey(stageSubsteps("premise", [mk("seed", { logline: "x" })], null));
+    expect(subs.interview.status).toBe("done");
+    expect(subs.premise.status).toBe("now");
+  });
+
+  it("grandfathers a book that was BUILT without an accepted seed — any non-seed node means it's not fresh", () => {
+    // The regression this guards: a drafted book whose seed was never accepted was being sent back to the
+    // interview. A fresh book is minted with the seed node alone, so anything else = already building.
+    const subs = byKey(stageSubsteps("premise", [mk("seed", { logline: "x" }, "draft"), mk("scene", { goal: "g" })], null));
+    expect(subs.interview.status).toBe("done");
+    expect(subs.seed.status).toBe("now");
+  });
+
+  it("the objective on a fresh book is the interview — and says not to generate story content yet", () => {
+    expect(currentObjective([], { brief: null })).toContain("INTERVIEW the author");
+    expect(currentObjective([], { brief: compiled })).toContain("logline options");
   });
 
   it("Foundations: Cast blocks Relationships; world/set-pieces are optional branches", () => {
@@ -123,11 +161,13 @@ describe("stageSubsteps", () => {
 });
 
 describe("currentObjective", () => {
-  it("an empty tree points at the seed step with its recipe", () => {
+  it("an empty tree points at the interview step with its recipe — the seed comes after it", () => {
     const obj = currentObjective([]);
     expect(obj).toContain("Step 1/5 · Idea");
-    expect(obj).toContain("logline options");
+    expect(obj).toContain("INTERVIEW the author");
     expect(obj).toContain("don't work ahead"); // the focus anchor
+    // …and once the interview is done (or skipped), the same empty tree points at the seed.
+    expect(currentObjective([], { brief: { vision: { skipped: true } } })).toContain("logline options");
   });
 
   it("advances to the now step as the tree fills", () => {

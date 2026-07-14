@@ -17,7 +17,7 @@ import { maybeEagerAck, maybeTitleThread } from "./ack.ts";
 import { AUTO_CONTINUE_SENTINEL, FORCE_COMMIT_AFTER_READS, FORCE_COMMIT_SENTINEL, compactTranscript, latestAuthorAsk, trailingReadRun, withBookState, withCacheBreakpoints } from "./transcript.ts";
 
 const MAX_TURNS = 20;          // model calls per run — the runaway guard
-const AUTO_MAX_TURNS = 50;     // autonomous threads iterate change-by-change, so they get a higher ceiling
+const AUTO_MAX_TURNS = 100;     // autonomous threads iterate change-by-change, so they get a higher ceiling
 // One call must finish inside the ~150s worker wall clock (with headroom for the row writes and
 // the chain dispatch). An abort still BILLS — the API keeps generating after we hang up — so the
 // real defense is keeping turns short (effort: medium below), not this timer.

@@ -15,6 +15,37 @@ export const HEAT_LEVEL_SENTENCES: Record<ContentLevel, string> = {
   explicit: "EXPLICIT — graphic and on the page; depict intimacy fully.",
 };
 
+/** The interview's artifact: everything the author has in their head, captured section by section during
+ *  discovery (the premise stage's first rung). Free text per section — the agent's `update_vision` tool
+ *  writes it directly, in the AUTHOR's words. `compiled_at` marks the interview done (the journey gate). */
+export interface BriefVision {
+  characters?: string; // who they have in mind — names, roles, sketches
+  world_setting?: string; // place, time, rules, atmosphere
+  plot_points?: string; // anything they already know happens
+  themes_aims?: string; // what the book is FOR — aims, arguments, feelings to land
+  influences?: string; // comps, authors, tones to echo or avoid
+  constraints?: string; // non-negotiables (POV, content lines, length, structure)
+  open_questions?: string; // what the author is still unsure about
+  notes?: string; // anything that fits nowhere else
+  compiled_at?: string; // ISO timestamp — set by update_vision {compiled:true}; the done-gate
+  skipped?: boolean; // author skipped the interview (client-side gesture)
+}
+
+/** The vision's free-text sections (everything but the bookkeeping keys) — what `update_vision` may write. */
+export type VisionSection = Exclude<keyof BriefVision, "compiled_at" | "skipped">;
+
+/** The vision's renderable sections, in prompt order, with their labels. compiled_at/skipped are bookkeeping. */
+export const VISION_SECTIONS: [VisionSection, string][] = [
+  ["characters", "Characters"],
+  ["world_setting", "World & setting"],
+  ["plot_points", "Plot points"],
+  ["themes_aims", "Themes & aims"],
+  ["influences", "Influences"],
+  ["constraints", "Constraints"],
+  ["open_questions", "Open questions"],
+  ["notes", "Notes"],
+];
+
 export interface Brief {
   scope?: { band?: string; word_target?: number };
   genre?: string;
@@ -30,6 +61,8 @@ export interface Brief {
   // read-only legacy alias for any pre-C5 data.
   content_type?: { level?: ContentLevel; note?: string } | string;
   heat?: { level?: ContentLevel; note?: string } | string;
+  /** The discovery interview's artifact (see BriefVision). Rendered ONLY where opts.vision is set. */
+  vision?: BriefVision;
 }
 
 export interface BriefContextOpts {
@@ -41,6 +74,9 @@ export interface BriefContextOpts {
   scope?: "full" | "band" | "none";
   /** Whether to render the success_criteria line. */
   success?: boolean;
+  /** Whether to render the interview's vision document. OFF by default: every pre-existing call site's
+   *  bytes must stay identical (prompt caches + evals). Only book-agent's threadSystem opts in. */
+  vision?: boolean;
 }
 
 export function briefContext(brief: Brief | null, opts: BriefContextOpts = {}): string {
@@ -60,6 +96,13 @@ export function briefContext(brief: Brief | null, opts: BriefContextOpts = {}): 
   if (idea) lines.push(`- Idea: ${idea}`);
   if (brief.tone?.length) lines.push(`- Tone: ${brief.tone.join(", ")}`);
   if (success && brief.success_criteria) lines.push(`- Success looks like: ${brief.success_criteria}`);
+  if (opts.vision && brief.vision) {
+    const filled = VISION_SECTIONS.filter(([k]) => typeof brief.vision?.[k] === "string" && (brief.vision[k] as string).trim());
+    if (filled.length) {
+      lines.push("- Vision (the author's own intent, captured in interview — honor it as ground truth):");
+      for (const [k, label] of filled) lines.push(`  - ${label}: ${(brief.vision[k] as string).trim()}`);
+    }
+  }
   return lines.length ? lines.join("\n") : empty;
 }
 

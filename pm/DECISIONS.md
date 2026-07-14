@@ -6,6 +6,38 @@
 
 ## Log
 
+### 2026-07-13 — Ratified Vision→Structure: the vision grounds the engine and gets audited back
+Sequel to the guidance-system decision below; plan in `docs/vision-to-structure.md`. The interview
+now captures `brief.vision` but the derivation engine (dna-expand) never sees it, and nothing checks
+the built structure back against it. Ratified: (D1) every `briefContext` call in dna-expand gains
+`vision: true` — deliberately widens the earlier book-agent-only scoping; prose pipeline stays
+untouched; (D2) the vision's promised plot points compile into `source:"vision"` TENTPOLES so the
+existing `tentpole_unplaced` lint enforces "the author's moments get scheduled" for free; (D3) meter
+palette extends with `mystery`/`violence`/`levity` — "sexual content" is the existing `heat` axis,
+with `content_type` staying the hard ceiling and the target curve only shaping within it; (D4)
+contract v2 derives 2–5 meters + curves from brief AND vision jointly; (D5) fulfillment is checked
+by a new non-terminal `audit_vision` LLM-judge tool run at recipe checkpoints (after cast, after
+beatsheet) — no deterministic lint over free text; (D6) no journey/ladder changes — upgraded
+STEP_RECIPE texts carry the nudging; (D7) the vision is a living document, capturable at any stage.
+Key discovery during planning: the meter verify cascade (`target_drift`/`read_gap` + `targetGap`)
+already exists — this plan feeds it vision-shaped targets rather than building new machinery.
+
+**Update, same day:** added D8 — the sufficiency rubric ("what does fulfilled look like") is tier-1
+craft defined ONCE as `VISION_RUBRIC` in a new `_shared/vision-craft.ts`, embedded verbatim by both
+the `audit_vision` judge prompt and a new `vision-fulfillment` skill in `agent-skills.ts`. The
+original spec shipped the tool plumbing without the rubric, which would have left the judge to
+free-associate what "enough structure" means.
+
+**Update, same day (2):** added D9 — the interview gets a `vision-interview` skill injected by BOOK
+STATE, not ask triggers. Found while answering "is there an interview skill?": the shipped
+three-state injection has a hole — an author's mid-interview ANSWER ("my protagonist is a
+lighthouse keeper") is a concrete message, so the objective (and `STEP_RECIPE.interview` inside it)
+is omitted on exactly the turns where the interview happens, and worse, "protagonist" trips
+character-craft's triggers, injecting the node-editing playbook mid-interview. Fix: during
+discovery (vision neither compiled nor skipped + fresh tree — the journey gate's mirror),
+`threadSystem` injects vision-interview every turn and suppresses ask-triggered skills. First
+state-injected skill; establishes the channel (ask-triggered · objective-fallback · state-pinned).
+
 ### 2026-07-13 — "Zero callers" audits must check real invocation logs + the deployed branch, not static grep
 A dead-code audit (retiring eval-bridge, then auditing ~20 candidate edge fns) grepped only the
 current feature branch's client code for callers. That branch is 43 commits ahead of `main`, and
@@ -35,6 +67,12 @@ behind a `briefContext` opt, book-agent-only in v1 (byte-stability for every oth
 (D6) no server-initiated turns — the existing greeting + next-step card carries the kickoff.
 Replaces: always-on objective marked "subordinate" (anchor-not-fence alone wasn't enough).
 Implementation delegated to a smaller-model session against the plan doc.
+**Amended on implementation (2026-07-13, shipped):** D3's grandfather clause widened. The plan gated it on
+`seedDone` (an *accepted* seed ⇒ interview moot), but a live 141-scene book whose seed was never accepted
+regressed into an interview. The gate is now "any non-seed node exists" — a fresh book is minted carrying
+only the seed node, so that predicate is exactly the fresh/not-fresh line. Everything else shipped as
+ratified; live-verified end-to-end (interview → capture → compile → journey advances; all three injection
+states confirmed in `ai_calls`).
 
 ### 2026-07-10 — Squashed 135 migrations into one baseline dump; `supabase start` now bootstraps from empty
 `supabase start`/`db pull` had never worked from an empty database: the earliest migration
