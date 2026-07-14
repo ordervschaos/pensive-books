@@ -1,6 +1,6 @@
 # STATE — what exists, and what status it's in
 
-> Snapshot date: **2026-07-13**. Update when something ships, parks, or dies.
+> Snapshot date: **2026-07-14**. Update when something ships, parks, or dies.
 > Deep detail lives in `docs/` and `apps/web/src/features/dna/FEATURE.md`; this is the map.
 
 ## The product at a glance
@@ -82,7 +82,7 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 | Model stack = OpenRouter (Qwen/DeepSeek tier) | shipped | Anthropic-shape → converted; cost lever |
 | Unified stop (lib/stopRun.ts) | shipped | Route new AI surfaces through it |
 | Task notifications (email + browser) | shipped | Uneven tab-closed coverage |
-| One deployed SSOT (main = feat/ai-provider-switch) | shipped 2026-07-13 | Was 2 divergent branches; prod deploys from main. Fixed the `api/stream-prose.ts` TS2835 build break found in the process (likely why prod had been erroring 5+ days) — confirm next deploy goes green |
+| One deployed SSOT (main = feat/ai-provider-switch) | shipped 2026-07-14 | Was 2 divergent branches (fixed 2026-07-13, fixed the `api/stream-prose.ts` TS2835 build break in the process). 2026-07-14: `feat/ai-provider-switch` merged into `main` and pushed (`4cf4ba6`) — DeepSeek provider switch, claude-local shim (all 3 high roles), vision→structure agent work now live on main; confirm next deploy goes green |
 | `dna_chats` data recovery | parked | Table dropped without checking row recency (see 2026-07-13 DECISIONS entry); needs a dashboard backup-restore to a new project, author's call |
 
 ### Known quality gaps (bugs against the hypothesis)
