@@ -16,6 +16,64 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-15 — Agent architecture diagram doc `[chore]`
+- **What:** Added a diagram-first doc mapping the book-agent runtime (7 mermaid diagrams: whole-system, entry paths, durable loop, tool dispatch, context assembly, row state machine, proposal channel). Companion to agent-runtime-architecture.md; grounded in the current book-agent source.
+- **Files:** `docs/agent-architecture-diagram.md` (new).
+- **PM impact:** none (documentation only).
+
+## 2026-07-15 — Story-craft web research: B (precompute→craft_notes) + A (inline agent tool) `[wip]`
+- **What:** Built + deployed a web-research capability for the DNA engine. Shared core
+  (`_shared/research.ts`) = one Anthropic `web_search` server-tool call (`web_search_20260209`, GA/no beta
+  header) that distills the web to a few concrete craft constraints; pinned to `claude-opus-4-8` so it routes
+  to Anthropic passthrough even while the tier is DeepSeek (server tools don't survive the OpenAI-conversion
+  path). No new key — ANTHROPIC_API_KEY already present. **B** = `dna-research` fn → writes `books.craft_notes`
+  (precompute, out of the hot path). Activated the **dormant** `craft_notes` column (existed since 2026-06-18,
+  injected nowhere) by adding a `<craft_notes>` anchor block to `book-agent/context.ts`. **A** = `research_web`
+  read-class tool in book-agent that researches mid-turn AND persists to the same store, so A/B converge.
+  Distillation gate is the point — raw "how-to" SEO results poison prose; prompt reframes to reference/comps.
+- **Files:** `supabase/functions/_shared/research.ts` (new), `dna-research/index.ts` (new),
+  `book-agent/{tools,exec-tools,context}.ts` (modified). Deployed: `dna-research` + `book-agent`. No migration
+  (column pre-existed). Typechecks clean (only pre-existing `EdgeRuntime` ambient noise in `task.ts`).
+  Design/learning: `doc_1784114198000.md`, `learning_1784114198000_research-agent.md`.
+- **PM impact:** none yet — NOT live-verified (web_search call bills + needs a book/JWT) and no client UI for B.
+  Adjacent to M1 (build quality) but a new capability, not on a Now slot. Remaining: (1) live smoke test,
+  (2) tree-editor "Research" button + editable craft_notes field, (3) optional craft_notes into dna-expand prose.
+
+## 2026-07-15 — One-command local claude-local bridge restart `[chore]`
+- **What:** Diagnosed a `book-agent 503` in dev — Supabase stack was up but the `functions serve`
+  edge-runtime container had died, so Kong had no upstream (`.env.local` points the client's local
+  book-agent URL at it). Built a quick-access script that fully restarts the bridge (claude-local
+  -shim :8788 + `supabase functions serve`), preflights the stack/env, and health-gates on a real
+  HTTP reply (≠503/502/000). Verified end-to-end: 503→502→401.
+- **Files/commits:** `scripts/restart-local-bridge.sh` (new), `package.json` (`bridge:restart`). Uncommitted.
+- **PM impact:** none (dev tooling).
+
+## 2026-07-15 — Design chat: story-craft research agent (RAG into craft_notes) `[wip]`
+- **What:** Explored giving the DNA agent a web-research capability (e.g. "how to write a vampire hook").
+  Recommended shape: a `dna-research` pass (precompute, not inline hot-path) that fan-out-searches, distills to
+  a few concrete constraints/comps, and writes to `books.craft_notes` (tier-2) as an editable proposal in the
+  agent rail. Key risk surfaced: generic "how-to" SEO sludge poisons generation → reframe queries toward
+  reference/genre material + a distillation/source-ranking gate (reuse deep-research pattern). No code written.
+- **Files/commits:** none (conversation only; pre-existing uncommitted tree changes are unrelated).
+- **PM impact:** none — not ratified; parked as an idea pending author go-ahead to wire against the tool loop.
+
+## 2026-07-15 — Seam contract shipped + book 1250 continuity repaired `[ship]`
+- **What:** Implemented #1+#2 of the seam-contract fix (prior session's decision) and applied it to a live
+  book. Generation now carries a per-scene `link` (continuous | cut | same_moment_new_pov) on the sketch and
+  injects a SEAM block into prose gen — the previous scene's exit text + a link-specific instruction to move
+  the story FORWARD from it (bridge a cut, never silently drop a charged open moment). Retagged `<previous_page>`
+  to voice-only so anti-echo no longer masquerades as anti-continuity. Then repaired book 1250: an LLM seam-scan
+  over all 28 scene seams found 8 sev-2 dropped-thread breaks (+ the reported 10→11); regenerated each affected
+  scene through the fixed engine. Re-scan: **0 sev-2 breaks remain** (down from 9). e.g. scene 5 now opens
+  "…not the joke. It was the fact that she hadn't laughed" — paying off scene 4's "sound of a woman not laughing".
+- **Finding (→ DECISIONS):** DeepSeek (chat AND reasoner) *ignores* the SEAM=CUT bridge instruction that Claude
+  obeys on the identical prompt. All 9 successful bridges were Claude (claude-local shim). The active prod tier
+  is deepseek — so the seam fix underdelivers on the shipped model until the instruction is hardened.
+- **Files:** `supabase/functions/dna-expand/index.ts` (seam block + helpers + prompt), both twins
+  `_shared/novel-dna.ts` & `features/dna/lib/novelDna.ts` (`SceneLink` type), `dnaSchema.ts` +
+  regenerated `_shared/dna-schema.json`; deployed. Book 1250 = DB-only content regen (no repo change).
+  Design record: `doc_1784059899060.md`.
+- **PM impact:** DECISIONS updated (seam contract ratified #1+#2 → shipped; + new DeepSeek-obedience finding).
 ## 2026-07-15 — Inline named scene prose in agent intent hydration `[ship]`
 - **What:** Agent felt slow because a "look at scene N" ask (continuity/wording) hydrated the named scene's PLAN but stripped prose, forcing an extra `read_node` turn — a whole self-chain link (row write + cold reinvoke + full prefill) — before it could answer. `context.ts` intent hydration now inlines named scenes' prose (bounded: ~1200w whole, longer keeps head+tail for the continuity seam), collapsing that ask class from two turns to one. Deno-checked, deployed.
 - **Files/commits:** `supabase/functions/book-agent/context.ts` (1511b86).

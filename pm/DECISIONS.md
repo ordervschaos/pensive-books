@@ -23,6 +23,22 @@ continuity in the prose prompt — keep the word-level blocklist, add a separate
 `scene_overlap`) as verify-leg safety net. Explicitly a *separation* of the voice-only design, not a
 reversal — the anti-echo guardrail (verbatim prev page was the top echo source per the prose-context
 experiment) stays intact. Awaiting the author's scope call: #1 alone vs #1+#2.
+**Ratified & shipped 2026-07-15:** author chose **#1+#2** (#3 seam lint deferred). Deployed to
+`dna-expand` + both twins. Proven on book 1250: a seam-scan found 8 sev-2 dropped-thread breaks beyond the
+reported 10→11; all regenerated through the fixed engine → **0 sev-2 breaks remain**. **Caveat (new
+finding, own entry below): the fix only lands on Claude — DeepSeek drops the bridge.**
+
+### 2026-07-15 — DeepSeek ignores the SEAM=CUT bridge instruction that Claude obeys
+Repairing book 1250 surfaced a model-obedience gap. On the *identical* prepared prose prompt (same SEAM
+block, same `link:"cut"` instruction to "land ONE line that acknowledges/pays off whatever the exit left
+charged before settling into the new scene"), **Claude** (claude-local shim) reliably writes the bridge
+line; **DeepSeek — both `deepseek-chat` and `deepseek-reasoner`** — hard-cuts to a fresh scene and silently
+drops the charge. All 9 successful bridges in book 1250 were Claude; every DeepSeek regen re-scanned as
+still-dropped (sev-2) and had to be redone on Claude. Why it matters: the active prod tier is **deepseek**
+(cheap, timeout-safe), so the shipped seam contract underdelivers on the model that actually serves books.
+Options (not yet ratified): (a) harden the SEAM instruction into a HARD first-line constraint positioned to
+survive DeepSeek's weaker instruction-following; (b) route prose (or just cut-seam scenes) to Claude; (c)
+accept and lean on the deferred #3 seam lint to catch+regenerate drops. Design record `doc_1784059899060.md`.
 
 ### 2026-07-13 — Ratified Vision→Structure: the vision grounds the engine and gets audited back
 Sequel to the guidance-system decision below; plan in `docs/vision-to-structure.md`. The interview

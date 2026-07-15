@@ -31,6 +31,7 @@
     "functions:serve": "supabase functions serve",
     "functions:logs": "supabase functions logs",
     "functions:list": "supabase functions list",
-    "functions:check": "bash scripts/check-edge-functions.sh"
+    "functions:check": "bash scripts/check-edge-functions.sh",
+    "bridge:restart": "bash scripts/restart-local-bridge.sh"
   }
 }
