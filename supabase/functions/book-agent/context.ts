@@ -95,8 +95,8 @@ function digestNode(kind: string, content: Record<string, unknown> | null | unde
 // (system + entire transcript) on every turn. Each node is a DIGEST — handle/gist + causal spine, full
 // content via read_node (see digestNode).
 async function threadSystem(service: SupabaseClient, bookId: number, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null, authorAsk = "", followObjective = false): Promise<{ instructions: string; bookState: string; groundingLabels: string[] }> {
-  const { data: book } = await service.from("books").select("name, brief").eq("id", bookId).maybeSingle();
-  const b = book as { name?: string; brief?: Brief } | null;
+  const { data: book } = await service.from("books").select("name, brief, craft_notes").eq("id", bookId).maybeSingle();
+  const b = book as { name?: string; brief?: Brief; craft_notes?: Record<string, string> | null } | null;
   const { data: rows } = await service
     .from("book_nodes").select("id, parent_id, kind, level, position, content, authoring, proposals").eq("book_id", bookId);
   const nodes = (rows ?? []) as DnaNodeRow[];
@@ -291,6 +291,11 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
   // draftable scene with something to carry; an anchor, not a fence.
   const draftTarget = hasStructure ? nextDraftTarget(liveNodes) : undefined;
   const betweenScenes = draftTarget ? ledgerText(liveNodes, draftTarget.scene.id) : "";
+  // Distilled web research the author gathered for this book (books.craft_notes, a { topic: note } map).
+  // Rendered topic-by-topic; empty by default. Written by dna-research / research_web.
+  const craftNotesText = Object.entries(b?.craft_notes ?? {})
+    .filter(([, v]) => typeof v === "string" && v.trim())
+    .map(([topic, v]) => `[${topic}]\n${(v as string).trim()}`).join("\n\n");
 
   // Each distinct kind of context gets its own XML tag so the model can unambiguously tell where one
   // section ends and the next begins (Anthropic's prompt-engineering guidance: XML tags reduce
@@ -300,6 +305,10 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
     // The brief, WITH the interview's vision document (the one v1 call site that opts in — every other
     // briefContext caller keeps byte-identical prompts).
     `<brief note="binding voice contract">\n${briefContext(b?.brief ?? null, { scope: "full", success: true, none: "(no brief)", empty: "(empty)", vision: true })}\n</brief>`,
+    // Craft notes (books.craft_notes): distilled web research the author (or research_web / dna-research)
+    // gathered for THIS book — genre conventions, comps, reference facts. An ANCHOR, not a fence: fold what's
+    // relevant into your plans and render briefs; ignore what the current task doesn't touch. Empty by default.
+    craftNotesText ? `<craft_notes note="researched craft/genre reference for this book — honor what's relevant when you plan or render; not a fence">\n${craftNotesText}\n</craft_notes>` : "",
     // The guided-flow anchor (docs/agent-capabilities.md): the ONE journey rung to drive the author
     // through next, derived live from the tree (dna-journey.currentObjective). Present ONLY when this turn
     // has no concrete ask of its own (or auto/Next drives it) — see injectObjective above.

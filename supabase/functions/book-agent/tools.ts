@@ -54,6 +54,19 @@ const SHARED_TOOLS = [
     },
   },
   {
+    name: "research_web",
+    description: "Search the WEB and get back a short, distilled craft/genre brief for a story problem — use it when the author asks about (or the book needs) real-world reference you don't have: genre conventions readers expect ('how do vampire stories usually open?'), comps and tropes to honor or subvert, period/setting/technical facts, what strong examples of a thing actually do. It runs a live web search and returns 3-6 concrete, usable constraints with cited sources (NOT generic 'writing tips' — reference material a generator can honor), and SAVES them to the book's craft notes so later turns and prose generation see them too. It's a read: batch it with your other reads; it does NOT end your turn. Ask a specific question, not a keyword. Optionally pass a `topic` to name/overwrite the saved note; give `context` if the search needs to know the book's genre/setting to be useful. Don't use it for anything already in the tree (use search_nodes) or for pure craft you already know.",
+    input_schema: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "A specific research question, e.g. 'What conventions do readers expect from the opening hook of a literary vampire novel?' — not a bare keyword." },
+        topic: { type: "string", description: "OPTIONAL: a short slug to name/overwrite the saved craft note (e.g. 'vampire-hook'). Defaults to a slug of the question." },
+        context: { type: "string", description: "OPTIONAL: one or two lines on the book (genre, setting, tone) so the search returns material that actually fits." },
+      },
+      required: ["question"],
+    },
+  },
+  {
     name: "read_skill",
     description: `Load one of the specialized playbooks listed in the system prompt's Skills index (${AGENT_SKILLS.map((s) => s.name).join(", ")}) — the full technique for that job. Call it when your turn involves that job and its body is NOT already injected in the latest message's <skill_briefs>. It's a read: batch it in the SAME turn as your read_node/search_nodes calls.`,
     input_schema: {

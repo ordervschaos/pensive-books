@@ -1,5 +1,6 @@
 // book-agent tool execution: run a turn's non-terminal tool calls (read_node / search_nodes /
-// get_schema / read_skill / check_against_contract / update_vision) and return their tool_result blocks.
+// get_schema / read_skill / check_against_contract / update_vision / audit_vision / research_web) and
+// return their tool_result blocks.
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { type Brief, type BriefVision, VISION_SECTIONS } from "../_shared/brief.ts";
 import { getRoleModels } from "../_shared/model-config.ts";
@@ -7,6 +8,7 @@ import { AGENT_SKILLS } from "../_shared/agent-skills.ts";
 import { type SceneContent } from "../_shared/novel-dna.ts";
 import { judgeProse } from "../_shared/mandate-gate.ts";
 import { callLLM, textFromLLM } from "../_shared/llm.ts";
+import { renderResearch, researchCraft } from "../_shared/research.ts";
 import { VISION_RUBRIC } from "../_shared/vision-craft.ts";
 import { nodeHandle, schemaFor, SCHEMA_BY_KIND, type AgentStep } from "./shared.ts";
 import { planConformanceSummary } from "./verify.ts";
@@ -266,6 +268,36 @@ async function execTool(
       };
     } catch (e) {
       return { result: { type: "tool_result", tool_use_id: t.id, content: `Vision audit failed: ${String((e as Error)?.message ?? e)}`, is_error: true } };
+    }
+  }
+  // The inline research leg (option A): a live web_search-backed Claude call that returns a distilled
+  // craft/genre brief AND persists it to books.craft_notes, so the same research the agent gathers mid-turn
+  // becomes durable context for later turns and prose generation. Read-class like audit_vision — the model
+  // reads the brief back and folds it into its next propose_* call. researchCraft pins to an Anthropic model
+  // (web_search is an Anthropic server tool) even while the active tier is DeepSeek.
+  if (t.name === "research_web") {
+    const question = String((t.input as { question?: string })?.question ?? "").trim();
+    if (!question) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: "Provide a specific research question (not a bare keyword).", is_error: true } };
+    }
+    const topicIn = String((t.input as { topic?: string })?.topic ?? "").trim();
+    const context = String((t.input as { context?: string })?.context ?? "").trim().slice(0, 4000);
+    const key = ((topicIn || question).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60)) || "note";
+    const meta = { fn: "book-agent-research", bookId, operation: "research", taskTable: "book_agent_runs", taskId: null, userId: null };
+    try {
+      const result = await researchCraft({ question: question.slice(0, 500), context: context || undefined }, meta, { signal: AbortSignal.timeout(120_000) });
+      const note = renderResearch(result);
+      // Best-effort persist: read current notes, merge this key, write back. A failed write still returns the
+      // brief to the model — the research isn't lost, it just isn't saved for later.
+      const { data: book } = await service.from("books").select("craft_notes").eq("id", bookId).maybeSingle();
+      const notes = { ...(((book as { craft_notes?: Record<string, string> } | null)?.craft_notes) ?? {}), [key]: note };
+      await service.from("books").update({ craft_notes: notes }).eq("id", bookId);
+      return {
+        step: { t: "read", label: `Researched the web: “${question.slice(0, 70)}”${result.sources.length ? ` (${result.sources.length} sources)` : ""}.` },
+        result: { type: "tool_result", tool_use_id: t.id, content: `${note}\n\n(saved to craft notes as “${key}” — later turns and prose generation will see it)` },
+      };
+    } catch (e) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: `Web research failed: ${String((e as Error)?.message ?? e)}`, is_error: true } };
     }
   }
   return { result: { type: "tool_result", tool_use_id: t.id, content: `Unknown tool ${t.name}.`, is_error: true } };
