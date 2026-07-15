@@ -176,7 +176,10 @@ export type SketchMode = "dialogue" | "action" | "interior" | "description" | "s
 export type SketchTime = "real" | "compressed" | "stretched";
 export type SketchTension = "suspense" | "mystery" | "irony";
 export interface SketchDirection { cut?: { in?: string; out?: string }; distance?: SketchDistance; mode?: SketchMode; time?: SketchTime; tension?: SketchTension }
-export interface SceneSketch { opening?: string; moves?: SketchMove[]; exit?: string; direction?: SketchDirection }
+// How THIS scene joins the one before it (the seam contract, doc_1784059899060.md): continue the moment,
+// deliberately cut away (bridging the open charge), or re-enter the same moment from a new POV.
+export type SceneLink = "continuous" | "cut" | "same_moment_new_pov";
+export interface SceneSketch { opening?: string; moves?: SketchMove[]; exit?: string; direction?: SketchDirection; link?: SceneLink }
 export interface SceneContent {
   pov?: string; loc?: string; time?: { when?: string; elapsed?: string };
   present?: string[]; goal?: string; conflict?: string; outcome?: string;

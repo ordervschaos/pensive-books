@@ -20,7 +20,7 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient as createUserClient } from "../_shared/task.ts";
 import { isChainCall } from "../_shared/self-chain.ts";
 import { ROW_COLS, type AgentStep, type RunRow } from "./shared.ts";
-import { advance, chain } from "./advance.ts";
+import { chain, driveChain } from "./advance.ts";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -33,11 +33,16 @@ Deno.serve(async (req: Request) => {
       message?: string; analysis?: string; effort?: "low" | "high"; auto?: boolean; objective?: string; attachedIds?: string[]; isNextStep?: boolean;
     };
 
-    // ── Continue call (self/watchdog): advance one model turn ──
+    // ── Continue call (self/watchdog): drive the run's turns in THIS worker until the wall-clock budget
+    // runs low, then hand off to a fresh worker. We answer the moment dispatch is accepted (the reinvoke
+    // promise resolves here) and keep driving in the background via waitUntil — so the PREVIOUS worker's
+    // fire-and-forget reinvoke doesn't linger blocked on our whole turn, it frees immediately. ──
     if (body.chain) {
       if (!isChainCall(req)) return json({ error: "Unauthorized" }, 401);
       if (!body.runId) return json({ error: "runId required" }, 400);
-      await advance(service, body.runId);
+      const work = driveChain(service, body.runId);
+      if (typeof EdgeRuntime !== "undefined") { EdgeRuntime.waitUntil(work); return json({ ok: true }); }
+      await work; // local/tests: no EdgeRuntime — run inline so behavior is unchanged off-platform
       return json({ ok: true });
     }
 

@@ -1,6 +1,8 @@
 // book-agent chain-link engine: advance() drives ONE turn of the durable loop — load the run, make one
-// Claude call (bounded to the worker clock), execute/dispatch its tool calls, then persist and chain or
-// park. chain() is the self-invoke that steps the loop; ackWith/rejectAndChain are its dispatch helpers.
+// Claude call (bounded to the worker clock), execute/dispatch its tool calls, persist, and RETURN whether
+// the loop should step. driveChain() is the driver: it runs turns back-to-back IN THIS worker while the
+// wall-clock budget allows, then chain()s a fresh worker at the boundary — so back-to-back turns don't
+// each pay a reinvoke + cold boot. chain() is the cross-worker self-invoke; ackWith/persistRejection help.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { callLLM } from "../_shared/llm.ts";
@@ -23,12 +25,52 @@ const AUTO_MAX_TURNS = 100;     // autonomous threads iterate change-by-change, 
 // real defense is keeping turns short (effort: medium below), not this timer.
 const CALL_TIMEOUT_MS = 140_000;
 
+// ── In-worker continuation (driveChain) ──────────────────────────────────────
+// A turn that finishes well under the worker's ~150s wall clock leaves budget on the table. Rather than
+// pay a fresh HTTP reinvoke + cold isolate boot for EVERY logical turn, driveChain runs the NEXT turn in
+// the SAME worker while budget remains, and only hands off to a fresh worker at the wall-clock boundary.
+// This keeps the durability guarantee (each individual Claude call still fits the wall clock, and a dead
+// worker is still watchdog-recovered) while removing the reinvoke overhead between back-to-back turns.
+const WORKER_WALL_BUDGET_MS = 145_000; // stay below the ~150s cap, leaving room for the final write + dispatch
+const WRITE_HEADROOM_MS = 5_000;       // reserve for a turn's own row writes after its Claude call returns
+// Only continue in-worker when a full turn comfortably fits the remaining budget — a continued turn that
+// gets aborted mid-call still BILLS, so we'd rather hand a fresh worker its own full clock than squeeze a
+// risky short turn here. 90s is ample for a medium-effort turn; below it we reinvoke.
+const MIN_CONTINUE_MS = 90_000;
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Self-chain: re-invoke ourselves to drive the run's next turn (the durable loop's step edge). No-op
-// outside the edge runtime (local/tests), where EdgeRuntime is undefined.
+// One turn's outcome, as seen by the driver: keep looping in-worker, hand off after a transient failure,
+// or the run is done (parked / idle / terminal / fatal). advance() no longer fires chain() itself — the
+// driver owns the step edge, so it can choose in-worker continuation over a reinvoke.
+type Outcome = "continue" | "retry" | "stop";
+
+// Self-chain: re-invoke ourselves to drive the run's next turn in a FRESH worker (the durable loop's
+// cross-worker step edge — used to KICK a chain from the client request, and by driveChain at the wall-clock
+// boundary). No-op outside the edge runtime (local/tests), where EdgeRuntime is undefined.
 function chain(runId: number) {
   if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(reinvoke("book-agent", { runId }));
+}
+
+// The durable loop's IN-WORKER driver: run turns back-to-back in this worker until the wall-clock budget
+// can't safely fit another, then hand the rest to a fresh worker via chain(). Called by the chain handler
+// (index.ts) for every self/watchdog "continue" invocation. The first iteration always runs (a fresh
+// worker has the full budget); each continued turn gets whatever budget is left as its Claude timeout, so
+// it self-limits and can't overrun the wall clock.
+async function driveChain(service: SupabaseClient, runId: number) {
+  const started = Date.now();
+  while (true) {
+    const remaining = WORKER_WALL_BUDGET_MS - (Date.now() - started);
+    const callTimeout = Math.min(CALL_TIMEOUT_MS, remaining - WRITE_HEADROOM_MS);
+    // Not enough clock left for a safe turn here — let a fresh worker take it with its own full budget.
+    if (callTimeout < MIN_CONTINUE_MS) { chain(runId); return; }
+    const outcome = await advance(service, runId, callTimeout);
+    if (outcome === "stop") return;
+    // Transient failure: a fresh worker is the clean place to retry (this one may be near death), so back
+    // off briefly and hand off rather than looping in a possibly-degraded isolate.
+    if (outcome === "retry") { await sleep(2000); chain(runId); return; }
+    // "continue": loop — the budget is re-checked at the top, so we keep going only while it's safe.
+  }
 }
 
 // tool_result blocks for a turn's tool_uses: `message` for the terminal call, "ok" for its siblings —
@@ -39,8 +81,9 @@ const ackWith = (toolUses: any[], callId: string, message: string) =>
   toolUses.map((t) => ({ type: "tool_result", tool_use_id: t.id, content: t.id === callId ? message : "ok" }));
 
 // A propose_* tool's input was rejected: hand the model the reason as the failing call's tool_result
-// (its sibling reads still execute), persist, and chain so it can correct and retry next turn.
-async function rejectAndChain(
+// (its sibling reads still execute) and persist, so the next turn can correct and retry. The caller
+// returns "continue" — the driver steps the loop (in-worker or via a fresh worker).
+async function persistRejection(
   service: SupabaseClient, runId: number, bookId: number,
   // deno-lint-ignore no-explicit-any
   toolUses: any[], steps: AgentStep[], transcript: unknown[],
@@ -49,18 +92,20 @@ async function rejectAndChain(
   const results = await toolResults(service, bookId, toolUses, steps, { [callId]: message }, auto);
   transcript.push({ role: "user", content: results });
   await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-  chain(runId);
 }
 
-// ── One chain link: one Claude call, execute its tool calls, persist, chain or park ──
-async function advance(service: SupabaseClient, runId: number) {
+// ── One chain link: one Claude call, execute its tool calls, persist, and REPORT whether to step ──
+// Returns an Outcome the driver (driveChain) acts on — it no longer fires the next step itself, so the
+// driver can continue in-worker or hand off to a fresh worker. `callTimeoutMs` bounds this turn's Claude
+// call to whatever wall-clock budget the driver has left (defaults to a fresh worker's full clock).
+async function advance(service: SupabaseClient, runId: number, callTimeoutMs = CALL_TIMEOUT_MS): Promise<Outcome> {
   const { data } = await service.from("book_agent_runs").select(ROW_COLS).eq("id", runId).maybeSingle();
   const row = data as RunRow | null;
-  if (!row || row.status !== "running") return; // not ours to drive (parked, finished, or gone)
+  if (!row || row.status !== "running") return "stop"; // not ours to drive (parked, finished, or gone)
 
   if (row.cancel_requested) {
     await service.from("book_agent_runs").update({ status: "cancelled" }).eq("id", runId);
-    return;
+    return "stop";
   }
   // Autonomous threads iterate one change per turn (plus a read or two), so they need a higher ceiling than
   // a guided conversation — but still bounded so a runaway can't loop forever.
@@ -70,7 +115,7 @@ async function advance(service: SupabaseClient, runId: number) {
     await service.from("book_agent_runs")
       .update({ status: "error", error: `The agent ran past ${maxTurns} turns without finishing — stopped as a safety measure.` })
       .eq("id", runId);
-    return;
+    return "stop";
   }
 
   try {
@@ -138,7 +183,7 @@ async function advance(service: SupabaseClient, runId: number) {
       const { data: cr } = await service.from("book_agent_runs").select("cancel_requested").eq("id", runId).maybeSingle();
       if ((cr as { cancel_requested?: boolean } | null)?.cancel_requested) cancelCtrl.abort("cancel_requested");
     }, 1000);
-    const callSignal = AbortSignal.any([AbortSignal.timeout(CALL_TIMEOUT_MS), cancelCtrl.signal]);
+    const callSignal = AbortSignal.any([AbortSignal.timeout(callTimeoutMs), cancelCtrl.signal]);
 
     let resp;
     try {
@@ -173,20 +218,19 @@ async function advance(service: SupabaseClient, runId: number) {
       // User cancelled mid-call: mark the row and exit cleanly.
       if (cancelCtrl.signal.aborted && cancelCtrl.signal.reason === "cancel_requested") {
         await service.from("book_agent_runs").update({ status: "cancelled" }).eq("id", runId);
-        return;
+        return "stop";
       }
       if (isBillingError(e)) throw e; // won't recover — fail the run
       // 4xx = bad request / model not found — not transient, fail immediately.
       const errMsg = (e instanceof Error ? e.message : String(e));
       if (/API 4\d\d:/.test(errMsg)) {
         await service.from("book_agent_runs").update({ status: "error", error: errMsg.slice(0, 500) }).eq("id", runId);
-        return;
+        return "stop";
       }
-      // Transient API failure/timeout: chain again (turn budget already spent bounds retries).
+      // Transient API failure/timeout: retry (turn budget already spent bounds retries). The driver
+      // backs off and hands to a fresh worker — this one may have aborted BECAUSE its clock ran out.
       console.error(`book-agent run ${runId} call failed (turn ${turns}), retrying:`, e);
-      await sleep(2000);
-      chain(runId);
-      return;
+      return "retry";
     }
     clearInterval(cancelPoll);
 
@@ -229,15 +273,15 @@ async function advance(service: SupabaseClient, runId: number) {
           // tells it the change landed so it either continues or finishes (a real conclusion, not a dead stop).
           transcript.push({ role: "user", content: ackWith(toolUses, opsCall.id, "✓ Applied to the tree (autonomous mode — no review step). Your next turn will show the updated tree. If the request needs more, propose the next change — batching every remaining INDEPENDENT edit into one propose_node_ops call — or call finish with a one-line summary to conclude.") });
           await service.from("book_agent_runs").update({ status: "idle", transcript, steps, proposals }).eq("id", runId);
-          return;
+          return "stop";
         }
         transcript.push({ role: "user", content: ackResults(toolUses.map((t) => t.id)) });
         await service.from("book_agent_runs")
           .update({ status: "idle", transcript, steps, proposals }).eq("id", runId);
-        return; // the agent's narration is the reply; the proposal waits for the author
+        return "stop"; // the agent's narration is the reply; the proposal waits for the author
       }
-      await rejectAndChain(service, runId, row.book_id, toolUses, steps, transcript, opsCall.id, `The change was rejected: ${outcome.error} Fix it and call propose_node_ops again, or just reply.`, auto);
-      return;
+      await persistRejection(service, runId, row.book_id, toolUses, steps, transcript, opsCall.id, `The change was rejected: ${outcome.error} Fix it and call propose_node_ops again, or just reply.`, auto);
+      return "continue";
     }
 
     // ── propose_prose_render (thread): stage a "render prose" request and end the turn ──
@@ -254,10 +298,10 @@ async function advance(service: SupabaseClient, runId: number) {
           ? ackWith(toolUses, renderCall.id, `✓ Render STAGED (autonomous mode). The author's browser will apply it — (re)generating the scene prose — and the result shows on your NEXT turn (do not assume it's already written this turn). Continue if more is needed, or call finish.`)
           : ackResults(toolUses.map((t) => t.id)) });
         await service.from("book_agent_runs").update({ status: "idle", transcript, steps, proposals }).eq("id", runId);
-        return; // the proposal waits for the author to apply (the prose render runs client-side)
+        return "stop"; // the proposal waits for the author to apply (the prose render runs client-side)
       }
-      await rejectAndChain(service, runId, row.book_id, toolUses, steps, transcript, renderCall.id, `The render request was rejected: ${outcome.error} Fix it and call propose_prose_render again, or just reply.`, auto);
-      return;
+      await persistRejection(service, runId, row.book_id, toolUses, steps, transcript, renderCall.id, `The render request was rejected: ${outcome.error} Fix it and call propose_prose_render again, or just reply.`, auto);
+      return "continue";
     }
 
     // ── propose_expansion: delegate a heavy structural pass (beat sheet / scenes) to the dna-expand engine ──
@@ -274,10 +318,10 @@ async function advance(service: SupabaseClient, runId: number) {
           ? ackWith(toolUses, expandCall.id, `✓ Expansion STAGED (autonomous mode). The author's browser will run the engine and apply the result; the new nodes show on your NEXT turn (do not assume they exist yet this turn). Continue, or call finish.`)
           : ackResults(toolUses.map((t) => t.id)) });
         await service.from("book_agent_runs").update({ status: "idle", transcript, steps, proposals }).eq("id", runId);
-        return; // the proposal waits for the author to apply (the engine runs client-side)
+        return "stop"; // the proposal waits for the author to apply (the engine runs client-side)
       }
-      await rejectAndChain(service, runId, row.book_id, toolUses, steps, transcript, expandCall.id, `The expansion request was rejected: ${outcome.error} Fix it and call propose_expansion again, or just reply.`, auto);
-      return;
+      await persistRejection(service, runId, row.book_id, toolUses, steps, transcript, expandCall.id, `The expansion request was rejected: ${outcome.error} Fix it and call propose_expansion again, or just reply.`, auto);
+      return "continue";
     }
 
     // ── propose_options (thread): stage 2–4 alternatives ON the node and end the turn ──
@@ -290,10 +334,10 @@ async function advance(service: SupabaseClient, runId: number) {
         steps.push({ t: "plan", label: `Staged ${outcome.count} options for "${outcome.handle}" — pick one in the tree.` });
         transcript.push({ role: "user", content: ackResults(toolUses.map((t) => t.id)) });
         await service.from("book_agent_runs").update({ status: "idle", transcript, steps }).eq("id", runId);
-        return;
+        return "stop";
       }
-      await rejectAndChain(service, runId, row.book_id, toolUses, steps, transcript, optionsCall.id, `The options were rejected: ${outcome.error} Fix and call propose_options again, or just reply.`, auto);
-      return;
+      await persistRejection(service, runId, row.book_id, toolUses, steps, transcript, optionsCall.id, `The options were rejected: ${outcome.error} Fix and call propose_options again, or just reply.`, auto);
+      return "continue";
     }
 
     const finishCall = toolUses.find((t) => t.name === "finish");
@@ -304,7 +348,7 @@ async function advance(service: SupabaseClient, runId: number) {
       transcript.push({ role: "user", content: ackResults(toolUses.map((t) => t.id)) });
       await service.from("book_agent_runs")
         .update({ status: "idle", transcript, steps, report }).eq("id", runId);
-      return;
+      return "stop";
     }
 
     // ── ask_author: in auto mode the author is away, so don't park — journal the fork as a 'decision'
@@ -324,8 +368,7 @@ async function advance(service: SupabaseClient, runId: number) {
       }, auto);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      chain(runId);
-      return;
+      return "continue";
     }
     // ── ask_author parks the run; sibling read results ride along in `pending` ──
     if (askCall) {
@@ -342,7 +385,7 @@ async function advance(service: SupabaseClient, runId: number) {
       await service.from("book_agent_runs")
         .update({ status: "awaiting_input", transcript, steps, pending })
         .eq("id", runId);
-      return; // no chain — resumes when the author answers
+      return "stop"; // parked — resumes when the author answers (a fresh authenticated chain kick)
     }
 
     // ── Plain reads: execute, append, chain ──
@@ -360,8 +403,7 @@ async function advance(service: SupabaseClient, runId: number) {
         });
       }
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-      chain(runId);
-      return;
+      return "continue";
     }
 
     // ── No tool call at all ──
@@ -382,17 +424,18 @@ async function advance(service: SupabaseClient, runId: number) {
           }],
         });
         await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
-        chain(runId);
-        return;
+        return "continue";
       }
     }
     await service.from("book_agent_runs").update({ status: "idle", transcript, steps }).eq("id", runId);
+    return "stop";
   } catch (e) {
     const billing = isBillingError(e);
     await captureException(e, { function: "book-agent", book_id: String(row.book_id), billing: String(billing) });
     const msg = billing ? "AI credits exhausted — the team has been notified." : String((e as Error)?.message ?? e).slice(0, 1000);
     await service.from("book_agent_runs").update({ status: "error", error: msg }).eq("id", runId);
+    return "stop";
   }
 }
 
-export { advance, chain };
+export { advance, chain, driveChain };

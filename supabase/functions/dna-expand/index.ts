@@ -113,6 +113,34 @@ function priorDialogue(priorText: string, limit = 30): string[] {
 }
 const proseText = (s: Node) => String((s.content as { prose?: { text?: string } }).prose?.text ?? "");
 
+// ── Scene seam (doc_1784059899060.md) — the continuity handshake to the immediately preceding scene. ──
+// Kept DISTINCT from the digest's voice block on purpose: the old fused "previous page, voice-only, open in
+// a different place/time/register" tag conflated "don't reuse the WORDS" with "don't continue the STORY",
+// which produced dropped threads (a charged exit never paid off) and duplicated moments (two scenes
+// re-telling one). This channel carries continuity; the digest's blocklist keeps carrying anti-echo.
+// The `n` last non-empty paragraphs of a prose text — the scene's actual ending, i.e. where the story stands.
+function lastParas(text: string, n: number): string {
+  const paras = (text || "").split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  return paras.slice(-n).join("\n\n");
+}
+// The exit handshake for a scene: its ACTUAL prose ending if drafted (what the reader just read), else its
+// PLANNED sketch.exit (at sketch time the next scene's predecessor may not be prosed yet).
+function sceneExitText(s: Node): string {
+  const prose = proseText(s).trim();
+  if (prose) return lastParas(prose, 2);
+  return String((s.content as { sketch?: { exit?: string } }).sketch?.exit ?? "").trim();
+}
+// The instruction that tells the writer how THIS scene must join the moment above, keyed off the sketch's
+// declared `link`. Absent link (no sketch yet / light path) → the safe default: never silently drop it.
+function seamInstruction(link?: string): string {
+  switch (link) {
+    case "continuous": return "SEAM = CONTINUOUS: open in the same time and place, the very next moment after the exit above — no time-skip, no re-establishing shot; pick up the thread exactly where it was left.";
+    case "cut": return "SEAM = CUT: you are moving to a new time and/or place. Land ONE line that acknowledges or pays off whatever the exit above left charged and open (a held breath, a closed door, an unspoken thing) before settling into the new scene — never leave it silently dropped.";
+    case "same_moment_new_pov": return "SEAM = SAME MOMENT, NEW POV: re-enter the exact moment above from THIS scene's POV character. Do NOT re-stage or re-describe the action already shown on the page — begin inside their head and push the moment FORWARD (what it costs them, what they do next).";
+    default: return "SEAM: carry the through-line. If the exit above left something charged and unresolved, continue it or explicitly acknowledge it; if you deliberately cut to a new time/place, bridge that open moment in a line first. Never silently drop it.";
+  }
+}
+
 // Non-crypto FNV-1a (32-bit) — deterministic, synchronous; used only to chain/invalidate cached digests.
 function fnv1a(s: string): string {
   let h = 0x811c9dc5;
@@ -277,7 +305,7 @@ async function buildProseDigest(model: string, allNodes: Node[], currentId: stri
     impressions && `<reader_impressions note="what has LANDED for the reader so far, strongest first (memory weight 1-5) — stay loyal to these; pay them off, deepen them, don't contradict what already resonates">\n${impressions}\n</reader_impressions>`,
     blocklist.length && `<avoid_repeating>\n${blocklist.map((p) => `- ${p}`).join("\n")}\n</avoid_repeating>`,
     dialogue.length && `<avoid_repeating_dialogue note="these exact lines have already been spoken — do NOT reuse them verbatim or near-verbatim in this scene">\n${dialogue.map((d) => `- ${d}`).join("\n")}\n</avoid_repeating_dialogue>`,
-    `<previous_page note="for voice + cadence ONLY — do NOT copy or echo its opening image, its closing image, its character gestures, or any of its phrases; this new scene must open in a DIFFERENT place, time, or emotional register than where this page opens or closes">\n${proseText(last)}\n</previous_page>`,
+    `<previous_page note="VOICE + CADENCE reference — match the established narrative voice, rhythm, and diction. Do NOT reuse its exact phrasings, sentence shapes, or gestures (see avoid_repeating). This is NOT a cue to jump away from the story: how this scene joins the previous one is governed by the SEAM instruction above, not by this block.">\n${proseText(last)}\n</previous_page>`,
   ].filter(Boolean).join("\n\n");
 }
 
@@ -570,6 +598,23 @@ Deno.serve(async (req: Request) => {
     // beat actually reference — the plan declares its own anchors ("anchors, not fences"). Floor: the leads
     // are always in, as insurance against the single-shot call's inability to re-fetch what the plan under-named.
     const renderTarget = target === "prose" || target === "sketch" || (!target && node.kind === "scene");
+    // The seam handshake to the immediately preceding scene (doc_1784059899060.md). Carries WHERE the story
+    // stands + how this scene must join it (from the sketch's `link`). Cheap (no model call), so it rides
+    // even the `light` path — continuity is the whole point of the ask. Empty for scene 1 / non-render.
+    const seamBlock = (() => {
+      if (!renderTarget) return "";
+      const orderedScenes = scenesInOrder(nodes);
+      const myIdx = orderedScenes.findIndex((s) => s.id === nodeId);
+      const prevScene = myIdx > 0 ? orderedScenes[myIdx - 1] : undefined;
+      const prevExit = prevScene ? sceneExitText(prevScene) : "";
+      if (!prevExit) return "";
+      const link = (node.content as { sketch?: { link?: string } }).sketch?.link;
+      return [
+        "SEAM WITH THE PREVIOUS SCENE — where the story stands right now. The scene just before this one ended on the moment below. This scene must move the story FORWARD from here; never silently drop it or re-tell it.",
+        `<previous_scene_exit>\n${prevExit}\n</previous_scene_exit>`,
+        seamInstruction(link),
+      ].join("\n\n");
+    })();
     const proseScope = (() => {
       if (!renderTarget) return "";
       const parentBeatNode = node.parent_id ? byId.get(node.parent_id) : undefined;
@@ -640,6 +685,7 @@ Deno.serve(async (req: Request) => {
       registerBlock, // this scene's voice modulation (anti-monotony) — bends the signature for this scene only
       sketchBlock, // the accepted treatment (moves + direction) for THIS page (empty for non-render / no-sketch calls)
       briefBlock, // the agent's curated, verbatim guidance for THIS page (empty for non-render / no-brief calls)
+      seamBlock, // the continuity handshake to the previous scene (WHERE the story stands + how to join it)
       prevProseBlock,
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");
@@ -716,12 +762,16 @@ Two parts:
 ${SCENE_DIRECTION_CRAFT}
 
 Rules:
-- "opening" must differ from how the PREVIOUS page ended (different place/time/register — see PREVIOUS PAGE/STORY SO FAR above if present). Never resume literally where the last page left off.
+- SEAM (continuity — the load-bearing rule): decide how this scene joins the one before it and set "link" accordingly, honoring <previous_scene_exit> above:
+  · "continuous" — same time and place, the very next moment: "opening" picks up immediately from that exit, no time-skip.
+  · "cut" — a new time/place: "opening" jumps, BUT its FIRST move must acknowledge or pay off whatever that exit left charged and open (a closed door, a held breath, an unspoken thing) — never silently drop it.
+  · "same_moment_new_pov" — this scene re-enters the SAME moment from a different POV: moves must NOT re-stage the action already shown; go interior and push it forward.
+  A charged, unresolved previous exit with a scene that neither continues nor bridges it is a continuity break — do not produce one. (First scene / no previous exit: choose "continuous" and ignore this rule.)
 - If this scene PAYS OFF a thread, REALIZES a tentpole, or LANDS its beat's value turn (see ENTRY STATE / THIS NODE above for its threads/realizes_tentpole/value_shift), that moment must NOT be "summary" mode or "far" distance — a promise that's merely reported, not dramatized, is a promise the reader won't feel delivered.
 - Vary mode/distance/tension from the immediately PRIOR sketched scene if you can see it (BEAT PLAN / entry state above) — adjacent scenes should not read the same way twice in a row.
 - Never write actual dialogue lines or prose sentences — moves describe WHAT turns, not WHAT'S SAID.
 
-Output JSON ONLY: {"opening":"...","moves":[{"what":"...","thread":"<thread id, optional>","sense":"<e.g. smell:tar, optional>"}],"exit":"...","direction":{"cut":{"in":"...","out":"..."},"distance":"far|mid|close|deep","mode":"dialogue|action|interior|description|summary","time":"real|compressed|stretched","tension":"suspense|mystery|irony"}}`;
+Output JSON ONLY: {"link":"continuous|cut|same_moment_new_pov","opening":"...","moves":[{"what":"...","thread":"<thread id, optional>","sense":"<e.g. smell:tar, optional>"}],"exit":"...","direction":{"cut":{"in":"...","out":"..."},"distance":"far|mid|close|deep","mode":"dialogue|action|interior|description|summary","time":"real|compressed|stretched","tension":"suspense|mystery|irony"}}`;
       const data = await callLLM({ model, max_tokens: 1200, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}\n\nWrite this scene's sketch. JSON only.` }] }, meta, { signal: req.signal });
       try {
@@ -735,6 +785,8 @@ Output JSON ONLY: {"opening":"...","moves":[{"what":"...","thread":"<thread id, 
     if (target === "prose" || (!target && node.kind === "scene")) {
       // Scene → prose: fill the scene's own text. One true draft, in voice.
       const system = `You are a novelist writing the PROSE for one scene, from its plan. Write the scene fully — vivid, causal, in the book's voice — honoring the MANDATE (heat/tone/length) without laundering. Output the prose ONLY: no preamble, no headings, no JSON.
+
+CONTINUITY — obey the SEAM instruction in the context: it tells you where the story stands (the previous scene's exit) and how this scene joins it. Move the story FORWARD from that point. Do NOT recap, re-narrate, or re-stage anything the previous scene already showed, and never leave a charged, open moment it ended on silently dropped.
 
 VOICE — write ONLY the fiction, from inside the story: NEVER address or mention "the reader"/"you", and NEVER refer to "the book", "the story", "the scene", "the page", the author, or the writing itself. The plan's notes describe INTENT in craft terms (e.g. "the reader is told it reads as fury", "the book plants the wrong label") — those are directions TO YOU, not lines to reproduce. Dramatize that intent through concrete action, sensation, and subtext; never narrate it or break the fourth wall.
 

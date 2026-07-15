@@ -16,6 +16,22 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-15 — Inline named scene prose in agent intent hydration `[ship]`
+- **What:** Agent felt slow because a "look at scene N" ask (continuity/wording) hydrated the named scene's PLAN but stripped prose, forcing an extra `read_node` turn — a whole self-chain link (row write + cold reinvoke + full prefill) — before it could answer. `context.ts` intent hydration now inlines named scenes' prose (bounded: ~1200w whole, longer keeps head+tail for the continuity seam), collapsing that ask class from two turns to one. Deno-checked, deployed.
+- **Files/commits:** `supabase/functions/book-agent/context.ts` (1511b86).
+- **PM impact:** none — a latency refinement inside the shipped agent rail; no project-row/roadmap change (adjacent to the Now #1 read-round-trip evidence gate but not that work).
+## 2026-07-15 — Cross-scene continuity: diagnosed the "seam contract" gap `[decision]`
+- **What:** Investigated reported continuity loss between scenes on book 1250. Traced two failure modes to
+  one root cause — the prose writer's only cross-scene signal (`buildProseDigest`, `dna-expand/index.ts:218`)
+  fuses *don't reuse the WORDS* with *don't continue the STORY* into one voice-only `<previous_page>` tag.
+  That conflation produces both **dropped cliffhangers** (scene 10→11: charged door-close never paid off)
+  and **re-narrated overlaps** (scene 27→28: same hand-clasp rendered twice). No node computes/enforces the
+  scene-seam invariant — continuity is a cross-node property but every constraint is intra-node.
+  Proposed a 3-layer "seam contract" fix (prose-prompt split · sketch `link` type threading exit→opening ·
+  deterministic seam lint). Not yet implemented — awaiting scope decision (#1 alone vs #1+#2).
+- **Files/commits:** `doc_1784059899060.md` (diagnosis + fix design). No code changed.
+- **PM impact:** DECISIONS.md (root-cause + proposed direction recorded); no ROADMAP re-rank (M1 build quality).
+
 ## 2026-07-14 — `KIND_STAGE` node→stage map added to `dnaJourney.ts` `[wip]`
 - **What:** A `KIND_STAGE: Record<NodeKind, StageKey>` map landed in `dnaJourney.ts` (12 lines) — one lookup from a node kind to the stage/surface that edits it, so reports (issues/obligations/lints) can turn a node id into a jump-link. This change appeared mid-session from outside this conversation (likely a concurrent session also working the DNA feature) — cataloguing it as observed, not authored here.
 - **Files/commits:** `apps/web/src/features/dna/lib/dnaJourney.ts` (uncommitted).

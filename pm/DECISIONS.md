@@ -6,6 +6,24 @@
 
 ## Log
 
+### 2026-07-15 — Cross-scene continuity is a missing "seam contract," not a prompt-tuning problem
+Reported continuity loss between scenes (book 1250) traced to one root cause, not many. The prose
+writer's only cross-scene signal (`buildProseDigest`, `dna-expand/index.ts:218`) fuses two unrelated
+constraints into a single voice-only `<previous_page>` tag: *don't reuse the WORDS* and *don't
+continue the STORY* ("open in a DIFFERENT place, time, or register"). That conflation is the direct
+cause of both observed failure modes — **dropped cliffhangers** (scene 10 exits on a charged wordless
+door-close; scene 11 never pays it off) and **re-narrated overlaps** (scenes 27/28 render the same
+hand-clasp twice from two POVs). Underneath: continuity is a *cross-node* invariant but every
+constraint in the pipeline is *intra-node* — no node computes "where does the story stand at scene N's
+exit, and does N+1 continue / bridge / hard-cut from it?" Diagnosis + fix design in
+`doc_1784059899060.md`. Proposed direction (not yet ratified for build): (1) split anti-echo from
+continuity in the prose prompt — keep the word-level blocklist, add a separate `<previous_scene_exit>`
+"move PAST this, don't re-narrate it"; (2) thread scene N's `exit` into N+1's sketch with a declared
+`link: continuous | cut | same_moment_new_pov`; (3) a deterministic seam lint (`dropped_cliffhanger`,
+`scene_overlap`) as verify-leg safety net. Explicitly a *separation* of the voice-only design, not a
+reversal — the anti-echo guardrail (verbatim prev page was the top echo source per the prose-context
+experiment) stays intact. Awaiting the author's scope call: #1 alone vs #1+#2.
+
 ### 2026-07-13 — Ratified Vision→Structure: the vision grounds the engine and gets audited back
 Sequel to the guidance-system decision below; plan in `docs/vision-to-structure.md`. The interview
 now captures `brief.vision` but the derivation engine (dna-expand) never sees it, and nothing checks

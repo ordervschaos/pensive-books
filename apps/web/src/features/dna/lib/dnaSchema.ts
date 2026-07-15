@@ -165,7 +165,7 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     // sketch = the TREATMENT: what/how this page renders, generated BEFORE prose (dna-expand target='sketch').
     // `moves` are WHAT happens (never dialogue lines); `direction` is HOW it's shown. genOnly like the other
     // structured plan fields (threads/readings) — the tree editor doesn't render a form for it.
-    { key: "sketch", label: "sketch", genOnly: true, note: "{opening, moves:[{what, thread?, sense?}], exit, direction:{cut:{in,out}, distance(far|mid|close|deep), mode(dialogue|action|interior|description|summary), time(real|compressed|stretched), tension(suspense|mystery|irony)}} — the scene treatment" },
+    { key: "sketch", label: "sketch", genOnly: true, note: "{link(continuous|cut|same_moment_new_pov — how this scene joins the previous one), opening, moves:[{what, thread?, sense?}], exit, direction:{cut:{in,out}, distance(far|mid|close|deep), mode(dialogue|action|interior|description|summary), time(real|compressed|stretched), tension(suspense|mystery|irony)}} — the scene treatment" },
     // observed_establishes / continuity_flags are OUTPUTS of the continuity read (factLedger), not authored plan
     // input — so they're not editor fields here. Phase-1 grounding (docs/scene-ledger.md §1.3): each fact may
     // carry an optional `entity` = the registry node id it's about (n_…), the join key to the plan side.
