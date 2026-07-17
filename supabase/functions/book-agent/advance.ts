@@ -331,7 +331,7 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
     if (optionsCall) {
       const outcome = await proposeOptions(service, row.book_id, optionsCall.input as { nodeId?: string; kind?: string; parentId?: string; note?: string; options?: unknown[] });
       if (outcome.ok) {
-        steps.push({ t: "plan", label: `Staged ${outcome.count} options for "${outcome.handle}" — pick one in the tree.` });
+        steps.push({ t: "plan", label: `${outcome.count} options ready for "${outcome.handle}" — tap to pick one in the tree.`, nodeId: outcome.nodeId });
         transcript.push({ role: "user", content: ackResults(toolUses.map((t) => t.id)) });
         await service.from("book_agent_runs").update({ status: "idle", transcript, steps }).eq("id", runId);
         return "stop";

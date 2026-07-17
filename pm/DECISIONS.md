@@ -6,6 +6,17 @@
 
 ## Log
 
+### 2026-07-15 — Product docs live as a public in-product `/docs` route; markdown (not MDX) for the MVP
+Stood up a stakeholder-facing documentation store as a route in the web SPA (`/docs`, `/docs/:slug`),
+public/no-auth so a link is shareable. **Markdown over MDX** for the MVP: content is prose + mermaid
+diagrams + code, all covered by `react-markdown` (already a dep) with a custom ```mermaid fence → lazy
+mermaid renderer — zero new build config, and docs stay plain `.md` an author can edit without React.
+MDX is the deliberate deferred upgrade (rename `.md`→`.mdx` + add `@mdx-js/rollup`; the registry/
+layout/routing don't change) and is only worth it once a doc needs a *live interactive* component
+inline. Replaces: nothing — previously product docs existed only as repo `docs/*.md` (dev-facing, not
+browsable). Distinct from the admin-only `/dna/docs/architecture` atlas, which stays a bespoke
+hardcoded page. Seed content authored from `docs/NORTH_STAR.md` so the pitch is truthful.
+
 ### 2026-07-15 — Cross-scene continuity is a missing "seam contract," not a prompt-tuning problem
 Reported continuity loss between scenes (book 1250) traced to one root cause, not many. The prose
 writer's only cross-scene signal (`buildProseDigest`, `dna-expand/index.ts:218`) fuses two unrelated

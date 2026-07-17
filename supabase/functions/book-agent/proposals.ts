@@ -165,7 +165,7 @@ async function proposeOptions(
   service: SupabaseClient,
   bookId: number,
   input: { nodeId?: string; kind?: string; parentId?: string; note?: string; options?: unknown[] },
-): Promise<{ ok: true; handle: string; count: number } | { ok: false; error: string }> {
+): Promise<{ ok: true; handle: string; count: number; nodeId: string } | { ok: false; error: string }> {
   const { data: rows } = await service.from("book_nodes").select("id, parent_id, kind, level, position, content, authoring").eq("book_id", bookId);
   const nodes = (rows ?? []) as { id: string; parent_id: string | null; kind: string; level: number; position: number; content: Record<string, unknown> | null; authoring: { locked?: boolean } | null }[];
   const objects = (Array.isArray(input.options) ? input.options : []).filter((o) => o && typeof o === "object" && !Array.isArray(o)) as Record<string, unknown>[];
@@ -209,14 +209,14 @@ async function proposeOptions(
       proposals,
     });
     if (insErr) return { ok: false, error: insErr.message };
-    return { ok: true, handle: targetKind, count: proposals.length };
+    return { ok: true, handle: targetKind, count: proposals.length, nodeId };
   }
 
   if (!node) return { ok: false, error: `No node with id ${input.nodeId}. To create a new node with options, pass kind and parentId instead.` };
   if (node.authoring?.locked) return { ok: false, error: `Node ${input.nodeId} is LOCKED — unlock it before offering options.` };
   const { error } = await service.from("book_nodes").update({ proposals }).eq("id", node.id);
   if (error) return { ok: false, error: error.message };
-  return { ok: true, handle: nodeHandle(node.content), count: proposals.length };
+  return { ok: true, handle: nodeHandle(node.content), count: proposals.length, nodeId: node.id };
 }
 
 export { proposeNodeOps, proposeProseRender, proposeExpansion, proposeOptions };

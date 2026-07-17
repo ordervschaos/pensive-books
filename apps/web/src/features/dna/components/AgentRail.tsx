@@ -34,11 +34,12 @@ import { SessionHistory } from "./agentRail/SessionHistory";
 import { Composer } from "./agentRail/Composer";
 import { AdminPromptPeek } from "./agentRail/AdminPromptPeek";
 
-export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedIds = [], onDetach, onClose }: {
+export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedIds = [], onDetach, onClose, onJump }: {
   bookId: number; nodes: DnaNode[]; settings: BookSettings; bookSlug?: string; // bookSlug feeds the reader URL into the final render/publish hand-off
   brief?: Brief | null; // the books.brief — lets the greeting tell "no idea yet" (ideate) from "idea set, no logline" (teach the logline)
   attachedIds?: string[]; onDetach?: (id: string) => void; // slice 2 — the context tray (anchors); omitted = no tray
   onClose?: () => void; // folds the rail's own close affordance into its header row instead of a floating sibling
+  onJump?: (id: string) => void; // reveals + scrolls to a node in the tree — lets a staged-options step jump to its picker
 }) {
   const { toast } = useToast();
 
@@ -359,7 +360,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
               )}
             </div>
           )}
-          {steps.map((s, i) => <StepBubble key={i} step={s} nodes={nodes} />)}
+          {steps.map((s, i) => <StepBubble key={i} step={s} nodes={nodes} onJump={onJump} />)}
           {proposals.map((p) => (
             <ProposalCard key={p.id} proposal={p} nodes={nodes}
               applying={applyingId === p.id} onApply={() => void apply(p)} onDiscard={() => void discard(p)} onStop={stopApply} />

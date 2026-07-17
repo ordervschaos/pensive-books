@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Sparkles, ArrowRight } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { humanizeNodeRefs } from "@/features/dna/lib/dnaChat";
@@ -9,8 +9,24 @@ import { ResolvedCard } from "./ResolvedCard";
 
 // One step rendered as a chat element: author messages/answers → right bubble; the agent's reply and
 // questions → prose; a page-read → a muted activity line.
-export function StepBubble({ step, nodes }: { step: AgentStep; nodes: DnaNode[] }) {
+export function StepBubble({ step, nodes, onJump }: { step: AgentStep; nodes: DnaNode[]; onJump?: (id: string) => void }) {
   const index = useMemo(() => byId(nodes), [nodes]);
+  // A 'plan' step that staged options ON a node — the picker lives in the tree, not the chat. Render it as a
+  // clickable card that jumps to (and reveals) that node, so "staged where?" is answered by a tap, not prose.
+  if (step.t === "plan" && step.nodeId && onJump && index.get(step.nodeId)) {
+    const targetId = step.nodeId;
+    return (
+      <button
+        type="button"
+        onClick={() => onJump(targetId)}
+        className="group flex w-full items-center gap-2.5 rounded-xl border border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/[0.05] px-3 py-2.5 text-left transition-colors hover:bg-[hsl(var(--pv-accent))]/[0.09]"
+      >
+        <Sparkles className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-accent))]" />
+        <span className="pv-serif flex-1 text-[13px] leading-[1.45] text-[hsl(var(--pv-text-muted))]">{step.label}</span>
+        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-accent))] transition-transform group-hover:translate-x-0.5" />
+      </button>
+    );
+  }
   if (step.t === "user" || step.t === "answer") {
     return (
       <div className="flex justify-end">

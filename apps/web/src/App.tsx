@@ -21,6 +21,9 @@ const Terms = lazy(() => import("@/pages/public/legal/Terms"));
 const Contact = lazy(() => import("@/pages/public/legal/Contact"));
 const CookiesPage = lazy(() => import("@/pages/public/legal/Cookies"));
 
+// Docs store (public documentation — /docs)
+const DocsPage = lazy(() => import("@/pages/docs/DocsPage"));
+
 // Auth pages
 const Auth = lazy(() => import("@/pages/auth/Auth"));
 
@@ -140,6 +143,8 @@ export default function App() {
                       <Route path="/terms" element={<Terms />} />
                       <Route path="/cookies" element={<CookiesPage />} />
                       <Route path="/contact" element={<Contact />} />
+                      <Route path="/docs" element={<DocsPage />} />
+                      <Route path="/docs/:slug" element={<DocsPage />} />
                       <Route path="/books/:bookSlug/join/:token" element={<JoinBook />} />
 
                       {/* Public published content routes */}

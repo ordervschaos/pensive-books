@@ -18,6 +18,8 @@ export interface AgentStep {
   t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done" | "applied" | "discarded" | "decision";
   label: string;
   options?: string[]; // present on decision steps — the choices the agent weighed (its pick stated in-text)
+  nodeId?: string; // present on 'plan' steps that staged options ON a node — the node whose picker to jump to
+
   at?: string; // present on decision steps — ISO timestamp of the fork
   ops?: NodeOp[]; // present on applied/discarded 'dna'/'expansion' steps — the change, for the collapsed card's detail
   // Per-op before/after, frozen at APPLY time (describeOps run against the pre-apply tree) — so the resolved

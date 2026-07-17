@@ -16,6 +16,21 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-15 — AgentRail "Staged options" → clickable jump-to-picker `[ship]`
+- **What:** The propose_options step said "Staged N options … in the tree" — a passive reference to another surface; author had to hunt for the picker. Fixed the locus-of-attention mismatch: the plan step now carries the target `nodeId` and renders as a clickable card that reveals+scrolls to that node's picker (reuses existing `jumpTo`). Copy → "N options ready for … — tap to pick one in the tree." Edge fn deployed; web client needs rebuild for the card to render.
+- **Files/commits:** supabase/functions/book-agent/{proposals,advance}.ts (proposeOptions returns nodeId; step carries it), apps/web/src/features/dna/lib/agentThread.ts (AgentStep.nodeId), components/agentRail/StepBubble.tsx (jump card), components/AgentRail.tsx + pages/DnaTreePage.tsx (onJump=jumpTo). Uncommitted.
+- **PM impact:** none — UX polish on the shipped AgentRail; no Now-slot/roadmap change.
+
+## 2026-07-15 — RAG-in-the-agent teaching/analysis `[chore]`
+- **What:** Teaching Q&A on how best to implement RAG in book-agent. Conclusion: don't RAG the book's own DNA (fits the window, hot mutating corpus, addressed by known handle → `read_node`+`search_nodes` already win); the only corpus passing the 3-part test is open-world craft/genre reference, where `research_web`+`craft_notes` is already agentic RAG *missing a persistent index*. Sketched the minimum fill: `craft_chunks` (pgvector already enabled) + `gte-small` embed on research ingest + a `search_craft` tool. No product code changed.
+- **Files/commits:** doc_1784114270000.md, learning_1784114270000_rag-in-agent.md (both local-only, unstaged).
+- **PM impact:** none — analysis only; the `search_craft`/`craft_chunks` build is a candidate, not ratified.
+
+## 2026-07-15 — In-product /docs documentation store (MVP) `[ship]`
+- **What:** Shipped a browsable, public `/docs` route in the web app — a stakeholder-facing documentation store explaining how the product works. Sidebar + index + per-doc pages; markdown rendered by react-markdown+remark-gfm with a custom ```mermaid fence → lazy mermaid renderer (diagrams follow light/dark). Seeded 3 docs authored from NORTH_STAR: overview (the pitch), how-it-works (DNA method), the-agent (AI editor). Content is plain `.md` imported via Vite `?raw` + a hand-maintained registry, so adding a doc = drop a file + one row. Verified: tsc clean, prod build (mermaid code-split into lazy chunks), dev-server module transforms + `/docs` 200.
+- **Files:** `apps/web/src/pages/docs/` (DocsPage, Markdown, Mermaid, registry + content/*.md), `apps/web/src/App.tsx` (routes), `apps/web/package.json`+`pnpm-lock.yaml` (mermaid).
+- **PM impact:** DECISIONS line added (markdown-over-MDX for MVP; docs store as a public in-product route). Not a ranked Now project — net-new author-directed surface; left roadmap ranking untouched.
+
 ## 2026-07-15 — Agent architecture diagram doc `[chore]`
 - **What:** Added a diagram-first doc mapping the book-agent runtime (7 mermaid diagrams: whole-system, entry paths, durable loop, tool dispatch, context assembly, row state machine, proposal channel). Companion to agent-runtime-architecture.md; grounded in the current book-agent source.
 - **Files:** `docs/agent-architecture-diagram.md` (new).
