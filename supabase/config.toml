@@ -357,6 +357,11 @@ verify_jwt = false
 [functions.dna-chat]
 verify_jwt = false
 
+# Long-running streamed generation (80-140s) — does its own getUser() (userClient), same pattern as
+# dna-expand above. Gateway JWT verification off for the same local-dev-bridge reason.
+[functions.stream-prose]
+verify_jwt = false
+
 [functions.evaluate-ai-call]
 verify_jwt = false
 

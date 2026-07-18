@@ -3,7 +3,10 @@ import { createBrowserClient } from '@supabase/ssr';
 import type { Database } from './types';
 
 export const SUPABASE_PROJECT_ID = 'qiqeyirtpstdjkkeyfss';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpcWV5aXJ0cHN0ZGpra2V5ZnNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDAyODg2MzEsImV4cCI6MjA1NTg2NDYzMX0.mmpSshpUG_kE58h7kDBMt-X5jjsKhhcKL9QpZi7i4uk';
+// Exported so callers that must bypass supabase-js (e.g. dnaExpand.ts's raw fetch to stream-prose,
+// which needs a real ReadableStream reader — supabase.functions.invoke() awaits the whole body)
+// can still set the "apikey" header Kong requires to route the request to this project.
+export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpcWV5aXJ0cHN0ZGpra2V5ZnNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDAyODg2MzEsImV4cCI6MjA1NTg2NDYzMX0.mmpSshpUG_kE58h7kDBMt-X5jjsKhhcKL9QpZi7i4uk';
 const SUPABASE_URL = `https://${SUPABASE_PROJECT_ID}.supabase.co`;
 
 // The Supabase v2 cookie key follows this pattern. Exporting so other

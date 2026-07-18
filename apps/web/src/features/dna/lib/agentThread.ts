@@ -220,7 +220,7 @@ export async function applyAgentProposal(bookId: number, threadId: number, propo
     return validation;
   }
   if (proposal.layer === "prose-render") {
-    // Delegate to the v2 prose pipeline — expandNode streams off-worker (/api/stream-prose) + saves. The
+    // Delegate to the v2 prose pipeline — expandNode streams off-worker (the stream-prose edge fn) + saves. The
     // dynamic import breaks the agentThread ↔ dnaExpand cycle (dnaExpand → stageGeneratedProposal → here).
     const { expandNode } = await import("@/features/dna/lib/dnaExpand");
     const index = new Map(nodes.map((n) => [n.id, n]));

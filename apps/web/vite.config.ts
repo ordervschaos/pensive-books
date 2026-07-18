@@ -5,7 +5,6 @@ import path from "path";
 import { componentTagger } from "lovable-tagger";
 import componentTaggerPlugin from "@ordervschaos/babel-plugin-react-component-tagger";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
-import { streamProseDevPlugin } from "./vite-plugin-stream-prose";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -25,7 +24,6 @@ export default defineConfig(({ mode }) => ({
       : reactSwc(),
     mode === 'development' &&
     componentTagger(),
-    mode === 'development' && streamProseDevPlugin(),
     ...(mode === 'production' && process.env.SENTRY_AUTH_TOKEN
       ? [sentryVitePlugin({
           org: "o4508145966514176",

@@ -326,7 +326,7 @@ Deno.serve(async (req: Request) => {
 
     // `prepare` (prose only): build the full context — INCLUDING the v2 digest — but return the assembled
     // model request instead of calling the model. The browser then streams the long prose generation through
-    // the same-origin /api/stream-prose proxy, so the 80–140s call never rides this worker's ~150s wall-clock
+    // the stream-prose edge fn, so the 80–140s call never rides this worker's own wall-clock budget
     // (the timeout/546 failures). See TO-DO/dna-streaming-proxy.md. Digest + assembly stay here (fast, DB-bound).
     // `phase`/`rawText`/`repairText` (beatsheet only): the browser-streamed split (see the beatsheet branch
     // below) — "prepare" returns the assembled request, "finalize" does the parse/sanitize/lint/repair-decision
@@ -800,7 +800,7 @@ CRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md
 - CLIMAX CADENCE: do not automatically drop into staccato fragments at the emotional peak; vary how the peak is paced.
 - NEGATION-DEFINITION: the "it wasn't X, it was Y" pattern at most once per scene.`;
       const userContent = `${ctx}\n\nWrite this scene's prose.`;
-      // Browser-streamed path: hand back the assembled request; the client streams it via /api/stream-prose.
+      // Browser-streamed path: hand back the assembled request; the client streams it via the stream-prose edge fn.
       // `provider` carries the admin's ai_provider setting to the proxy, which has no admin_settings read of
       // its own — this worker is the authority on both which model and which host runs the call.
       if (prepare) return json({ prepared: { system, userContent, model, max_tokens: 8000, provider: await getActiveProvider() } });
@@ -815,8 +815,8 @@ CRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md
       // Returns a flat, act-indexed list; the client persists it grouped under each act.
       //
       // Split into two stateless phases (todo/dna-streaming-proxy.md pattern, extended to a second target):
-      // the LLM generation(s) run OFF this worker via the browser-driven /api/stream-prose proxy, so the beat
-      // sheet's up-to-two sequential 8000-token calls never ride this worker's ~150s wall-clock — the same
+      // the LLM generation(s) run OFF this worker via the browser-driven stream-prose edge fn, so the beat
+      // sheet's up-to-two sequential 8000-token calls never ride this worker's own wall-clock budget — the same
       // failure class that forced prose off-worker. "prepare" returns the assembled request; "finalize" does
       // the (cheap, deterministic) parse/sanitize/lint/repair-decision, re-deriving context on every call so
       // any phase can be retried alone without a stall in one dragging the others down with it.
@@ -898,7 +898,7 @@ CRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md
 - Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats that develop it in between. Reference threads BY NAME.
 - ${CAUSALITY_CRAFT}${tentpoles.length ? `\n- HONOR every TENTPOLE: each names an emotional/scene quality the story must deliver (a feel, an image, a turn) — not a line to reproduce. Pick the ONE beat whose turn embodies it and reference the tentpole BY NAME in "realizes"; write the beat's summary in your own words. Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}${statePreconds.length ? `\n- ESTABLISH every STATE PRECONDITION: each game's win SPENDS resources/states (listed above). For each, an EARLIER beat must establish it (list its key in that beat's "establishes") BEFORE the beat that resolves the game — you cannot spend a resource the story never acquired (no "she had enough all along"). Make the establishing a real turn.` : ""}
 Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": "...", "payoff": "...", "kind": "mystery"|"foreshadow"|"setup_payoff"|"arc"${arcCast.length ? `, "character": "<cast name — arc threads only>"` : ""} } ], ` : ""}"beats": [ { "act": <1..${acts.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down"${structure ? `, "slot": "<structure slot key — ONLY on the one beat that carries it>"` : ""}, "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole name>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}, "needs": [ "<state key earned upstream>" ], "establishes": [ "<state key this beat produces>" ] } ] }`;
-      // Browser-streamed path: hand back the assembled request; the client streams it via /api/stream-prose,
+      // Browser-streamed path: hand back the assembled request; the client streams it via the stream-prose edge fn,
       // then calls back with phase "finalize" (mirrors the prose `prepare` split, todo/dna-streaming-proxy.md).
       if (phase === "prepare") {
         // 16000 not 8000: a REASONING model (deepseek-v4-pro) counts its thinking phase INSIDE max_tokens, so

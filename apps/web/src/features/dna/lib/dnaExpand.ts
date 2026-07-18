@@ -1,8 +1,8 @@
 // dnaExpand — Phase 5: the "expand" verb. Calls dna-expand (locally-served fn or deployed edge fn) and applies the
 // result as ONE authoritative value (not proposals): child nodes get the generated content (source=ai,
 // accepted); a scene gets its prose. The author then edits / regenerates / locks. See novel-dna-spec.md §6.
-import { supabase } from "@/integrations/supabase/client";
-import { invokeFn } from "@/lib/localFn";
+import { supabase, SUPABASE_ANON_KEY } from "@/integrations/supabase/client";
+import { functionUrl, invokeFn } from "@/lib/localFn";
 import { deleteNode, loadTree, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
 import { byId, deepMergeContent, emptyNode, gameTwins, newId, PARENT_KIND, pillarOf, stampInput, stampProse, stampSketch, type ActContent, type BeatContent, type DnaNode, type GameContent, type MeterContent, type NodeContent, type NodeKind, type RenderBrief, type SceneContent, type SceneSketch, type TentpoleContent, type ThreadContent, type ThreadRef, type VoiceContent } from "@/features/dna/lib/novelDna";
 import { stageGeneratedProposal, type AgentProposal } from "@/features/dna/lib/agentThread";
@@ -118,15 +118,17 @@ async function invokeWithRetry(body: Record<string, unknown>, signal?: AbortSign
   throw lastErr;
 }
 
-// Off-worker generation streams from the same-origin /api/stream-prose proxy (Vite middleware in dev, Vercel
-// fn in prod): the long generation call runs OFF the Supabase worker, so its 80–140s wall-clock never hits the
-// ~150s ceiling that was killing ~54% of prose calls (TO-DO/dna-streaming-proxy.md). Generic despite the route
-// name — the proxy's wire shape (system/userContent/model/max_tokens → streamed text) doesn't care what the
-// text IS, so the beat sheet's generation + repair calls reuse it too. The proxy holds the provider key and
-// just pipes deltas; we accumulate them here. IDLE timeout (not total): a healthy stream emits tokens
-// continuously, so "no bytes for STREAM_IDLE_MS" means a stall → abort + retry; a slow-but-flowing multi-minute
-// generation is never wrongly cut. dna-expand assembles the prompt in `prepare` (prose) / `phase: "prepare"`
-// (beatsheet) mode. `kind` only labels error messages (what's actually being streamed).
+// Streams from the stream-prose edge function (supabase/functions/stream-prose): the long generation call
+// runs as its own function invocation, off dna-expand's worker, so a slow 80–140s generation never risks
+// dna-expand's own request budget. Originally a same-origin Vercel proxy (Hobby plan's 60s maxDuration made
+// that a dead end 2026-07-18; the Supabase project is on a paid plan, so this call runs there instead — see
+// stream-prose/index.ts's header). Generic despite the route name — the wire shape (system/userContent/
+// model/max_tokens → streamed text) doesn't care what the text IS, so the beat sheet's generation + repair
+// calls reuse it too. The function holds the provider key and just pipes deltas; we accumulate them here.
+// IDLE timeout (not total): a healthy stream emits tokens continuously, so "no bytes for STREAM_IDLE_MS"
+// means a stall → abort + retry; a slow-but-flowing multi-minute generation is never wrongly cut. dna-expand
+// assembles the prompt in `prepare` (prose) / `phase: "prepare"` (beatsheet) mode. `kind` only labels error
+// messages (what's actually being streamed).
 const STREAM_IDLE_MS = 45_000;
 
 async function streamText(prepared: PreparedProse, signal?: AbortSignal, kind: string = "prose"): Promise<{ text: string; callId: number | null }> {
@@ -141,9 +143,9 @@ async function streamText(prepared: PreparedProse, signal?: AbortSignal, kind: s
     const bump = () => { clearTimeout(timer); timer = setTimeout(() => idle.abort(), STREAM_IDLE_MS); };
     try {
       bump();
-      const res = await fetch("/api/stream-prose", {
+      const res = await fetch(functionUrl("stream-prose"), {
         method: "POST",
-        headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "content-type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
         body: JSON.stringify(prepared),
         signal: combined,
       });

@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, SUPABASE_PROJECT_ID } from "@/integrations/supabase/client";
 
 // Local dev escape hatch (superseded scripts/eval-bridge.mjs for these callers): point specific edge
 // functions at a LOCALLY-served instance (`supabase functions serve --env-file supabase/functions/.env`)
@@ -8,6 +8,13 @@ import { supabase } from "@/integrations/supabase/client";
 // Undefined by default (VITE_LOCAL_FUNCTIONS_URL unset) → every call goes to the deployed function,
 // unchanged from prod behavior.
 const LOCAL_FUNCTIONS_URL = import.meta.env.VITE_LOCAL_FUNCTIONS_URL as string | undefined;
+
+// The base URL a function named `name` is reachable at — the local override when configured, else the
+// deployed project's gateway. For callers that need the raw Response (e.g. a streamed body), which
+// supabase.functions.invoke() can't give since it awaits and parses the whole thing.
+export function functionUrl(name: string): string {
+  return LOCAL_FUNCTIONS_URL ? `${LOCAL_FUNCTIONS_URL}/${name}` : `https://${SUPABASE_PROJECT_ID}.supabase.co/functions/v1/${name}`;
+}
 
 // Drop-in for supabase.functions.invoke(name, {body, signal}) — same { data, error } shape — that
 // redirects to a locally-served function when configured, so every caller gets the local override for
