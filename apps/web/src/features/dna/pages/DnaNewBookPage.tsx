@@ -28,7 +28,7 @@ export default function DnaNewBookPage() {
         .single();
       if (error) throw error;
 
-      navigate(`/books/${data.id}/dna/tree`);
+      navigate(`/books/${data.id}/dna/tree/overview`);
     } catch (error: unknown) {
       toast({
         variant: "destructive",
