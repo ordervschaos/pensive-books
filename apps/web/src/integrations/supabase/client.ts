@@ -56,6 +56,16 @@ export const supabase = createBrowserClient<Database>(
     // readable from both. On localhost we keep host-only cookies so dev on
     // ports 3000/8080 still works without a custom domain.
     cookieOptions: getCookieOptions(),
+    auth: {
+      // The OAuth `code` + `code_verifier` are single-use. We exchange them
+      // explicitly in the /auth/callback route (see Auth.tsx). Leaving the
+      // built-in URL auto-detect ON caused a double-exchange: on mobile the
+      // provider bounces through the site root (`/?code=`) first, where
+      // auto-detect consumed the code and deleted the verifier BEFORE the
+      // callback route could run — producing AuthPKCECodeVerifierMissingError.
+      // Turn it off so the explicit handler is the sole exchanger.
+      detectSessionInUrl: false,
+    },
   }
 );
 
