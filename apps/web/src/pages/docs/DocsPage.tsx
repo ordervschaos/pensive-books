@@ -4,7 +4,7 @@
 // Stakeholder-facing and public (no auth) so a link can be shared. Content lives in ./registry.
 import { Link, useParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { Markdown } from "./Markdown";
+import { MdxContent } from "./MdxContent";
 import { DOCS, docsByCategory, getDoc } from "./registry";
 
 function Sidebar({ activeSlug }: { activeSlug?: string }) {
@@ -91,7 +91,7 @@ export default function DocsPage() {
           </div>
         </aside>
         <main className="min-w-0">
-          {!slug ? <DocsIndex /> : doc ? <Markdown content={doc.content} /> : <DocNotFound slug={slug} />}
+          {!slug ? <DocsIndex /> : doc ? <MdxContent Content={doc.content} /> : <DocNotFound slug={slug} />}
         </main>
       </div>
     </div>
