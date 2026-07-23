@@ -148,7 +148,7 @@ function visionStatus(vision: BriefVision | undefined): string {
 function VisionSection({ brief, onSave, depth }: {
   brief: Brief | null; onSave: (patch: Partial<Brief>) => Promise<void>; depth: number;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
