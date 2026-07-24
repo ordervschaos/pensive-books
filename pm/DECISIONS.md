@@ -6,6 +6,33 @@
 
 ## Log
 
+### 2026-07-24 — Generation craft is author-overridable per book; the JUDGES are not
+Shipped the Craft Notes tab, which turns the story-craft baked into generation into an editable,
+per-book surface. Two boundaries were drawn deliberately and are the reason it looks like this:
+
+**1. Generation bends, judging holds.** `dna-expand`'s stage prompts and the book-agent's context both
+read the author's override (`craftBody()` / `<craft_overrides>`), but the semantic judges
+(`read-logline`, `read-premise`) deliberately stay on the tier-1 default in `_shared/craft-kb.ts`. If the
+judge grounded on the same overridden text, an author could rewrite the bar their book is graded
+against and score themselves passing — the evaluator has to be the fixed point. Accepts the known cost:
+generation and judging can now disagree when an override is in play.
+
+**2. Only the author-meaningful knobs are exposed.** For the config-driven structural passes
+(`node_type_configs` → cast/world/relationships/set-pieces/threads/games/acts/beats/scenes/…), the
+override covers `role` (the craft phrasing) and `count` only. `schema_json` and `slots` stay fixed —
+they're the machine output contract and the context gating, and editing them breaks JSON parsing rather
+than changing taste. `premise` is excluded from the list entirely because it's special-cased in
+dna-expand, so an override there would silently no-op — showing an editor that does nothing is worse
+than not showing it.
+
+Storage is split on shape, not concern-drift: `books.craft_overrides` (flat `{key: text}`) for the code-
+const notes, `books.expansion_overrides` (nested `{target: {role, count}}`) for the config passes; both
+kept off `books.craft_notes`, which was already the `{topic: note}` web-research map. Defaults for the
+code consts ride a committed `craftNotes.json` mirror + lock test (the web can't import edge modules);
+defaults for the config passes are read live from `node_type_configs`, which is its own SSOT — so no
+mirror exists there and none should be added. Replaces: craft that was hard-coded and identical for
+every book. Supersedes the chat-era `{layer: text}` craft-notes model, deleted in the DNA pivot.
+
 ### 2026-07-15 — Product docs live as a public in-product `/docs` route; markdown (not MDX) for the MVP
 Stood up a stakeholder-facing documentation store as a route in the web SPA (`/docs`, `/docs/:slug`),
 public/no-auth so a link is shareable. **Markdown over MDX** for the MVP: content is prose + mermaid

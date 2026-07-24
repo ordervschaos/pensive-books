@@ -52,8 +52,10 @@ R1/R2 graduated, moved to STATE.md.
 
 ## Next
 
-1. **DNA UI self-explanatory pass.** Comprehensive pass across all 6 studio tabs (Tree, Analytics,
-   Overview, Meters, Voice, Characters, Story): promote existing hover-only explanations
+1. **DNA UI self-explanatory pass.** Comprehensive pass across all studio tabs (Tree, Analytics,
+   Overview, Meters, Voice, Characters, Story, Craft Notes — the last added 2026-07-24, and a
+   prime candidate for this pass since it exposes raw prompt text to authors): promote existing
+   hover-only explanations
    (`KIND_EXPLAINER`, `DNA_STAGES` captions) to visible affordances, add plain-language why/fix
    copy + click-to-jump to the Analytics lints list (currently the one section without it), give
    `dangling_ref` a resolution path, extend the Tree tab's STALE-popover pattern to Meters. Full

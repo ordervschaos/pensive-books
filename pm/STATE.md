@@ -1,6 +1,6 @@
 # STATE — what exists, and what status it's in
 
-> Snapshot date: **2026-07-14**. Update when something ships, parks, or dies.
+> Snapshot date: **2026-07-24**. Update when something ships, parks, or dies.
 > Deep detail lives in `docs/` and `apps/web/src/features/dna/FEATURE.md`; this is the map.
 
 ## The product at a glance
@@ -36,6 +36,7 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 | DNA tree versions (save points, diff, restore) | shipped | Auto-checkpoint on auto-accept arm |
 | Generation hardening (SSOT schema, fail-closed validateOps) | shipped | Killed 4-mirror drift |
 | Brief→Mandate propagation (VOICE vs MANDATE, foregrounded, per-page length budget) | shipped (mechanism) | `docs/brief-mandate-propagation.md` C1/C2/C4; live in `dna-expand` + mirrored in `eval-bridge.mjs`. Conformance-report UI (`mandate-gate` core+edge fn) built pre-pivot, orphaned when Build Studio was deleted — not reconnected to any client path. C5b (content_type → publish/marketplace gate) pending |
+| Craft notes (per-book overrides of generation craft) | shipped | 2026-07-24: the story-craft baked into generation is now an editable surface — DNA studio tab `/dna/tree/craft`. Two sections: (1) **prose & plan craft** — the 6 tier-1 consts (logline/premise/beats·causality/beats·polarity/scene·direction/**prose**, the last extracted from dna-expand's inline novelist prompt) overridable via `books.craft_overrides`, read back through `craftBody()` in dna-expand's stage prompts + a `<craft_overrides>` block in book-agent context; `_shared/craft-kb.ts` stays SSOT with a committed `craftNotes.json` mirror locked by `craftNotes.artifact.test`. (2) **structure generation** — the config-driven entity/act/scene passes (cast/world/relationships/set-pieces/threads/games/acts/beats/scenes/voice_profile/pillar) expose their `role` + `count` from the global `node_type_configs` table, overridable via `books.expansion_overrides`; `schema_json`/`slots` stay fixed (output contract), `premise` excluded (special-cased). Judges (read-logline/read-premise) deliberately stay on the tier-1 default so an author note can't self-approve. Migrations `20260724120000`/`20260724130000`; dna-expand + book-agent deployed. ⚠ not yet click-tested in-browser |
 
 ### Agent (the single AI surface)
 
