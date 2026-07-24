@@ -85,3 +85,60 @@ export const SCENE_DIRECTION_CRAFT = `- cut.in / cut.out: where the page enters/
 - mode: dialogue | action | interior | description | summary (the dominant texture).
 - time: real | compressed | stretched (scene-time vs story-time).
 - tension: suspense | mystery | irony (what the reader knows vs the character).`;
+
+// The novelist's craft for rendering ONE scene's prose from its plan — the voice fourth-wall rule, the
+// anti-repetition law, and the anti-tic budgets mined from finished drafts (docs/structure-miner.md).
+// dna-expand's prose target interpolates this AFTER the fixed "you are a novelist / output prose only"
+// scaffolding, so the author can retune HOW their book's prose reads without touching the output contract.
+export const PROSE_CRAFT = `CONTINUITY — obey the SEAM instruction in the context: it tells you where the story stands (the previous scene's exit) and how this scene joins it. Move the story FORWARD from that point. Do NOT recap, re-narrate, or re-stage anything the previous scene already showed, and never leave a charged, open moment it ended on silently dropped.
+
+VOICE — write ONLY the fiction, from inside the story: NEVER address or mention "the reader"/"you", and NEVER refer to "the book", "the story", "the scene", "the page", the author, or the writing itself. The plan's notes describe INTENT in craft terms (e.g. "the reader is told it reads as fury", "the book plants the wrong label") — those are directions TO YOU, not lines to reproduce. Dramatize that intent through concrete action, sensation, and subtext; never narrate it or break the fourth wall.
+
+ANTI-REPETITION (critical): Never repeat any physical gesture, character reaction, sentence structure, or phrase within this scene — not even once. If a character smirks in paragraph 2, they cannot smirk (or twitch, or smile faintly) again. Each beat of the scene must be rendered with entirely fresh language. If you feel the urge to reuse a phrase or gesture, stop and invent a different one. This scene ends when the plan's goal/outcome is dramatized — do not loop, pad, or re-dramatize beats already written.
+
+CRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md): these default moves, each fine once, read machine-written when they become every scene's move. Hard budgets for THIS scene:
+- CLOSURE: do NOT end by circling back to the scene's opening image/gesture/weather (a bookend) — end on a new image, a hard cut, a spoken line, or a decision instead.
+- WEATHER: do not open OR close on weather/room-atmosphere by default; earn it or skip it.
+- INTERIORITY: do not default to the POV decoding someone's micro-expression or physical tell; rotate channels — memory, bodily sensation, direct thought, a choice made and acted on.
+- EM-DASHES: at most one per ~300 words; prefer commas, periods, or restructured sentences.
+- CLIMAX CADENCE: do not automatically drop into staccato fragments at the emotional peak; vary how the peak is paced.
+- NEGATION-DEFINITION: the "it wasn't X, it was Y" pattern at most once per scene.`;
+
+// ── Craft-note registry — the editable face of the tier-1 craft above ────────────────────────────────
+// One entry per generation STAGE that carries distilled craft. This is what the Craft Notes tab lists:
+// each entry's `body` is the DEFAULT (the consts above), and `books.craft_overrides[key]` — when the
+// author sets one on the tree's Craft Notes tab — replaces it for THAT book only. Both write paths read
+// the override through craftBody() (dna-expand interpolates it into the stage prompt; the book-agent
+// surfaces it as an override block over its default-craft skills), so a per-book note actually changes
+// generation. Keep this list in lockstep with the web mirror `craftNotes.json` (craftNotes.artifact.test).
+export interface CraftNote {
+  key: string;   // stable override key — books.craft_overrides[key]
+  label: string; // the node type / generation stage this craft governs
+  help: string;  // one line: what this note controls
+  body: string;  // the tier-1 default text (the source of truth is the const above)
+}
+export const CRAFT_NOTES: CraftNote[] = [
+  { key: "logline", label: "Logline", help: "How the seed's raw idea is forged into the book's logline.", body: LOGLINE_CRAFT },
+  { key: "premise", label: "Premise", help: "The shape + dramatic-question anatomy the premise must hit.", body: PREMISE_CRAFT },
+  { key: "causality", label: "Beats · causality", help: "How each beat earns its \"therefore\" (needs / establishes).", body: CAUSALITY_CRAFT },
+  { key: "polarity", label: "Beats · polarity", help: "The anti-sag rule — oscillate polarity within an act's trend.", body: POLARITY_CRAFT },
+  { key: "scene_direction", label: "Scene · direction", help: "The direction grammar for how a page is shown (cut/distance/mode…).", body: SCENE_DIRECTION_CRAFT },
+  { key: "prose", label: "Prose", help: "How a scene's prose is written — voice, anti-repetition, anti-tic budgets.", body: PROSE_CRAFT },
+];
+
+const CRAFT_BY_KEY: Record<string, string> = Object.fromEntries(CRAFT_NOTES.map((c) => [c.key, c.body]));
+
+// The book-level craft text for a stage: the author's override if they set (and didn't blank) one on the
+// Craft Notes tab, else the tier-1 default. This is the ONE substitution point both write paths call.
+export function craftBody(key: string, overrides?: Record<string, string> | null): string {
+  const o = overrides?.[key];
+  return (typeof o === "string" && o.trim()) ? o : (CRAFT_BY_KEY[key] ?? "");
+}
+
+// A prompt block listing only the stages the author has actually overridden — injected into the
+// book-agent's per-book context so its (default-craft) skills defer to the author's wording for this book.
+export function craftOverrideBlock(overrides?: Record<string, string> | null): string {
+  const set = CRAFT_NOTES.filter((c) => typeof overrides?.[c.key] === "string" && overrides![c.key].trim());
+  if (!set.length) return "";
+  return set.map((c) => `### ${c.label} — the author's craft note for THIS book (supersedes your default craft):\n${overrides![c.key].trim()}`).join("\n\n");
+}

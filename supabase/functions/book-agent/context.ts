@@ -8,6 +8,7 @@ import { type Brief, briefContext } from "../_shared/brief.ts";
 import { currentObjective, nextDraftTarget } from "../_shared/dna-journey.ts";
 import { analysisText, ledgerText, lintConfigForBrief, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind } from "../_shared/novel-dna.ts";
 import { AGENT_SKILLS, matchSkills } from "../_shared/agent-skills.ts";
+import { craftOverrideBlock } from "../_shared/craft-kb.ts";
 
 // ── Tree digest (docs/agent-context-model.md) ────────────────────────────────
 // The system prompt ships the WHOLE tree every turn; dumping each node's full content (a beat's paragraph
@@ -95,8 +96,8 @@ function digestNode(kind: string, content: Record<string, unknown> | null | unde
 // (system + entire transcript) on every turn. Each node is a DIGEST — handle/gist + causal spine, full
 // content via read_node (see digestNode).
 async function threadSystem(service: SupabaseClient, bookId: number, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null, authorAsk = "", followObjective = false): Promise<{ instructions: string; bookState: string; groundingLabels: string[] }> {
-  const { data: book } = await service.from("books").select("name, brief, craft_notes").eq("id", bookId).maybeSingle();
-  const b = book as { name?: string; brief?: Brief; craft_notes?: Record<string, string> | null } | null;
+  const { data: book } = await service.from("books").select("name, brief, craft_notes, craft_overrides").eq("id", bookId).maybeSingle();
+  const b = book as { name?: string; brief?: Brief; craft_notes?: Record<string, string> | null; craft_overrides?: Record<string, string> | null } | null;
   const { data: rows } = await service
     .from("book_nodes").select("id, parent_id, kind, level, position, content, authoring, proposals").eq("book_id", bookId);
   const nodes = (rows ?? []) as DnaNodeRow[];
@@ -297,6 +298,11 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
     .filter(([, v]) => typeof v === "string" && v.trim())
     .map(([topic, v]) => `[${topic}]\n${(v as string).trim()}`).join("\n\n");
 
+  // Per-book craft-note OVERRIDES (books.craft_overrides, set on the studio's Craft Notes tab). The agent's
+  // skills embed the tier-1 DEFAULT craft; where the author has rewritten a stage's craft for this book,
+  // this block carries their wording verbatim and instructs the agent to defer to it. Empty by default.
+  const craftOverrideText = craftOverrideBlock(b?.craft_overrides ?? null);
+
   // Each distinct kind of context gets its own XML tag so the model can unambiguously tell where one
   // section ends and the next begins (Anthropic's prompt-engineering guidance: XML tags reduce
   // misinterpretation when a prompt mixes instructions, context, and a large structured document).
@@ -309,6 +315,10 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
     // gathered for THIS book — genre conventions, comps, reference facts. An ANCHOR, not a fence: fold what's
     // relevant into your plans and render briefs; ignore what the current task doesn't touch. Empty by default.
     craftNotesText ? `<craft_notes note="researched craft/genre reference for this book — honor what's relevant when you plan or render; not a fence">\n${craftNotesText}\n</craft_notes>` : "",
+    // Craft-note overrides (books.craft_overrides): the author has rewritten the DEFAULT craft for one or
+    // more generation stages on the Craft Notes tab. These SUPERSEDE the default craft baked into your
+    // skills for THIS book — obey them when you plan or write at that stage. Empty by default.
+    craftOverrideText ? `<craft_overrides note="the author's per-book craft rules — these SUPERSEDE your default craft skills for this book">\n${craftOverrideText}\n</craft_overrides>` : "",
     // The guided-flow anchor (docs/agent-capabilities.md): the ONE journey rung to drive the author
     // through next, derived live from the tree (dna-journey.currentObjective). Present ONLY when this turn
     // has no concrete ask of its own (or auto/Next drives it) — see injectObjective above.

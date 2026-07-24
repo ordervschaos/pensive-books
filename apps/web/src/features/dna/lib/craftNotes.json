@@ -1,0 +1,38 @@
+[
+  {
+    "key": "logline",
+    "label": "Logline",
+    "help": "How the seed's raw idea is forged into the book's logline.",
+    "body": "ANATOMY — name FIVE things, concretely and specifically (no generic placeholders):\n- the PROTAGONIST — defined by the trait or role that matters, NOT a name (\"a disgraced surgeon\", not \"Sarah\"),\n- the INCITING INCIDENT — the event that upends their world,\n- their PRIMARY GOAL — what they must now actively do,\n- the MAIN OBSTACLE / antagonist — what stands in the way,\n- the STAKES — what is lost if they fail (life-or-death, or emotional/social — but felt and concrete).\nThe working shape is: \"When [inciting incident], a [flawed/specific protagonist] must [pursue goal] or else [stakes] — but [obstacle].\" (e.g. Jaws: \"When a great white terrorizes a beach town, a water-phobic sheriff must hunt it down before it kills again — against a mayor who wants the beaches open.\")\n\nWHAT MAKES IT STRONG:\n- IRONY baked in — the protagonist's trait should rub against the task (a water-phobic sheriff hunting a shark). If person and problem create no friction, it reads flat.\n- SPECIFICITY over vagueness — a world, a wound, a mission; never \"a woman deals with loss\".\n- An ACTIVE protagonist — \"must\", \"fights to\", \"races to\". The character DOES; things don't merely happen to them.\n- ONE story, not three — pick the spine; cut the romance/mystery/family subplots that dilute it.\n- Under ~35 WORDS — if it doesn't fit in one breath, it's carrying backstory or subplot.\n\nAVOID: naming characters, describing THEME instead of plot (\"a story about redemption\"), withholding the hook to be mysterious, stuffing in backstory, and passive framing (\"a man discovers his life is a lie\").\nTEST before you answer: could a stranger imagine the poster, the genre, and the general shape of the ending? If they'd ask \"okay, but what happens?\", you've written a situation, not a story — rewrite."
+  },
+  {
+    "key": "premise",
+    "label": "Premise",
+    "help": "The shape + dramatic-question anatomy the premise must hit.",
+    "body": "SHAPE\n- name: a 2-4 word label for the emotional trajectory (not the plot)\n- movements: 3-5 beats tracing the protagonist's INTERNAL trajectory.\n  Rules:\n  * Each movement must change the protagonist's relationship to their want — never merely advance events.\n  * Each movement must escalate or complicate the contradiction set up by the previous one. If two movements could be swapped without loss, merge or rewrite them.\n  * Movement 1 establishes the want in concrete form.\n  * The final movement forces a choice between the stated want and an emerged need — the choice must be genuinely costly either way.\n  * The most original element of the brief must appear explicitly in at least one movement, not just be implied.\n- ending_feel: up / down / bittersweet / ambivalent — choose deliberately, and it must be consistent with the genre and tone in the brief.\n\nDRAMATIC_QUESTION\nOne sentence, phrased so that:\n  * it is definitively answered by the final movement,\n  * it contains a price (\"Can she X without losing Y?\"), never just a goal (\"Will she X?\"),\n  * a reader could plausibly root for both answers,\n  * it uses the brief's specific nouns, not generic abstractions."
+  },
+  {
+    "key": "causality",
+    "label": "Beats · causality",
+    "help": "How each beat earns its \"therefore\" (needs / establishes).",
+    "body": "CAUSE every turn: give each beat \"needs\" (state keys it DEPENDS ON, each one EARNED by an EARLIER beat — never an ambient world/premise given) and \"establishes\" (state keys it PRODUCES). Keys are short snake_case handles (e.g. \"ledger_settled\", \"rival_humiliated\", \"peculium_revealed\"). Every \"therefore\" beat MUST \"need\" at least one state an earlier beat \"establishes\" — that upstream dependency is what makes the turn CAUSED, not \"and then\". A \"but\" beat must either reverse the polarity or block/consume an established state."
+  },
+  {
+    "key": "polarity",
+    "label": "Beats · polarity",
+    "help": "The anti-sag rule — oscillate polarity within an act's trend.",
+    "body": "Set each beat's PLANNED polarity (up = ends better, down = ends worse). The act's value shift is the MACRO trend; you MUST still OSCILLATE within it — never more than ~3 beats of the same polarity in a row. Place deliberate relief/hope-spots inside down-acts and setbacks inside up-acts."
+  },
+  {
+    "key": "scene_direction",
+    "label": "Scene · direction",
+    "help": "The direction grammar for how a page is shown (cut/distance/mode…).",
+    "body": "- cut.in / cut.out: where the page enters/leaves the event (arrive late, leave early — never start \"the moment before\" or linger past the turn).\n- distance: far | mid | close | deep (psychic distance — how close the narration sits to the POV mind).\n- mode: dialogue | action | interior | description | summary (the dominant texture).\n- time: real | compressed | stretched (scene-time vs story-time).\n- tension: suspense | mystery | irony (what the reader knows vs the character)."
+  },
+  {
+    "key": "prose",
+    "label": "Prose",
+    "help": "How a scene's prose is written — voice, anti-repetition, anti-tic budgets.",
+    "body": "CONTINUITY — obey the SEAM instruction in the context: it tells you where the story stands (the previous scene's exit) and how this scene joins it. Move the story FORWARD from that point. Do NOT recap, re-narrate, or re-stage anything the previous scene already showed, and never leave a charged, open moment it ended on silently dropped.\n\nVOICE — write ONLY the fiction, from inside the story: NEVER address or mention \"the reader\"/\"you\", and NEVER refer to \"the book\", \"the story\", \"the scene\", \"the page\", the author, or the writing itself. The plan's notes describe INTENT in craft terms (e.g. \"the reader is told it reads as fury\", \"the book plants the wrong label\") — those are directions TO YOU, not lines to reproduce. Dramatize that intent through concrete action, sensation, and subtext; never narrate it or break the fourth wall.\n\nANTI-REPETITION (critical): Never repeat any physical gesture, character reaction, sentence structure, or phrase within this scene — not even once. If a character smirks in paragraph 2, they cannot smirk (or twitch, or smile faintly) again. Each beat of the scene must be rendered with entirely fresh language. If you feel the urge to reuse a phrase or gesture, stop and invent a different one. This scene ends when the plan's goal/outcome is dramatized — do not loop, pad, or re-dramatize beats already written.\n\nCRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md): these default moves, each fine once, read machine-written when they become every scene's move. Hard budgets for THIS scene:\n- CLOSURE: do NOT end by circling back to the scene's opening image/gesture/weather (a bookend) — end on a new image, a hard cut, a spoken line, or a decision instead.\n- WEATHER: do not open OR close on weather/room-atmosphere by default; earn it or skip it.\n- INTERIORITY: do not default to the POV decoding someone's micro-expression or physical tell; rotate channels — memory, bodily sensation, direct thought, a choice made and acted on.\n- EM-DASHES: at most one per ~300 words; prefer commas, periods, or restructured sentences.\n- CLIMAX CADENCE: do not automatically drop into staccato fragments at the emotional peak; vary how the peak is paced.\n- NEGATION-DEFINITION: the \"it wasn't X, it was Y\" pattern at most once per scene."
+  }
+]

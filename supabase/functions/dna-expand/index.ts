@@ -14,7 +14,7 @@ import { getRoleModels, getActiveProvider, DIGEST_MODEL } from "../_shared/model
 import { extractJsonBlock } from "../_shared/json.ts";
 // Shared craft KB — the ONE copy of the distilled story craft both write paths use (the agent's
 // skill bodies embed the same consts), so engine and agent can't drift apart.
-import { CAUSALITY_CRAFT, LOGLINE_CRAFT, POLARITY_CRAFT, PREMISE_CRAFT, PREMISE_JUDGE_CRITERIA, SCENE_DIRECTION_CRAFT } from "../_shared/craft-kb.ts";
+import { craftBody, PREMISE_JUDGE_CRITERIA } from "../_shared/craft-kb.ts";
 // The shared engine's beat-native lints, run over the just-generated beat sheet so a silently-degraded sheet
 // gets one bounded repair turn instead of shipping the damage (docs/agent-improvement-plan.md P2.1).
 import { canonicalizeKey, entityRegistryBlock, ledgerAt, ledgerText, structureForBook, validate, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneLedger } from "../_shared/novel-dna.ts";
@@ -334,12 +334,16 @@ Deno.serve(async (req: Request) => {
     const { bookId, nodeId, target, light, prepare, phase, rawText, repairText, brief: renderBrief } = (await req.json().catch(() => ({}))) as { bookId?: number; nodeId?: string; target?: string; light?: boolean; prepare?: boolean; phase?: "prepare" | "finalize"; rawText?: string; repairText?: string; brief?: { focus?: string; mustHonor?: string[]; avoid?: string[] } };
     if (!bookId || !nodeId) return json({ error: "bookId and nodeId are required" }, 400);
 
-    const { data: book } = await db.from("books").select("name, brief, foundations").eq("id", bookId).maybeSingle();
+    const { data: book } = await db.from("books").select("name, brief, foundations, craft_overrides").eq("id", bookId).maybeSingle();
     const { data: nodeRows } = await db.from("book_nodes").select("id, parent_id, kind, position, content, authoring").eq("book_id", bookId);
     const nodes = (nodeRows as Node[] | null) ?? [];
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return json({ error: "Node not found" }, 404);
 
+    // The author's per-book craft-note overrides (books.craft_overrides) — a { craftKey: text } map from
+    // the studio's Craft Notes tab. Every stage prompt below reads its craft through craftBody(key, over)
+    // so an overridden note replaces the tier-1 default for THIS book (blank/missing = the code default).
+    const craftOver = (book?.craft_overrides ?? null) as Record<string, string> | null;
     const brief = book?.brief as Brief | null;
     const mandate = mandateContext(brief);
     const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -696,7 +700,7 @@ Deno.serve(async (req: Request) => {
       // one or two sentences. This is the system's first refinement (docs/dna-studio-analysis.md §0/§1).
       const system = `You are a story editor. Turn the author's raw idea into ONE polished LOGLINE for the book — one or two sentences that make the story instantly legible and compelling. A logline sells the ENGINE of the story, not its meaning.
 
-${LOGLINE_CRAFT}
+${craftBody("logline", craftOver)}
 
 Honor the MANDATE (genre/tone) and any LOCKED ancestors. Do NOT invent a title. Do NOT restate the raw idea verbatim — SHARPEN it into a real logline. Output the LOGLINE ONLY: one or two sentences, no preamble, no label, no quotes, no JSON.`;
       const data = await callLLM({ model, max_tokens: 400, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
@@ -714,7 +718,7 @@ Honor the MANDATE (genre/tone) and any LOCKED ancestors. Do NOT invent a title. 
 
 Produce:
 
-${PREMISE_CRAFT}
+${craftBody("premise", craftOver)}
 
 Constraints:
 - Stay inside the genre, tone, and heat level of the brief.
@@ -759,7 +763,7 @@ Output JSON ONLY, no prose, no fences:
 Two parts:
 1. MOVES (3–7): what happens, in order — beats of ACTION, never dialogue lines or prose. Each move may optionally reference a thread id it works (from THREADS/ENTRY STATE above) and a sensory detail picked from the scene's location palette (SETTING above).
 2. DIRECTION — how this page is SHOWN:
-${SCENE_DIRECTION_CRAFT}
+${craftBody("scene_direction", craftOver)}
 
 Rules:
 - SEAM (continuity — the load-bearing rule): decide how this scene joins the one before it and set "link" accordingly, honoring <previous_scene_exit> above:
@@ -786,19 +790,7 @@ Output JSON ONLY: {"link":"continuous|cut|same_moment_new_pov","opening":"...","
       // Scene → prose: fill the scene's own text. One true draft, in voice.
       const system = `You are a novelist writing the PROSE for one scene, from its plan. Write the scene fully — vivid, causal, in the book's voice — honoring the MANDATE (heat/tone/length) without laundering. Output the prose ONLY: no preamble, no headings, no JSON.
 
-CONTINUITY — obey the SEAM instruction in the context: it tells you where the story stands (the previous scene's exit) and how this scene joins it. Move the story FORWARD from that point. Do NOT recap, re-narrate, or re-stage anything the previous scene already showed, and never leave a charged, open moment it ended on silently dropped.
-
-VOICE — write ONLY the fiction, from inside the story: NEVER address or mention "the reader"/"you", and NEVER refer to "the book", "the story", "the scene", "the page", the author, or the writing itself. The plan's notes describe INTENT in craft terms (e.g. "the reader is told it reads as fury", "the book plants the wrong label") — those are directions TO YOU, not lines to reproduce. Dramatize that intent through concrete action, sensation, and subtext; never narrate it or break the fourth wall.
-
-ANTI-REPETITION (critical): Never repeat any physical gesture, character reaction, sentence structure, or phrase within this scene — not even once. If a character smirks in paragraph 2, they cannot smirk (or twitch, or smile faintly) again. Each beat of the scene must be rendered with entirely fresh language. If you feel the urge to reuse a phrase or gesture, stop and invent a different one. This scene ends when the plan's goal/outcome is dramatized — do not loop, pad, or re-dramatize beats already written.
-
-CRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md): these default moves, each fine once, read machine-written when they become every scene's move. Hard budgets for THIS scene:
-- CLOSURE: do NOT end by circling back to the scene's opening image/gesture/weather (a bookend) — end on a new image, a hard cut, a spoken line, or a decision instead.
-- WEATHER: do not open OR close on weather/room-atmosphere by default; earn it or skip it.
-- INTERIORITY: do not default to the POV decoding someone's micro-expression or physical tell; rotate channels — memory, bodily sensation, direct thought, a choice made and acted on.
-- EM-DASHES: at most one per ~300 words; prefer commas, periods, or restructured sentences.
-- CLIMAX CADENCE: do not automatically drop into staccato fragments at the emotional peak; vary how the peak is paced.
-- NEGATION-DEFINITION: the "it wasn't X, it was Y" pattern at most once per scene.`;
+${craftBody("prose", craftOver)}`;
       const userContent = `${ctx}\n\nWrite this scene's prose.`;
       // Browser-streamed path: hand back the assembled request; the client streams it via the stream-prose edge fn.
       // `provider` carries the admin's ai_provider setting to the proxy, which has no admin_settings read of
@@ -894,9 +886,9 @@ CRAFT VARIETY (anti-tic) — mined from finished drafts (docs/structure-miner.md
 - ALSO mint each of these characters' ARC thread (they carry a declared lie): ${arcCast.map((c) => cName(c)).join(", ")}. One per character — kind "arc", "character" = their name, promise = the LIE as it will be DRAMATIZED early (shown in action, not stated), payoff = the moment the TRUTH is accepted or fatally refused. Schedule each arc across the beats like any other thread (setup early, advance through the middle, pay off at that character's turn).` : ""}` : ""}
 - ${structure ? "3 to 6" : "2 to 4"} beats per act${structure ? ", PROPORTIONAL to each act's span in ACT PROPORTIONS above — the longest act (~half the book) gets roughly double the beats of a short act; never split beats evenly" : ""}; each beat links to the prior with "therefore" or "but" (escalating causality).${structure ? `
 - DELIVER the STRUCTURE TEMPLATE: every slot listed above lands on exactly ONE beat — mark that beat with "slot": "<key>" — in template order, positioned so the beat sits near the slot's stated % of the whole sheet. Honor each slot's craft in your own words (guidance, not a script line); a slot marked "ends down/up" fixes that beat's polarity. A slot named as a hard TURN (midpoint, plot points) must be a real external reversal on the page, never a quiet internal shift.` : ""}
-- ${POLARITY_CRAFT}
+- ${craftBody("polarity", craftOver)}
 - Schedule the THREADS across the whole book: every promise must be SET UP (role:setup) in an EARLIER beat before it is PAID OFF (role:payoff) in a LATER beat; use "advance" for beats that develop it in between. Reference threads BY NAME.
-- ${CAUSALITY_CRAFT}${tentpoles.length ? `\n- HONOR every TENTPOLE: each names an emotional/scene quality the story must deliver (a feel, an image, a turn) — not a line to reproduce. Pick the ONE beat whose turn embodies it and reference the tentpole BY NAME in "realizes"; write the beat's summary in your own words. Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}${statePreconds.length ? `\n- ESTABLISH every STATE PRECONDITION: each game's win SPENDS resources/states (listed above). For each, an EARLIER beat must establish it (list its key in that beat's "establishes") BEFORE the beat that resolves the game — you cannot spend a resource the story never acquired (no "she had enough all along"). Make the establishing a real turn.` : ""}
+- ${craftBody("causality", craftOver)}${tentpoles.length ? `\n- HONOR every TENTPOLE: each names an emotional/scene quality the story must deliver (a feel, an image, a turn) — not a line to reproduce. Pick the ONE beat whose turn embodies it and reference the tentpole BY NAME in "realizes"; write the beat's summary in your own words. Every tentpole listed must appear on exactly one beat.` : ""}${worldFacts.length ? `\n- GROUND the turns in the WORLD RULES: when a beat's turning point's outcome OPERATES ON a rule's mechanism, list that rule in "grounds_in" (by name). The CLIMAX / final resolution beat MUST ground its win in an established rule — the victory has to be MECHANICALLY EARNED by a rule the reader already knows, never deus ex machina. Plant the rule's setup in an earlier beat too.` : ""}${games.length ? `\n- PLAY the GAMES: each beat that advances a contest lists it in "plays" (by name). Each game MUST be RESOLVED — exactly one beat lists it in "resolves" with its outcome (won|lost), and the CENTRAL game resolves at the CLIMAX. A game's resolving beat should also ground_in the rule its win/lose fires.` : ""}${statePreconds.length ? `\n- ESTABLISH every STATE PRECONDITION: each game's win SPENDS resources/states (listed above). For each, an EARLIER beat must establish it (list its key in that beat's "establishes") BEFORE the beat that resolves the game — you cannot spend a resource the story never acquired (no "she had enough all along"). Make the establishing a real turn.` : ""}
 Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": "...", "payoff": "...", "kind": "mystery"|"foreshadow"|"setup_payoff"|"arc"${arcCast.length ? `, "character": "<cast name — arc threads only>"` : ""} } ], ` : ""}"beats": [ { "act": <1..${acts.length}>, "summary": "...", "connector": "therefore"|"but", "polarity": "up"|"down"${structure ? `, "slot": "<structure slot key — ONLY on the one beat that carries it>"` : ""}, "threads": [ { "ref": "<thread name>", "role": "setup"|"advance"|"payoff" } ]${tentpoles.length ? `, "realizes": [ "<tentpole name>" ]` : ""}${worldFacts.length ? `, "grounds_in": [ "<world rule name>" ]` : ""}${games.length ? `, "plays": [ "<game name>" ], "resolves": [ { "ref": "<game name>", "outcome": "won|lost" } ]` : ""}, "needs": [ "<state key earned upstream>" ], "establishes": [ "<state key this beat produces>" ] } ] }`;
       // Browser-streamed path: hand back the assembled request; the client streams it via the stream-prose edge fn,
       // then calls back with phase "finalize" (mirrors the prose `prepare` split, todo/dna-streaming-proxy.md).

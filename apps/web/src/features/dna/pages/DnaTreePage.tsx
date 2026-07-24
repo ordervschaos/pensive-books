@@ -31,6 +31,7 @@ import { staleActionsFor } from "@/features/dna/components/tree/staleActions";
 import { BriefOrigin } from "@/features/dna/components/tree/BriefSection";
 import { FocusPanel, JourneyStrip, SpineTimeline, VoiceFeelPanel } from "@/features/dna/components/tree/panels";
 import { CharactersPane, StoryPane } from "@/features/dna/components/tree/panes";
+import { CraftNotesPane } from "@/features/dna/components/tree/CraftNotesPane";
 import { MetersPane } from "@/features/dna/components/tree/MetersPane";
 import { LedgerPane } from "@/features/dna/components/tree/LedgerPane";
 import { DiscardStoryModal, HistoryModal, NodeDetailsModal, ProseReaderModal } from "@/features/dna/components/tree/modals";
@@ -56,18 +57,20 @@ export default function DnaTreePage() {
   const consoleMode = themeName === "terminal" ? "terminal" as const : "paper" as const;
   setConsoleTheme(consoleMode);
   const themeClass = consoleMode === "terminal" ? "theme-terminal dark" : "theme-paper";
-  const tab: "tree" | "taste" | "overview" | "analytics" | "characters" | "story" =
+  const tab: "tree" | "taste" | "overview" | "analytics" | "characters" | "story" | "craft" =
     location.pathname.endsWith("/overview") ? "overview"
     : location.pathname.endsWith("/taste") ? "taste"
     : location.pathname.endsWith("/analytics") ? "analytics"
     : location.pathname.endsWith("/characters") ? "characters"
     : location.pathname.endsWith("/story") ? "story"
+    : location.pathname.endsWith("/craft") ? "craft"
     : "tree";
   const treePath = `/books/${bookSlug}/dna/tree`;
   const overviewPath = `${treePath}/overview`;
   const analyticsPath = `${treePath}/analytics`;
   const charactersPath = `${treePath}/characters`;
   const storyPath = `${treePath}/story`;
+  const craftPath = `${treePath}/craft`;
 
   // Permission gate — DnaStudioPage used to enforce this (bounce non-editors); the tree had none. RLS
   // protects the data either way, but the page itself should bounce like the old studio did.
@@ -680,7 +683,7 @@ export default function DnaTreePage() {
           }}>{label}</button>
         ))}
         <span style={{ width: 1, alignSelf: "stretch", marginBottom: 6, background: T.border }} />
-        {([["analytics", "analytics", analyticsPath], ["characters", "characters", charactersPath], ["story", "story", storyPath]] as const).map(([key, label, to]) => (
+        {([["analytics", "analytics", analyticsPath], ["characters", "characters", charactersPath], ["story", "story", storyPath], ["craft", "craft notes", craftPath]] as const).map(([key, label, to]) => (
           <button key={key} onClick={() => navigate(to)} style={{
             background: tab === key ? T.bg : "transparent",
             border: `1px solid ${tab === key ? T.border : "transparent"}`,
@@ -790,6 +793,11 @@ export default function DnaTreePage() {
       )}
 
       {/* ── story tab: the assembled manuscript — every scene's prose in reading order ── */}
+      {/* ── craft notes tab: the tier-1 story craft (baked into generation), overridable per book ── */}
+      {tab === "craft" && (
+        <CraftNotesPane bookId={bookId} />
+      )}
+
       {tab === "story" && (
         <StoryPane nodes={nodes} onJump={goToNode}
           onRender={() => void renderPages()} onRead={() => void renderAndRead()} rendering={rendering} />
