@@ -16,6 +16,100 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-07-24 — agent-tree doc: guard/wire-format/turn-cluster nodes committed `[chore]`
+- **What:** Committed the three doc follow-ups from the prior two chore entries (guard-clause explanation, transcript-vs-steps wire-format clarification, and the new turn-cluster node + its "not stored in the DB" child) as one commit, since they'd accumulated uncommitted across several clarifying-question exchanges on the same file.
+- **Files/commits:** apps/web/src/pages/docs/AgentTree.tsx — commit 7caf579.
+- **PM impact:** none. pm/WORKLOG.md itself was NOT committed this round — it currently carries substantial unrelated uncommitted work from a concurrent session (Craft Notes tab, dev inspector, cache instrumentation) that this session didn't touch and won't sweep into a commit.
+
+
+## 2026-07-24 — Craft Notes tab: per-book overrides of tier-1 craft `[ship]`
+- **What:** New "Craft Notes" tab in the DNA studio (`/dna/tree/craft`) lists the 5 generation stages that carry distilled craft (logline/premise/beats·causality/beats·polarity/scene·direction), shows the code default, and lets the author rewrite each PER BOOK. Overrides persist to a NEW `books.craft_overrides` jsonb (kept off the research-map `craft_notes`) and actually change generation: both write paths read them — `dna-expand` via `craftBody(key, over)` in each stage prompt, `book-agent` via a `<craft_overrides>` context block that supersedes its default-craft skills. `craft-kb.ts` stays SSOT; web reads a committed `craftNotes.json` mirror locked by `craftNotes.artifact.test`. Judges (read-logline/read-premise) deliberately kept on the tier-1 default so a bad note can't self-approve.
+- **Files/commits:** migration `20260724120000_books_craft_overrides.sql` (pushed); `_shared/craft-kb.ts` (CRAFT_NOTES/craftBody/craftOverrideBlock); `dna-expand/index.ts` + `book-agent/context.ts` (deployed); web `features/dna/lib/craftNotes.json` + `.artifact.test.ts`, `components/tree/CraftNotesPane.tsx`, `pages/DnaTreePage.tsx`. Not yet committed. `doc_1784833613000.md` writes it up.
+- **PM impact:** none (adjacent authoring-quality feature; not an M1 Now-slot item). Verified: web tsc + vitest green, edge deno check clean, migration pushed, fns deployed. In-browser click-through still pending (debug profile was busy).
+## 2026-07-24 — Speak-and-act verified on claude-local `[chore]`
+- **What:** Bridge restarted (shim + functions serve); combined interview exchange verified on the claude-local path: ONE call (#10614, 12.6s, tool_use:update_vision with the reply in its `reply` param) -> run idle, reply in feed. Same shape as deepseek (#10612). The reply-param mechanism is provider-independent, as designed.
+- **Files/commits:** none (runtime verification only).
+- **PM impact:** none.
+
+
+## 2026-07-24 — Speak-and-act v2: reply rides IN the tool call `[chore]`
+- **What:** Deepseek ignored the "text alongside tool" instruction (ai_calls 10609/10610 — reasoning tiers rarely emit text+tool_use together), so the combine is now deterministic: update_vision gained a `reply` param; advance.ts surfaces it as the chat note and the result-blind rule idles on it. Verified: one call per interview exchange (#10612, 13.4s, run→idle, reply in feed) vs the old two-call ~22s. Executor unaffected (VISION_SECTIONS whitelist ignores `reply`).
+- **Files/commits:** book-agent/{advance,tools,prompts}.ts, _shared/agent-skills.ts (deployed); shim already supports text-alongside-tool for local.
+- **PM impact:** none.
+
+
+## 2026-07-24 — Cache instrumentation + speak-and-act (result-blind) rule `[ship]`
+- **What:** (1) ai_calls now logs the prompt-cache split: cache_read_tokens / cache_write_tokens, normalized at the llm.ts chokepoint (Anthropic cache_read_input_tokens · DeepSeek prompt_cache_hit_tokens · OpenAI cached_tokens); dev inspector shows a "cached" column (+%) and modal fields. (2) Combined the interview's two-call shape into one: update_vision is RESULT-BLIND (result always "ok"), so an interactive turn with reply text + only result-blind tools now executes the write and goes idle — no continuation call (measured before: 2nd call doubled input billing +~5s/exchange, ai_calls 10606/10607). Prompts updated (tool desc, SYSTEM_THREAD §5, vision-interview skill) to put the reply IN THE SAME message; claude-local shim envelope extended with optional text-alongside-tool. Auto mode unchanged.
+- **Files/commits:** supabase/migrations/20260723140000_ai_calls_cache_tokens.sql (pushed), _shared/llm.ts, _shared/agent-skills.ts, book-agent/{advance,tools,prompts}.ts (deployed), scripts/claude-local-shim.mjs (needs local shim restart), DnaDevPage.tsx (uncommitted).
+- **PM impact:** none.
+
+
+## 2026-07-23 — ai_calls.output_json: full completion blocks logged `[ship]`
+- **What:** `output` is a text-only projection (textFromLLM), so a pure-tool_use completion logged as 0 chars — the claude-local shim's tool replies carry no text block at all, making agent turns' most important output invisible. New jsonb column output_json = the completion's raw content blocks (text/tool_use/thinking), written at the llm.ts chokepoint (both terminal paths). Dev inspector modal now shows "output — full completion (text + tool calls)" flattened + raw blocks; legacy rows keep the text-only view with an honest caveat. Known remaining gap: claude-local tokens are null because the shim runs plain `claude -p` (no usage) — fixable later via --output-format json.
+- **Files/commits:** supabase/migrations/20260723130000_ai_calls_output_json.sql (pushed), supabase/functions/_shared/llm.ts (book-agent redeployed; other fns pick it up on their next deploy — additive, no behavior change), apps/web/src/features/dna/pages/DnaDevPage.tsx (uncommitted).
+- **PM impact:** none (observability infra).
+
+
+## 2026-07-23 — ai_calls.transcript_index: exact call↔turn correlation `[ship]`
+- **What:** Systematic fix for turn↔call pairing (index arithmetic mis-chipped turns whenever a done call produced no message in the current slice). New column ai_calls.transcript_index recorded AT EMIT TIME by advance.ts (baseTranscript.length = the slot the assistant reply lands in) through the llm.ts CallMeta chokepoint. Dev inspector joins exactly (slice-windowed by session boundaries, newest attempt wins); legacy rows fall back to backward index pairing, honest ∅ otherwise. Principle: record correlations at the source, never reconstruct them.
+- **Files/commits:** supabase/migrations/20260723120000_ai_calls_transcript_index.sql (pushed), supabase/functions/_shared/llm.ts, supabase/functions/book-agent/advance.ts (deployed), apps/web/src/features/dna/pages/DnaDevPage.tsx (uncommitted).
+- **PM impact:** none (observability infra).
+
+
+## 2026-07-23 — Dev inspector: TriggerCard at the top of every cluster `[chore]`
+- **What:** Every turn-cluster now opens with a bordered trigger banner: WHO (AUTHOR green — typed message / answered parked question; HARNESS amber — auto-accept applied+resumed; UNKNOWN — mid-slice) + the full trigger message, with harness text riding the same message (AUTO-VERIFY verdict) as a labeled collapsible and a "+N tool results" note for carried results. TriggerCard consumes the cluster's first user message (renderMessage skips it). Verified on 1229 #25.
+- **Files/commits:** apps/web/src/features/dna/pages/DnaDevPage.tsx (uncommitted).
+- **PM impact:** none.
+
+
+## 2026-07-23 — Dev inspector: cluster trigger moved to the top `[chore]`
+- **What:** The ✓ apply-ack now STARTS the auto-resume cluster (it's the trigger evidence — the first thing the resumed model call reads, often sharing a message with the AUTO-VERIFY verdict) instead of dangling at the previous cluster's tail. Labels now carry the applied proposal's own summary ("applied prose render 'Third render attempt for scene 19…' → resumed") + kind-tag tooltips explaining ask/answer/auto-resume/mid trigger semantics; outcome shows "term → applied live" read from the next cluster's opening ack. Verified on 1229 #25.
+- **Files/commits:** apps/web/src/features/dna/pages/DnaDevPage.tsx (uncommitted).
+- **PM impact:** none.
+
+
+## 2026-07-23 — Dev inspector: auto-resume clusters made self-describing `[chore]`
+- **What:** Fixed the "incomplete" auto-resume view: cluster label = the actual ✓ ack that closed the previous cluster (not boilerplate) + "serving <standing ask>"; carried-in tool_results at a cluster's start render compactly instead of vanishing; ⚠ banner on thread runs whose earlier slices were archived to book_agent_sessions (transcript = current slice only); SENTINEL now matches the real "🔎 AUTO-VERIFY" literal (was [verify]-shaped) so verify injections no longer mint spurious ask-clusters. Verified on book 1229 run #25 (9 bogus clusters → 6 true ones).
+- **Files/commits:** apps/web/src/features/dna/pages/DnaDevPage.tsx (uncommitted).
+- **PM impact:** none.
+
+
+## 2026-07-23 — Dev inspector: transcript grouped by turn-clusters `[chore]`
+- **What:** /dna/tree/dev now reconstructs the implicit turn-cluster (no schema column exists; `turns` spans ask→answer parks so it's unusable) the same way the engine does: cluster starts at real author input (non-sentinel typed text, or a HUMAN tool_result answering a parked ask_author — auto's "AUTONOMOUS mode" synthetic answer excluded) and closes at quiescence (next input, or the auto "✓ Applied/STAGED" ack before an idle→resume bounce, labeled auto-resume). One collapsible section per cluster: trigger · kind · turn count · outcome (terminal tool / reply / parked / applied live) · aggregate tokens+latency; newest cluster open. Verified live.
+- **Files/commits:** apps/web/src/features/dna/pages/DnaDevPage.tsx (uncommitted).
+- **PM impact:** none.
+
+
+## 2026-07-23 — Dev inspector: guaranteed per-turn full-context inspection `[chore]`
+- **What:** Every model turn now carries a "full context ▸" chip (or an explicit `call ∅` marker when no ai_calls row is in the fetch window) opening the whole context as sent: system prompt, readable flattened messages (flattenInput), raw wire JSON, output, artifacts. Pairing anchored backward from newest call (robust to the 500-call window); archived sessions now pair via thread_id + archive-time cutoff and get their own calls table. Verified live in browser.
+- **Files/commits:** apps/web/src/features/dna/pages/DnaDevPage.tsx (uncommitted).
+- **PM impact:** none.
+
+
+## 2026-07-23 — Dev inspector made skimmable (trace-view pass) `[chore]`
+- **What:** Reworked /dna/tree/dev transcript rendering: tool_result folded into its tool_use as one collapsed `name · input → result` row (expand = full pair), narration prose stays visible, thinking collapses, result-only user messages vanish, harness sentinel nudges tagged, tool names in turn headers, long scalar chips truncated. Verified live in browser (magic-link-minted cookie session for flyingversen; @supabase/ssr = cookie storage, not localStorage).
+- **Files/commits:** apps/web/src/features/dna/pages/DnaDevPage.tsx (uncommitted).
+- **PM impact:** none.
+
+
+## 2026-07-23 — Admin dev inspector at /dna/tree/dev `[ship]`
+- **What:** Admin-only flight recorder per book: /books/:slug/dna/tree/dev lists all book_agent_runs + book_agent_sessions + ai_calls (Realtime signal→refetch, light-columns list / heavy-blobs on demand). Run view renders the transcript turn-by-turn (text/thinking/tool_use/tool_result) and pairs each assistant turn with its ai_calls row (model @ provider, tokens, latency, stop_reason); call modal shows full system/input/output/artifacts; raw row JSON always available.
+- **Files/commits:** apps/web/src/features/dna/pages/DnaDevPage.tsx (new), apps/web/src/App.tsx (route, AdminRoute-gated; uncommitted). Typecheck clean; live browser test deferred per author.
+- **PM impact:** none (dev tooling; no roadmap slot).
+
+
+## 2026-07-23 — agent-tree doc: clarified "LLM wire format" + transcript/steps split `[chore]`
+- **What:** User asked what "LLM wire formats" meant in the transcript/steps node, and was unsure whether transcript and steps are separate stored entities. Confirmed (grounded in advance.ts) they're two separate fields on the same row, written in parallel from the same LLM response, not one derived from the other — then updated the "Why both a transcript and a step feed?" node in AgentTree.tsx with that clarification + the concrete wire-format shape vs. the flat steps shape. User also gave a standing instruction ("always update the doc when I ask clarifying qns") — saved as a feedback memory (feedback_update_docs_on_clarifying_questions.md) so this pattern applies automatically going forward.
+- **Files/commits:** apps/web/src/pages/docs/AgentTree.tsx. Uncommitted (further follow-up to commit 39f12a3, same file as the prior "guard" chore entry). Memory: ~/.claude/projects/.../memory/feedback_update_docs_on_clarifying_questions.md.
+- **PM impact:** none. Note: apps/web/src/App.tsx and apps/web/src/features/dna/pages/DnaDevPage.tsx are also uncommitted in the tree but were NOT touched by this session — unrelated concurrent work, not catalogued here.
+
+
+## 2026-07-23 — agent-tree doc: filled in the "guard" node `[chore]`
+- **What:** User asked what "guard" meant in the turn-loop node's one-liner (Load row → guard → one LLM call → dispatch). Explained the three early-exit checks (row status='running', cancel_requested, turn ceiling) as a guard-clause pattern, then added that detail into the "What does one turn of the loop actually look like?" node in AgentTree.tsx: a new body paragraph naming the pattern + a new leaf child for the one guard (ownership/'running' check) that had no existing child node. tsc + dev-server compile verified.
+- **Files/commits:** apps/web/src/pages/docs/AgentTree.tsx. Uncommitted (small follow-up to commit 39f12a3).
+- **PM impact:** none.
+
+
 ## 2026-07-23 — /docs pipeline converted to MDX + the tree report ported in as a page `[ship]`
 - **What:** Swapped the /docs store's rendering pipeline from react-markdown (runtime string parsing) to @mdx-js/rollup (build-time compile) — mdx plugin wired into vite.config.ts ahead of the React plugins, all 4 docs renamed .md→.mdx, registry.ts now imports compiled components instead of raw strings, Markdown.tsx→MdxContent.tsx supplies the same mermaid-fence/internal-link overrides via MDXProvider. Verified: tsc clean, production build clean, eslint clean, dev server confirmed live-compiling via curl, and a scratch file proved raw HTML (`<details>/<summary>`) now survives untouched — the actual reason for the switch. Then cashed that in immediately: ported the standalone `doc_1784810600000_agent_tree.html` (collapsible Q&A tree of the agent architecture) into `/docs/agent-tree` — extracted the body markup + CSS into a new `AgentTree.tsx` component (scoped styles, real onClick handlers replacing inline `onclick=`, `.dark`-class dark mode instead of prefers-color-scheme, `not-prose` to escape Tailwind Typography), with a thin `agent-tree.mdx` wrapper.
 - **Files/commits:** apps/web/vite.config.ts, apps/web/src/vite-env.d.ts, apps/web/src/pages/docs/{registry.ts,DocsPage.tsx,MdxContent.tsx (was Markdown.tsx),AgentTree.tsx (new)}, apps/web/src/pages/docs/content/*.mdx (renamed + agent-tree.mdx new), apps/web/package.json (+@mdx-js/rollup, +@mdx-js/react). Uncommitted.
