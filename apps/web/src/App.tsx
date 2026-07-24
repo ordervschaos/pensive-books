@@ -38,6 +38,7 @@ const BookDetails = lazy(() => import("@/pages/books/show/BookDetails"));
 const DnaNewBookPage = lazy(() => import("@/features/dna/pages/DnaNewBookPage"));
 const DnaJsonPage = lazy(() => import("@/features/dna/pages/DnaJsonPage"));
 const DnaTreePage = lazy(() => import("@/features/dna/pages/DnaTreePage"));
+const DnaDevPage = lazy(() => import("@/features/dna/pages/DnaDevPage"));
 const DnaMetersPage = lazy(() => import("@/features/dna/pages/DnaMetersPage"));
 const DnaLedgerPage = lazy(() => import("@/features/dna/pages/DnaLedgerPage"));
 const DnaArchitecturePage = lazy(() => import("@/features/dna/pages/DnaArchitecturePage"));
@@ -197,6 +198,8 @@ export default function App() {
                         <Route path="/books/:bookSlug/dna.json" element={<DnaJsonPage />} />
                         <Route path="/books/:bookSlug/dna/meters" element={<DnaMetersPage />} />
                         <Route path="/books/:bookSlug/dna/ledger" element={<DnaLedgerPage />} />
+                        {/* Admin-only book flight recorder — static path outranks the tree splat below */}
+                        <Route path="/books/:bookSlug/dna/tree/dev" element={<AdminRoute><DnaDevPage /></AdminRoute>} />
                         <Route path="/books/:bookSlug/dna/tree/*" element={<DnaTreePage />} />
                         <Route path="/books/:bookSlug/edit" element={<BookEdit />} />
                         <Route path="/books/:bookSlug/pages/:pageSlug" element={<PageView />} />

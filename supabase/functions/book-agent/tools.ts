@@ -27,7 +27,7 @@ const SHARED_TOOLS = [
   },
   {
     name: "update_vision",
-    description: "Capture what the author just told you into the brief's durable vision document (their characters-in-mind, setting, known plot points, aims, influences, constraints, open questions). Direct write, no review — this records THEIR words, so stay faithful: capture, don't invent or embellish. Pass ONLY the sections that changed; each replaces that section wholesale (carry forward anything worth keeping — the current vision is in your <brief> block). Set compiled: true only at the end of the interview, after the author confirms your summary — it marks the interview done and advances the journey. This is a read-class tool: batch it with other reads; it does not end your turn.",
+    description: "Capture what the author just told you into the brief's durable vision document (their characters-in-mind, setting, known plot points, aims, influences, constraints, open questions). Direct write, no review — this records THEIR words, so stay faithful: capture, don't invent or embellish. Pass ONLY the sections that changed; each replaces that section wholesale (carry forward anything worth keeping — the current vision is in your <brief> block). Set compiled: true only at the end of the interview, after the author confirms your summary — it marks the interview done and advances the journey. PUT YOUR CONVERSATIONAL REPLY IN THE `reply` FIELD of this call (your reflection + next questions): that ONE call completes the whole exchange — the reply shows to the author, the vision write lands, and you will NOT be called again to reply separately, so never plan a follow-up message. You may still batch it with other reads when a read is genuinely needed first.",
     input_schema: {
       type: "object",
       properties: {
@@ -39,6 +39,7 @@ const SHARED_TOOLS = [
         constraints: { type: "string", description: "Non-negotiables (POV, content lines, length, structure)." },
         open_questions: { type: "string", description: "What the author is still unsure about." },
         notes: { type: "string", description: "Anything that fits nowhere else." },
+        reply: { type: "string", description: "Your conversational reply to the author for THIS exchange — reflection on what they just said + your next 2–3 questions. Shown to the author as your message; this completes the exchange (no separate reply turn happens). Markdown ok. Omit only when another tool in this same turn will produce the reply." },
         compiled: { type: "boolean", description: "true = interview complete (author confirmed)." },
       },
     },

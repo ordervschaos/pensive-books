@@ -19,6 +19,10 @@ import { maybeEagerAck, maybeTitleThread } from "./ack.ts";
 import { AUTO_CONTINUE_SENTINEL, FORCE_COMMIT_AFTER_READS, FORCE_COMMIT_SENTINEL, compactTranscript, latestAuthorAsk, trailingReadRun, withBookState, withCacheBreakpoints } from "./transcript.ts";
 
 const MAX_TURNS = 20;          // model calls per run — the runaway guard
+// Result-blind tools: their result is ALWAYS "ok" and can never inform the reply, so a turn that
+// already carried its reply (as text, or in the tool's own `reply` param) needs no continuation
+// call after them — see the speak-and-act rule in advance().
+const RESULT_BLIND = new Set(["update_vision"]);
 const AUTO_MAX_TURNS = 100;     // autonomous threads iterate change-by-change, so they get a higher ceiling
 // One call must finish inside the ~150s worker wall clock (with headroom for the row writes and
 // the chain dispatch). An abort still BILLS — the API keeps generating after we hang up — so the
@@ -212,6 +216,9 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
         taskTable: "book_agent_runs",
         taskId: runId,
         userId: row.created_by,
+        // The assistant reply of this call is appended at exactly this stored-transcript slot
+        // (transcript = [...baseTranscript, {assistant}]) — recorded so call↔turn is an exact join.
+        transcriptIndex: baseTranscript.length,
       }, { signal: callSignal });
     } catch (e) {
       clearInterval(cancelPoll);
@@ -247,6 +254,17 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
     }
 
     const toolUses = content.filter((b) => b.type === "tool_use");
+
+    // A result-blind tool's `reply` param is the agent's chat reply riding INSIDE the call —
+    // deterministic across providers, because reasoning tiers often refuse to emit text blocks
+    // alongside a tool call (observed live: deepseek ignored the "same message" instruction,
+    // ai_calls 10609/10610). Surface it in the feed exactly like narration text.
+    const blindReplies: string[] = [];
+    for (const t of toolUses) {
+      if (!RESULT_BLIND.has(t.name)) continue;
+      const r = String((t.input as { reply?: unknown } | undefined)?.reply ?? "").trim();
+      if (r) { blindReplies.push(r); steps.push({ t: "note", label: r }); }
+    }
 
     // OpenAI (GPT) requires a role:"tool" message for EVERY tool_call in an assistant message —
     // even for terminal calls (propose_node_ops, finish, etc.) that end the turn. Claude's API is
@@ -386,6 +404,21 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
         .update({ status: "awaiting_input", transcript, steps, pending })
         .eq("id", runId);
       return "stop"; // parked — resumes when the author answers (a fresh authenticated chain kick)
+    }
+
+    // ── Speak-and-act: result-blind writes don't force a continuation call ──
+    // When an INTERACTIVE turn carried its reply (narration text, or a `reply` param on the call)
+    // and its only tools are result-blind, the exchange is already complete: execute the tools and
+    // go idle, instead of paying a second full-context model call whose only job is to say what
+    // this turn already said (measured: the old two-call shape doubled input billing and added
+    // ~5s per interview exchange — ai_calls 10606/10607). Auto mode keeps the continuation: there
+    // the run must keep driving toward finish, not stop to talk.
+    const spokeThisTurn = blindReplies.length > 0 || content.some((b) => b.type === "text" && String(b.text ?? "").trim());
+    if (!auto && spokeThisTurn && toolUses.length && toolUses.every((t) => RESULT_BLIND.has(t.name))) {
+      const results = await toolResults(service, row.book_id, toolUses, steps, {}, auto);
+      transcript.push({ role: "user", content: results });
+      await service.from("book_agent_runs").update({ status: "idle", transcript, steps }).eq("id", runId);
+      return "stop"; // the narration IS the reply; the write landed; nothing left to ask the model
     }
 
     // ── Plain reads: execute, append, chain ──

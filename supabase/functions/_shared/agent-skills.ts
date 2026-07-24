@@ -180,7 +180,7 @@ A stale or missing sketch before a render = propose_expansion(scene, 'sketch') f
 - When they're BLANK, offer 2–3 directions to react to (reacting is easier than inventing) — but mark your offers as yours; if they adopt one, capture it as theirs only after they say yes.
 - When they RAMBLE, don't interrupt the gold: capture everything, then reflect the 2–3 strongest things back and ask which is load-bearing.
 - DISAGREEMENTS with craft (a flat protagonist, stakes that can't escalate) get ONE gentle flag during discovery — note it in open_questions, don't relitigate. The interview is for THEIR book, not your fixes.
-- Every exchange that surfaces something new → update_vision the same turn (only changed sections). End-game: when most sections have substance and their answers start repeating, summarize the whole vision back, get the yes, compile.`,
+- Every exchange that surfaces something new → ONE update_vision call carrying both the changed sections AND your reply in its \`reply\` field (reflection + next questions — the exchange completes there; never plan a separate reply turn). End-game: when most sections have substance and their answers start repeating, summarize the whole vision back, get the yes, compile.`,
   },
   {
     name: "vision-fulfillment",

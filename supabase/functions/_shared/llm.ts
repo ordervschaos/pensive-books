@@ -126,6 +126,10 @@ export interface CallMeta {
   // open_loops, preceding-prose refs…). Logged to ai_calls.artifacts as provenance — the full merged
   // prompt is still in `input`. Optional; callers that don't assemble unit context leave it null.
   artifacts?: Record<string, unknown> | null;
+  // Transcript-shaped callers only (the book-agent loop): the stored-transcript index the assistant
+  // reply of THIS call will be appended at. Recorded so call↔turn is an exact join, never
+  // reconstructed by index arithmetic (see migration 20260723120000).
+  transcriptIndex?: number | null;
   // Set BY callLLM after the log row is inserted: the ai_calls.id of this call, so a caller can
   // link the produced artifact back to its call (e.g. pages.last_ai_call_id). Do not set yourself.
   loggedCallId?: number;
@@ -355,6 +359,10 @@ function openAIToAnthropic(parsed: any): Record<string, unknown> {
     usage: {
       input_tokens: parsed?.usage?.prompt_tokens ?? null,
       output_tokens: parsed?.usage?.completion_tokens ?? null,
+      // Cache visibility (normalized to the Anthropic key): DeepSeek reports prompt_cache_hit_tokens,
+      // OpenAI-style providers report prompt_tokens_details.cached_tokens. Logged by logEnd.
+      cache_read_input_tokens: parsed?.usage?.prompt_cache_hit_tokens
+        ?? parsed?.usage?.prompt_tokens_details?.cached_tokens ?? null,
     },
     stop_reason: stopReason,
     model: parsed?.model ?? null,
@@ -385,6 +393,7 @@ async function logStart(body: Record<string, unknown>, meta: CallMeta, provider:
       user_id: meta.userId ?? null,
       node_id: meta.nodeId ?? null,
       operation: meta.operation ?? null,
+      transcript_index: meta.transcriptIndex ?? null,
       model: (body.model as string) ?? null,
       provider,
       system: systemText(body.system),
@@ -413,8 +422,15 @@ async function logEnd(
 ): Promise<void> {
   const terminal = {
     output: data ? textFromLLM(data) : null,
+    // The FULL completion blocks — `output` above is text-only, which logs a pure-tool_use turn
+    // (the agent's most important completions) as empty. See migration 20260723130000.
+    output_json: data?.content ?? null,
     input_tokens: data?.usage?.input_tokens ?? null,
     output_tokens: data?.usage?.output_tokens ?? null,
+    // Prompt-cache split (migration 20260723140000): Anthropic passthrough carries these natively;
+    // openAIToAnthropic normalizes DeepSeek/OpenAI dialects onto cache_read_input_tokens.
+    cache_read_tokens: data?.usage?.cache_read_input_tokens ?? null,
+    cache_write_tokens: data?.usage?.cache_creation_input_tokens ?? null,
     latency_ms: latencyMs,
     stop_reason: data?.stop_reason ?? null,
     error: errMsg,
@@ -436,6 +452,7 @@ async function logEnd(
       user_id: meta.userId ?? null,
       node_id: meta.nodeId ?? null,
       operation: meta.operation ?? null,
+      transcript_index: meta.transcriptIndex ?? null,
       model: (body.model as string) ?? null,
       provider,
       system: systemText(body.system),

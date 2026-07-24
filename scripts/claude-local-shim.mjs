@@ -117,7 +117,8 @@ function toolEnvelopeBlock(tools) {
     "",
     "Reply with EXACTLY ONE JSON object and nothing else — no markdown fences, no commentary, no narration, no acknowledgment of what you're about to do:",
     '  {"tool": "<tool name>", "input": {...}}   to call a tool, or',
-    '  {"text": "<your answer>"}                  to answer directly without calling a tool.',
+    '  {"text": "<your answer>"}                  to answer directly without calling a tool, or',
+    '  {"tool": "<tool name>", "input": {...}, "text": "<your reply>"}   to reply to the author AND call a tool in the same turn (use this whenever a tool call should be accompanied by your conversational reply, e.g. update_vision alongside your next interview questions).',
     "",
     'WRONG: Assistant: I\'ll check the sketch first.\nsearch_nodes({"query": "apple"})',
     'RIGHT: {"tool": "search_nodes", "input": {"query": "apple"}}',
@@ -218,12 +219,18 @@ function toAnthropicResponse(raw, requestedModel, hasTools) {
   }
   const envelope = extractEnvelope(raw);
   if (envelope && typeof envelope.tool === "string") {
+    // Speak-and-act: an optional `text` alongside `tool` becomes a text block BEFORE the tool_use —
+    // the reply and the call in one completion (book-agent's result-blind rule then ends the turn
+    // without a second model call; see advance.ts).
+    const speech = typeof envelope.text === "string" && envelope.text.trim()
+      ? [{ type: "text", text: envelope.text.trim() }]
+      : [];
     return {
       id: `msg_local_${stamp}`,
       type: "message",
       role: "assistant",
       model: requestedModel,
-      content: [{ type: "tool_use", id: `toolu_local_${stamp}`, name: envelope.tool, input: envelope.input ?? {} }],
+      content: [...speech, { type: "tool_use", id: `toolu_local_${stamp}`, name: envelope.tool, input: envelope.input ?? {} }],
       stop_reason: "tool_use",
       stop_sequence: null,
       usage: { input_tokens: null, output_tokens: null },
