@@ -334,7 +334,7 @@ Deno.serve(async (req: Request) => {
     const { bookId, nodeId, target, light, prepare, phase, rawText, repairText, brief: renderBrief } = (await req.json().catch(() => ({}))) as { bookId?: number; nodeId?: string; target?: string; light?: boolean; prepare?: boolean; phase?: "prepare" | "finalize"; rawText?: string; repairText?: string; brief?: { focus?: string; mustHonor?: string[]; avoid?: string[] } };
     if (!bookId || !nodeId) return json({ error: "bookId and nodeId are required" }, 400);
 
-    const { data: book } = await db.from("books").select("name, brief, foundations, craft_overrides").eq("id", bookId).maybeSingle();
+    const { data: book } = await db.from("books").select("name, brief, foundations, craft_overrides, expansion_overrides").eq("id", bookId).maybeSingle();
     const { data: nodeRows } = await db.from("book_nodes").select("id, parent_id, kind, position, content, authoring").eq("book_id", bookId);
     const nodes = (nodeRows as Node[] | null) ?? [];
     const node = nodes.find((n) => n.id === nodeId);
@@ -1132,6 +1132,13 @@ Output JSON ONLY: { "tentpoles": [ { "name": "...", "summary": "...", "source": 
       .eq("target", target ?? "")
       .maybeSingle() as { data: NodeTypeConfig | null };
     if (!config) return json({ error: `Unknown expand target "${target}"` }, 400);
+    // Per-book override of this expansion's generation policy (books.expansion_overrides[target], set on
+    // the studio's Craft Notes tab). Only the two author-meaningful knobs are overridable — `role` (the
+    // craft phrasing) and `count` (how many); schema_json/slots stay fixed (they're the output contract).
+    // Blank/missing → the global node_type_configs default.
+    const expOver = ((book?.expansion_overrides ?? {}) as Record<string, { role?: string; count?: string }>)[target ?? ""] ?? {};
+    const role = (typeof expOver.role === "string" && expOver.role.trim()) ? expOver.role.trim() : config.role;
+    const count = (typeof expOver.count === "string" && expOver.count.trim()) ? expOver.count.trim() : config.count;
     const slots = (config.slots ?? {}) as SlotConfig;
     const slottedCtx = [
       `BOOK: ${book?.name ?? ""}`,
@@ -1153,7 +1160,7 @@ Output JSON ONLY: { "tentpoles": [ { "name": "...", "summary": "...", "source": 
       briefBlock, // the agent's curated, verbatim guidance for this pass (empty when no brief was given)
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");
-    const system = `You are a story architect expanding a ${node.kind} into ${config.role}. Generate ${config.count} ${config.child_kind}s as ONE authoritative structure — NOT alternatives to choose among. Honor every LOCKED ancestor and the MANDATE verbatim. Output JSON ONLY: { "children": [ ${config.schema_json} ] }`;
+    const system = `You are a story architect expanding a ${node.kind} into ${role}. Generate ${count} ${config.child_kind}s as ONE authoritative structure — NOT alternatives to choose among. Honor every LOCKED ancestor and the MANDATE verbatim. Output JSON ONLY: { "children": [ ${config.schema_json} ] }`;
     const data = await callLLM({ model, max_tokens: 4000, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: `${slottedCtx}\n\nGenerate the ${config.child_kind}s. JSON only.` }] }, meta, { signal: req.signal });
     const parsed = JSON.parse(extractJsonBlock(textFromLLM(data)));
