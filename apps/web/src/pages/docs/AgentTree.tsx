@@ -100,8 +100,11 @@ export function AgentTree() {
           </div>
           <div className="next">Why keep two histories — transcript AND steps? ↓</div>
             <details className="leaf">
-            <summary><span className="q">Q · Why both a transcript and a step feed?</span> <span className="a">Two audiences, one source of truth.</span></summary>
-            <div className="body"><p>The model needs exact system/user/assistant/tool_result messages to continue reasoning; a human needs a readable narrative of what happened. Same events, two projections — deriving the feed from the transcript at render time would force the UI to understand LLM wire formats, so the loop writes both as it goes.</p></div>
+            <summary><span className="q">Q · Why both a transcript and a step feed?</span> <span className="a">Two audiences, one source of truth — and they're genuinely two separate stored fields, not one derived from the other.</span></summary>
+            <div className="body">
+              <p>The model needs exact system/user/assistant/tool_result messages to continue reasoning; a human needs a readable narrative of what happened. Same events, two projections, written in parallel by the same code, in the same row update — not <code>steps</code> computed from <code>transcript</code> at render time.</p>
+              <p><code>transcript</code> holds the raw <span className="term">LLM wire format</span> — the literal JSON shape the provider's API sends/expects, not a domain concept: tagged content blocks like <code>{'{type:"text",...}'}</code> and <code>{'{type:"tool_use",id,name,input}'}</code>, nested in a <code>content</code> array, built for the model to re-parse next call. <code>steps</code> is a flat, simple shape (<code>{'{t:"note"|"read"|"plan"|...,label}'}</code>) built by picking the human-relevant text OUT of that same response the moment it arrives — e.g. every <code>{'{type:"text"}'}</code> block becomes a <code>{'{t:"note",label}'}</code> step, right beside the line that appends the untouched block to <code>transcript</code>. Deriving the feed from the transcript at render time instead would force the UI to walk provider-shaped content blocks and know which ones mean what — i.e. the frontend would have to understand the LLM API's own protocol. Writing <code>steps</code> at the same moment as <code>transcript</code> means the UI only ever renders the flat shape and never touches wire format at all.</p>
+            </div>
             </details>
           </details>
 
@@ -147,8 +150,14 @@ export function AgentTree() {
         <summary><span className="q">Q · What does one turn of the loop actually look like?</span> <span className="a">Load row → guard → one LLM call → dispatch by tool class: reads continue the loop, proposals end it.</span></summary>
         <div className="body">
           <p>The deep design move: the model never decides "should I keep looping" in prose — the <em>class</em> of tool it called decides. Read tools (read a node, search, fetch a schema) execute, append results, and loop again. Proposal tools stage a change and <em>end the turn</em>. Ask parks the run; finish concludes it. That asymmetry makes "one staged change per turn" a structural guarantee, not a prompt suggestion. Pattern: <span className="term">terminal vs. non-terminal tools</span>.</p>
+          <p><span className="term">Guard</span> is the three early-exit checks that run BEFORE the LLM call — the expensive, billable step — so an invalid run never pays for one more turn it shouldn't have: (1) the row still exists and is <code>status: 'running'</code> — otherwise this call has no business driving a parked, finished, or vanished run; (2) <code>cancel_requested</code> is false; (3) <code>turns</code> hasn't hit the ceiling. Each is a <span className="term">guard clause</span> — an early return that rejects one invalid state, so the checks read as a flat list up top instead of nested conditionals burying the failure cases.</p>
         </div>
-        <div className="next">What happens on a malformed tool call? what bounds a runaway? how does stopping work? and why does a finished turn end 'idle' instead of 'done'? ↓</div>
+        <div className="next">Why gate on 'running' specifically? what happens on a malformed tool call? what bounds a runaway? how does stopping work? and why does a finished turn end 'idle' instead of 'done'? ↓</div>
+
+          <details className="leaf">
+          <summary><span className="q">Q · Why check the row is 'running' before doing anything?</span> <span className="a">Ownership — otherwise this call has no business driving the run.</span></summary>
+          <div className="body"><p>A worker can be woken by a stale Realtime signal, a duplicate dispatch, or the watchdog re-kicking something that already finished. If the row isn't <code>'running'</code>, some other event already resolved it — parked on a question, idled out, or gone — so this invocation just returns <code>"stop"</code> without touching anything. The check is what makes a redundant wake-up harmless instead of a double-turn.</p></div>
+          </details>
 
           <details className="leaf">
           <summary><span className="q">Q · What happens when the model calls a tool wrong?</span> <span className="a">The validator's complaint is returned AS the tool's result, and the loop continues.</span></summary>
@@ -173,6 +182,16 @@ export function AgentTree() {
           <details className="leaf">
           <summary><span className="q">Q · Why does a finished turn end 'idle', not 'done'?</span> <span className="a">'Idle' keeps the transcript — that one status choice turns a task runner into a conversation.</span></summary>
           <div className="body"><p>A terminal 'done' would make every exchange a one-shot job. 'Idle' is quiescent-but-resumable: the next user message appends to the retained transcript and re-runs the loop with full history.</p></div>
+          </details>
+
+          <details>
+          <summary><span className="q">Q · What do you call the whole run of turns from one user message to the next idle?</span> <span className="a">A <span className="term">turn-cluster</span> — every turn since the last user/answer step.</span></summary>
+          <div className="body"><p>One <em>turn</em> = one LLM call (the counter the 20/100 ceiling checks). A <strong>turn-cluster</strong> is however many turns chain together in response to ONE thing the user did — a message, or an answer to a parked question — running turn after turn (reads looping the chain) until a terminal tool fires and the row goes idle/awaiting_input/cancelled/error. Restarting always needs a fresh trigger from outside: a new message, an answer, or (auto mode) the auto-continue resume. It's genuine codebase vocabulary, not invented for this doc — the loop computes it by walking <code>steps</code> backward until it hits a <code>user</code>/<code>answer</code> step, to dedupe the "Loaded X playbook" grounding lines: without it, an autonomous run re-injecting the same context every turn printed the identical line every turn (the "10 identical Step 5/5 lines" bug).</p></div>
+          <div className="next">Is a turn-cluster stored anywhere, or computed on demand? ↓</div>
+            <details className="leaf">
+            <summary><span className="q">Q · Is a turn-cluster stored in the DB in an identifiable way?</span> <span className="a">No — it's implicit, reconstructed on demand by scanning for boundary markers. And the counter that LOOKS like it tracks this actually tracks something coarser.</span></summary>
+            <div className="body"><p>No <code>cluster_id</code>, no dedicated table, nothing segmented at write time. <code>steps</code> entries carry a <code>t</code> discriminator (<code>"user" | "note" | "read" | ...</code>) but no cluster tag — a cluster's start is found by walking <code>steps</code> backward until <code>t==="user"</code> or <code>t==="answer"</code>, fresh every time, never cached. <code>transcript</code> (wire format) isn't segmented either — the equivalent search skips pure-<code>tool_result</code> messages and harness sentinels until it finds one with real typed text. The counter that LOOKS like the answer, <code>turns</code>, is actually coarser: it resets to 0 only on a fresh <code>sendAgentMessage</code> — answering a parked question and the auto-accept resume both deliberately leave it untouched (so <code>MAX_TURNS</code> still bounds a whole autonomous burst), which means <code>turns</code> silently spans MULTIPLE turn-clusters across an ask→answer park/resume or an auto-accept run. Two different implicit boundaries, diverging exactly where you'd assume they line up.</p></div>
+            </details>
           </details>
         </details>
 
