@@ -623,7 +623,7 @@ export default function DnaTreePage() {
           background: T.raised, borderLeft: `1px solid ${T.border}`, display: "flex", flexDirection: "column",
         }}>
           <div style={{ flex: 1, minHeight: 0 }}>
-            <AgentRail bookId={bookId} nodes={nodes} settings={settings} bookSlug={bookSlug} brief={brief} attachedIds={attachedIds} onDetach={detachNode} onClose={() => setRailOpen(false)} onJump={jumpTo} />
+            <AgentRail bookId={bookId} nodes={nodes} settings={settings} bookSlug={bookSlug} brief={brief} attachedIds={attachedIds} onAttach={attachNode} onDetach={detachNode} onClose={() => setRailOpen(false)} onJump={jumpTo} />
           </div>
         </div>
       )}

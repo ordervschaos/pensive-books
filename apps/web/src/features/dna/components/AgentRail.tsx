@@ -31,13 +31,19 @@ import { AgentRailControls } from "./agentRail/AgentRailControls";
 import { StepBubble } from "./agentRail/StepBubble";
 import { ProposalCard } from "./agentRail/ProposalCard";
 import { SessionHistory } from "./agentRail/SessionHistory";
-import { Composer } from "./agentRail/Composer";
+import { Composer, type ComposerMenu } from "./agentRail/Composer";
+import { OptionsCard } from "./agentRail/OptionsCard";
 import { AdminPromptPeek } from "./agentRail/AdminPromptPeek";
 
-export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedIds = [], onDetach, onClose, onJump }: {
+// The composer's "@" trigger: group 1 = the boundary (start-of-draft or the whitespace before "@"), which the
+// strip-on-pick replacement restores; group 2 = the query typed after it.
+const MENTION_RE = /(^|\s)@([^@\n]*)$/;
+
+export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedIds = [], onAttach, onDetach, onClose, onJump }: {
   bookId: number; nodes: DnaNode[]; settings: BookSettings; bookSlug?: string; // bookSlug feeds the reader URL into the final render/publish hand-off
   brief?: Brief | null; // the books.brief — lets the greeting tell "no idea yet" (ideate) from "idea set, no logline" (teach the logline)
   attachedIds?: string[]; onDetach?: (id: string) => void; // slice 2 — the context tray (anchors); omitted = no tray
+  onAttach?: (id: string) => void; // "@" in the composer — attach an anchor WITHOUT going to the tree row's @ icon
   onClose?: () => void; // folds the rail's own close affordance into its header row instead of a floating sibling
   onJump?: (id: string) => void; // reveals + scrolls to a node in the tree — lets a staged-options step jump to its picker
 }) {
@@ -138,6 +144,11 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
 
   const steps = useMemo(() => (Array.isArray(row?.steps) ? row!.steps! : []) as AgentStep[], [row]);
   const proposals = useMemo(() => (Array.isArray(row?.proposals) ? row!.proposals! : []) as AgentProposal[], [row]);
+  // Nodes carrying STAGED OPTIONS (book_nodes.proposals, written by the agent's propose_options). The tree
+  // renders the same decision in place via ProposalPicker; surfacing it here too is what makes the rail
+  // self-sufficient — every choice the agent puts to the author (proposal · question · options) is now
+  // resolvable without leaving the conversation. Same writes either way (lib/dnaProposals.ts).
+  const optionNodes = useMemo(() => nodes.filter((n) => (n.proposals?.length ?? 0) > 0), [nodes]);
   const running = row?.status === "running";
   const awaiting = row?.status === "awaiting_input";
   const active = running || awaiting;
@@ -180,27 +191,77 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
   }, [historyOpen, threadId, sessionsStale]);
   // Optimistic echo of the just-sent message until the row reflects it over Realtime.
   const [optimistic, setOptimistic] = useState<string | null>(null);
-  const { scrollRef, atBottom, scrollToBottom } = useChatScroll([steps.length, proposals.length, running, awaiting, !!optimistic] as const);
+  const { scrollRef, atBottom, scrollToBottom } = useChatScroll([steps.length, proposals.length, optionNodes.length, running, awaiting, !!optimistic] as const);
 
-  // ── Slash-command menu ── Type "/" to open a filtered command list; picking one drops its editable
-  // prompt into the composer and focuses the context filter to the command's aspects.
+  // ── Composer autocomplete ── Two triggers over one popover (Composer owns the rendering + keys):
+  //   "/" at the start of the draft → the slash-command list; picking one drops its editable prompt in.
+  //   "@" anywhere → a node picker that attaches an anchor to the context tray. Before this, attaching
+  //   context meant leaving the chat for the tree row's "@" icon — the last routine gesture the rail
+  //   couldn't perform itself.
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const focusComposer = () => requestAnimationFrame(() => {
+    const el = taRef.current;
+    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  });
+
   const slashQuery = draft.startsWith("/") ? draft.slice(1) : null;
   const cmds = useMemo(
     () => (slashQuery === null ? [] : matchCommands(availableCommands(available), slashQuery)),
     [slashQuery, available],
   );
-  const showMenu = slashQuery !== null && cmds.length > 0 && !active;
+
+  // The "@" token being typed: an "@…" run at the caret-end of the draft, anchored to a word boundary so a
+  // mid-word "@" (an email address) doesn't open the picker. The query may contain spaces — node labels are
+  // prose, not handles — which is safe because a query that matches nothing closes the menu on its own.
+  // Slash wins when both could match (a draft can only start with one of them, so they're disjoint anyway).
+  const mentionQuery = useMemo(() => {
+    if (slashQuery !== null) return null;
+    return draft.match(MENTION_RE)?.[2] ?? null;
+  }, [draft, slashQuery]);
+  const mentionHits = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.trim().toLowerCase();
+    return nodes
+      .filter((n) => !attachedIds.includes(n.id))
+      .filter((n) => !q || nodeLabel(n, n.kind).toLowerCase().includes(q) || n.kind.includes(q))
+      .slice(0, 8);
+  }, [mentionQuery, nodes, attachedIds]);
+
   const [hi, setHi] = useState(0);
-  useEffect(() => { setHi(0); }, [slashQuery]);
+  useEffect(() => { setHi(0); }, [slashQuery, mentionQuery]);
 
   const pickCommand = (c: AgentCommand) => {
     setDraft(c.prompt);
-    requestAnimationFrame(() => {
-      const el = taRef.current;
-      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
-    });
+    focusComposer();
   };
+  // Attaching consumes the "@query" token — the anchor rides out-of-band on the message (attachedLiveIds),
+  // so leaving the text behind would double-say it.
+  const pickMention = (n: DnaNode) => {
+    onAttach?.(n.id);
+    setDraft(draft.replace(MENTION_RE, "$1"));
+    focusComposer();
+  };
+
+  const menu = useMemo<ComposerMenu | null>(() => {
+    if (active) return null;
+    if (slashQuery !== null) {
+      if (!cmds.length) return null;
+      return {
+        items: cmds.map((c) => ({ key: c.id, left: `/${c.trigger}`, right: c.hint })),
+        hi, setHi, onPick: (i) => pickCommand(cmds[i]), onEscape: () => setDraft(""),
+      };
+    }
+    if (mentionQuery !== null && onAttach) {
+      if (!mentionHits.length) return null;
+      return {
+        items: mentionHits.map((n) => ({ key: n.id, left: n.kind, right: nodeLabel(n, n.kind) })),
+        hi, setHi, onPick: (i) => pickMention(mentionHits[i]),
+        onEscape: () => setDraft(draft.replace(MENTION_RE, "$1")),
+      };
+    }
+    return null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, slashQuery, cmds, mentionQuery, mentionHits, hi, draft, onAttach]);
 
   useEffect(() => {
     // Clear the echo once the row reflects it — a free message lands as a 'user' step, an answer to a
@@ -365,11 +426,13 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
             <ProposalCard key={p.id} proposal={p} nodes={nodes}
               applying={applyingId === p.id} onApply={() => void apply(p)} onDiscard={() => void discard(p)} onStop={stopApply} />
           ))}
+          {/* Staged options (propose_options) — pickable right here, not only at the node's row in the tree. */}
+          {optionNodes.map((n) => <OptionsCard key={n.id} node={n} nodes={nodes} onJump={onJump} />)}
           {/* Guided-flow nudge (lib/dnaJourney.currentObjective) — appears in the feed as the LAST item
               only when the agent's work is settled: idle, nothing running/awaiting, no proposal to review,
               no error. So it reads as "here's what's next", not a pinned CTA. One click hands the step to
               the agent (the objective itself already rides every message's context). */}
-          {!active && !optimistic && proposals.length === 0 && row?.status !== "error" && objectiveHeadline && (
+          {!active && !optimistic && proposals.length === 0 && optionNodes.length === 0 && row?.status !== "error" && objectiveHeadline && (
             <button type="button" onClick={() => void send(nextStepMessage, { isNextStep: true })} disabled={busy}
               title="Let the agent lead you through this step"
               className="flex w-full items-center gap-2.5 rounded-2xl border border-dashed border-[hsl(var(--pv-accent))]/35 bg-[hsl(var(--pv-accent))]/[0.05] px-3.5 py-2.5 text-left transition-colors hover:border-[hsl(var(--pv-accent))]/60 hover:bg-[hsl(var(--pv-accent))]/[0.08] disabled:opacity-50">
@@ -420,8 +483,8 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
         )}
       </div>
 
-      {/* Context tray (slice 2) — the DNA nodes the author attached as anchors. Add from a node's kebab in
-          the tree; remove here. On send they become a "Focus" prefix on the message. */}
+      {/* Context tray (slice 2) — the DNA nodes the author attached as anchors. Add by typing "@" in the
+          composer (or from the node's row in the tree); remove here. The ids ride out-of-band on send. */}
       {attached.length > 0 && (
         <div className="mt-2.5 flex shrink-0 flex-wrap items-center gap-1.5">
           <span className="pv-mono text-[9.5px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">focus</span>
@@ -444,8 +507,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
           onReply={(t) => void reply(t)} answer={answer} setAnswer={setAnswer}
           onStop={() => void stop()} stopDisabled={!!row?.cancel_requested} cancelRequested={!!row?.cancel_requested}
           draft={draft} setDraft={setDraft} onSend={(t) => void send(t)} running={running} active={active} busy={busy}
-          showMenu={showMenu} cmds={cmds} hi={hi} setHi={setHi} onPickCommand={pickCommand}
-          taRef={taRef} stopping={stopping}
+          menu={menu} taRef={taRef} stopping={stopping}
         />
       </div>
     </Panel>

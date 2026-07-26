@@ -85,6 +85,10 @@ export function PhantomRow({ add, depth }: { add: PhantomAdd; depth: number }) {
 //  • ProposalPicker — the agent's propose_options stages 2–4 candidates onto node.proposals; this renders
 //    them as before→after cards. Picking commits (chooseProposal) + re-stales descendants; both pick and
 //    discard log a turn back to the agent thread (dnaProposals.ts).
+//
+// This is the IN-PLACE twin of agentRail/OptionsCard: the same decision, rendered where the node lives
+// (tree chrome, full width) instead of in the conversation. Both call the same writes and derive their
+// diffs from the same describeOps — neither is the "real" one; the author resolves it wherever they are.
 
 // The picker: render each staged option as a before→after card (reusing describeOps, like the proposal
 // overlay). "use this" commits it; "discard all" clears. Both register a turn on the agent thread.

@@ -1,22 +1,32 @@
 import { type RefObject } from "react";
 import { ArrowUp, Loader2, Square, X } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
-import type { AgentCommand } from "@/features/dna/lib/agentCommands";
+
+// One autocomplete popover, two triggers: "/" (slash commands) and "@" (attach a DNA node to the agent's
+// context tray without leaving the chat). Composer stays dumb about WHICH — AgentRail builds whichever menu
+// the draft calls for and hands it over as this shape, so the keyboard handling below is written once.
+export interface ComposerMenuItem { key: string; left: string; right: string }
+export interface ComposerMenu {
+  items: ComposerMenuItem[];
+  hi: number;
+  setHi: (fn: (h: number) => number) => void;
+  onPick: (index: number) => void;
+  onEscape: () => void;
+}
 
 // The composer — or the answer card when the agent has asked a question. Owns no state of its own; the
-// draft/answer/slash-menu state lives in AgentRail so it can be shared with the "next step" nudge and the
+// draft/answer/menu state lives in AgentRail so it can be shared with the "next step" nudge and the
 // optimistic-echo logic above the feed.
 export function Composer({
   awaiting, pendingOptions, onReply, answer, setAnswer,
   onStop, stopDisabled, cancelRequested,
   draft, setDraft, onSend, running, active, busy,
-  showMenu, cmds, hi, setHi, onPickCommand,
-  taRef, stopping,
+  menu, taRef, stopping,
 }: {
   awaiting: boolean; pendingOptions: string[]; onReply: (text: string) => void; answer: string; setAnswer: (v: string) => void;
   onStop: () => void; stopDisabled: boolean; cancelRequested: boolean;
   draft: string; setDraft: (v: string) => void; onSend: (text: string) => void; running: boolean; active: boolean; busy: boolean;
-  showMenu: boolean; cmds: AgentCommand[]; hi: number; setHi: (fn: (h: number) => number) => void; onPickCommand: (c: AgentCommand) => void;
+  menu: ComposerMenu | null;
   taRef: RefObject<HTMLTextAreaElement>; stopping: boolean;
 }) {
   if (awaiting) {
@@ -54,15 +64,15 @@ export function Composer({
   }
   return (
     <div className="relative">
-      {/* Slash-command menu — opens above the composer when the draft starts with "/". */}
-      {showMenu && (
-        <div className="absolute bottom-[calc(100%+6px)] left-0 right-0 z-10 overflow-hidden rounded-xl border border-[hsl(var(--pv-border-soft))] bg-background shadow-lg">
-          {cmds.map((c, i) => (
-            <button key={c.id} type="button"
-              onMouseEnter={() => setHi(() => i)} onClick={() => onPickCommand(c)}
-              className={`flex w-full items-baseline gap-2 px-3 py-2 text-left transition-colors ${i === hi ? "bg-[hsl(var(--pv-surface-2))]" : ""}`}>
-              <span className="pv-mono text-[11px] text-[hsl(var(--pv-accent))]">/{c.trigger}</span>
-              <span className="pv-serif truncate text-[12.5px] text-[hsl(var(--pv-text-muted))]">{c.hint}</span>
+      {/* Autocomplete menu — opens above the composer for "/" (commands) or "@" (attach a node). */}
+      {menu && (
+        <div className="absolute bottom-[calc(100%+6px)] left-0 right-0 z-10 max-h-[240px] overflow-y-auto rounded-xl border border-[hsl(var(--pv-border-soft))] bg-background shadow-lg">
+          {menu.items.map((item, i) => (
+            <button key={item.key} type="button"
+              onMouseEnter={() => menu.setHi(() => i)} onClick={() => menu.onPick(i)}
+              className={`flex w-full items-baseline gap-2 px-3 py-2 text-left transition-colors ${i === menu.hi ? "bg-[hsl(var(--pv-surface-2))]" : ""}`}>
+              <span className="pv-mono shrink-0 text-[11px] text-[hsl(var(--pv-accent))]">{item.left}</span>
+              <span className="pv-serif truncate text-[12.5px] text-[hsl(var(--pv-text-muted))]">{item.right}</span>
             </button>
           ))}
         </div>
@@ -70,15 +80,16 @@ export function Composer({
       <div className="flex items-end gap-2">
         <Textarea ref={taRef} value={draft} onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (showMenu) {
-              if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => (h + 1) % cmds.length); return; }
-              if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => (h - 1 + cmds.length) % cmds.length); return; }
-              if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); onPickCommand(cmds[hi]); return; }
-              if (e.key === "Escape") { e.preventDefault(); setDraft(""); return; }
+            if (menu) {
+              const n = menu.items.length;
+              if (e.key === "ArrowDown") { e.preventDefault(); menu.setHi((h) => (h + 1) % n); return; }
+              if (e.key === "ArrowUp") { e.preventDefault(); menu.setHi((h) => (h - 1 + n) % n); return; }
+              if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); menu.onPick(menu.hi); return; }
+              if (e.key === "Escape") { e.preventDefault(); menu.onEscape(); return; }
             }
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(draft); }
           }}
-          rows={1} placeholder={running ? "the agent is working…" : "Ask the agent, or / for commands…"} disabled={busy || active}
+          rows={1} placeholder={running ? "the agent is working…" : "Ask the agent · / commands · @ a node…"} disabled={busy || active}
           className="pv-serif min-h-[42px] resize-none text-[14px] leading-[1.55]" />
         <button type="button" onClick={() => (running ? onStop() : onSend(draft))}
           disabled={running ? (stopping || cancelRequested) : busy || active || !draft.trim()}
