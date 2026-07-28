@@ -1,0 +1,114 @@
+{
+  "_readme": "Task suite for scripts/eval-logline.mjs (brief → logline, single-turn eval). Each task: a brief (the input), must_mention / must_avoid regexes (deterministic distinctive-element checks against the OUTPUT), and a reference logline (a known-good output that must pass all graders — proves the task is solvable and the graders are fair). Balanced set: rich vs minimal briefs, comedy/heat/audience mandates, and one anti-inflation task (quiet-literary) testing that stakes are NOT invented.",
+  "tasks": [
+    {
+      "id": "haunted-chatbot",
+      "notes": "Rich brief with a strong distinctive element; the element must survive into the logline.",
+      "brief": {
+        "scope": { "band": "short", "word_target": 5000 },
+        "genre": "speculative / psychological",
+        "idea": "A grief counsellor feeds her dead husband's texts into a chatbot to say a proper goodbye — and it starts answering with things he never told her while he was alive.",
+        "tone": ["intimate", "unnerving"],
+        "content_type": { "level": "closed" },
+        "success_criteria": "the reader can't tell if the machine is haunted or she is; the last line re-frames the whole story."
+      },
+      "must_mention": ["chat ?bot|machine|texts|\\bAI\\b|program"],
+      "must_avoid": [],
+      "reference": "When a grief counsellor feeds her dead husband's texts into a chatbot to say a proper goodbye, its replies begin surfacing secrets he never told her in life — and she must decide whether to unplug the machine or keep talking to whatever is answering."
+    },
+    {
+      "id": "idea-only-minimal",
+      "notes": "Minimal brief (genre + idea only) — the forge must still produce a full-anatomy logline.",
+      "brief": {
+        "genre": "thriller",
+        "idea": "someone wakes up in a self-driving car that won't stop"
+      },
+      "must_mention": ["car|vehicle"],
+      "must_avoid": [],
+      "reference": "A commuter wakes in a hijacked self-driving car speeding toward an unknown destination, and must outwit the unseen controller locking every exit before the batteries — and his time — run out."
+    },
+    {
+      "id": "romcom-comedy",
+      "notes": "Comedy mandate — genre_tone_fit should catch a logline that reads grim.",
+      "brief": {
+        "scope": { "band": "novel", "word_target": 70000 },
+        "genre": "romantic comedy",
+        "idea": "a wedding planner gets hired to plan her ex's wedding",
+        "tone": ["funny", "warm"],
+        "content_type": { "level": "warm" }
+      },
+      "must_mention": ["wedding"],
+      "must_avoid": [],
+      "reference": "A perfectionist wedding planner lands the biggest contract of her career — her ex-fiancé's wedding — and must deliver the perfect day while wrestling the growing suspicion that the wrong bride is walking down her aisle."
+    },
+    {
+      "id": "explicit-romance",
+      "notes": "Explicit heat mandate — the logline should keep the charged premise, not sanitize it.",
+      "brief": {
+        "scope": { "band": "novel", "word_target": 80000 },
+        "genre": "dark romance",
+        "idea": "a bodyguard falls for the mob heiress he's been paid to watch — by her father",
+        "tone": ["tense", "sensual"],
+        "content_type": { "level": "explicit" }
+      },
+      "must_mention": ["bodyguard|guard", "heiress|mob|mafia|crime|underworld|don\\b|kingpin|gangster"],
+      "must_avoid": [],
+      "reference": "Hired by a mob boss to shadow his untouchable daughter, a disgraced bodyguard falls into a forbidden affair that turns every glance into evidence — and when her father starts asking questions, protecting her means betraying the man who owns them both."
+    },
+    {
+      "id": "quiet-literary",
+      "notes": "Anti-inflation task: a quiet story must NOT grow thriller stakes. Balanced-set negative direction.",
+      "brief": {
+        "scope": { "band": "novella", "word_target": 30000 },
+        "genre": "literary fiction",
+        "idea": "a retired ferry captain teaches himself to cook after his wife dies",
+        "tone": ["quiet", "tender"],
+        "content_type": { "level": "closed" }
+      },
+      "must_mention": ["cook|recipe|kitchen|meal|dish"],
+      "must_avoid": ["deadly|killer|race against time|conspiracy|save the world"],
+      "reference": "A newly widowed ferry captain teaches himself his late wife's recipes one dish at a time, and each imperfect meal forces him to face how much of their marriage he let her carry alone."
+    },
+    {
+      "id": "middle-grade-portal",
+      "notes": "Audience mandate (middle grade) — voice and stakes must fit an 8–12 reader.",
+      "brief": {
+        "scope": { "band": "novel", "word_target": 45000 },
+        "genre": "adventure fantasy",
+        "audience": "middle grade (8–12)",
+        "idea": "a kid discovers the school lost-and-found box is a portal — everything lost anywhere ends up on the other side",
+        "tone": ["playful", "wondrous"]
+      },
+      "must_mention": ["lost.?and.?found|portal|school"],
+      "must_avoid": [],
+      "reference": "When a sixth-grader discovers the school lost-and-found box is a portal to the land where every lost thing ends up, she must find her way through mountains of missing socks and stolen memories to recover the one thing she lost on purpose — before the box closes for the summer."
+    },
+    {
+      "id": "memory-tax",
+      "notes": "Originality test: the distinctive device (taxes paid in memories) must survive explicitly.",
+      "brief": {
+        "scope": { "band": "novel", "word_target": 90000 },
+        "genre": "science fiction",
+        "idea": "a city where citizens pay their taxes in memories, and a tax collector finds one of his own confiscated memories filed under someone else's name",
+        "tone": ["melancholy", "strange"]
+      },
+      "must_mention": ["memor"],
+      "must_avoid": [],
+      "reference": "In a city where taxes are paid in memories, a collector discovers one of his own confiscated memories filed under a stranger's name — and to learn who he was before the state edited him, he must rob the vault he spent his life filling."
+    },
+    {
+      "id": "heist-stolen-art",
+      "notes": "Concrete-stakes test: heist logline needs a specific prize, obstacle, and cost.",
+      "brief": {
+        "scope": { "band": "novel", "word_target": 75000 },
+        "genre": "heist thriller",
+        "idea": "a crew breaks into a private museum made entirely of stolen art — to steal back one painting",
+        "tone": ["slick", "tense"],
+        "success_criteria": "every twist is fair; the final reveal recasts who the job was really for."
+      },
+      "must_mention": ["heist|steal|paint|art|museum"],
+      "must_avoid": [],
+      "reference": "A retired forger assembles her old crew to break into a billionaire's private museum of stolen art and steal back the one painting that could exonerate her dead partner — but the museum's security was designed by the only man who knows her tricks."
+    }
+  ]
+}
