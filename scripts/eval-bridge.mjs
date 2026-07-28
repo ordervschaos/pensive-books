@@ -4617,7 +4617,7 @@ async function route(req, res) {
 // Driver hook: a dev script (scripts/dna-flow-test.mjs) imports the run-functions directly to drive the
 // DNA flow end-to-end without the HTTP auth gate (it persists via the service role itself). Set
 // DNA_BRIDGE_NO_LISTEN=1 to import the module without binding the port (avoids EADDRINUSE).
-export { runDnaExpand, runDnaChat, fetchBook, SUPABASE_URL, sbHeaders };
+export { runDnaExpand, runDnaChat, runReadMeters, fetchBook, SUPABASE_URL, sbHeaders };
 if (process.env.DNA_BRIDGE_NO_LISTEN) {
   // imported by a driver — don't start the HTTP server
 } else
