@@ -81,12 +81,7 @@ export function BriefIntakeSheet({ bookId, open, onOpenChange, onFinish }: Brief
   };
 
   const skip = () => {
-    if (stepIndex + 1 >= STEPS.length) {
-      onFinish(brief);
-      onOpenChange(false);
-    } else {
-      setStepIndex(stepIndex + 1);
-    }
+    onOpenChange(false);
   };
 
   const toggleTone = (t: string) => {
@@ -249,7 +244,7 @@ export function BriefIntakeSheet({ bookId, open, onOpenChange, onFinish }: Brief
         <div className="flex items-center justify-between pt-2 border-t">
           <Button variant="ghost" onClick={skip} disabled={persisting}
             onMouseUp={(e) => (e.currentTarget as HTMLButtonElement).blur()}>
-            Skip this
+            Skip the brief
           </Button>
           <Button onClick={() => advance(brief)} disabled={persisting}>
             {stepIndex + 1 === STEPS.length ? "Finish" : "Next →"}

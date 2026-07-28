@@ -6,6 +6,19 @@
 
 ## Log
 
+### 2026-07-24 — `ai_provider` switched `auto` → `deepseek` (MuleRouter balance is negative)
+Building the logline eval exposed that `admin_settings.ai_provider = "auto"` was a **live production
+outage**: for a `provider/model` id like `deepseek/deepseek-v4-pro`, the auto-order tries **MuleRouter
+first** (`autoOrder()` in `_shared/llm.ts`), and MuleRouter's balance is **-5.79 credits** → every AI call
+returned `402 insufficient_balance`. Set the switch to `deepseek` (DeepSeek's own API), which the PM
+roadmap already names as the intended host (honours `reasoning_effort`, counts reasoning inside
+`max_tokens`, cost-attributable via `ai_calls.provider`). Replaces the `auto` default that silently
+depended on a funded MuleRouter account. **Reversible / owner's call:** top up MuleRouter and return to
+`auto`, or leave it on `deepseek`. Related: this same run found two reasoning-model truncation bugs
+(logline forge + `read-logline` judge both starved their JSON/text at low `max_tokens` because DeepSeek's
+thinking counts inside the cap) — fixed by `effort:"low"` + `max_tokens:3000` on both. See
+`doc_1784887217516.md`.
+
 ### 2026-07-24 — Generation craft is author-overridable per book; the JUDGES are not
 Shipped the Craft Notes tab, which turns the story-craft baked into generation into an editable,
 per-book surface. Two boundaries were drawn deliberately and are the reason it looks like this:

@@ -703,7 +703,12 @@ Deno.serve(async (req: Request) => {
 ${craftBody("logline", craftOver)}
 
 Honor the MANDATE (genre/tone) and any LOCKED ancestors. Do NOT invent a title. Do NOT restate the raw idea verbatim — SHARPEN it into a real logline. Output the LOGLINE ONLY: one or two sentences, no preamble, no label, no quotes, no JSON.`;
-      const data = await callLLM({ model, max_tokens: 400, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      // A logline is two sentences of writing but a real editorial judgement. Reasoning tiers (deepseek-v4)
+      // charge thinking INSIDE max_tokens, so a tight 400-token cap with UNBOUNDED (default-high) reasoning
+      // burned the whole budget on hidden thinking and returned an empty string. Bound the reasoning to "low"
+      // and give headroom — same treatment read-logline's judge already uses.
+      const data = await callLLM({ model, max_tokens: 3000, thinking: { type: "adaptive" }, output_config: { effort: "low" },
+        system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: `${ctx}\n\nWrite the logline.` }] }, meta, { signal: req.signal });
       return json({ logline: textFromLLM(data).trim(), callId: meta.loggedCallId ?? null });
     }
