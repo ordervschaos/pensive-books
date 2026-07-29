@@ -25,8 +25,9 @@
   visibility, then get stonewalled at commit, leaving `is_public=true` + `published_version_id=NULL`,
   which the marketing reader correctly serves as 404. Added an admin bypass to both publish-path
   functions; verified live via a `BEGIN…ROLLBACK` dry-run impersonating a non-owner admin.
-- **Files/commits:** `supabase/migrations/20260729120000_version_fns_admin_override.sql` (pushed,
-  uncommitted). Diagnosis touched `apps/marketing/lib/public-books.ts:194-196`.
+- **Files/commits:** `d886df9` — `supabase/migrations/20260729120000_version_fns_admin_override.sql`
+  (applied to prod *before* it was committed, so repo history trails the live schema here).
+  Diagnosis touched `apps/marketing/lib/public-books.ts:194-196`.
 - **PM impact:** none — standalone bug fix, no Now slot. Two follow-ups logged below, neither blocking.
   - `book_versions` SELECT policies aren't admin-aware (7 policies, duplicated) → unpublished commits
     invisible to admins in version history. Publishing works regardless.
