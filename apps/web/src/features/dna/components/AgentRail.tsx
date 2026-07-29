@@ -142,8 +142,21 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
     staleMs: 6 * 60 * 1000,
   });
 
-  const steps = useMemo(() => (Array.isArray(row?.steps) ? row!.steps! : []) as AgentStep[], [row]);
-  const proposals = useMemo(() => (Array.isArray(row?.proposals) ? row!.proposals! : []) as AgentProposal[], [row]);
+  const rowSteps = useMemo(() => (Array.isArray(row?.steps) ? row!.steps! : []) as AgentStep[], [row]);
+  const rowProposals = useMemo(() => (Array.isArray(row?.proposals) ? row!.proposals! : []) as AgentProposal[], [row]);
+  // Optimistic chat switching (newChat / resume below). Both archive-and-swap the whole thread, and both
+  // outcomes are known at click time, so the rail renders the destination immediately and lets the write
+  // land under it. `since` is the row's updated_at as it was when the author clicked: a BEFORE UPDATE
+  // trigger bumps that column, so "updated_at moved" is the exact signal that OUR write committed and
+  // came back — which is also what makes this safe against the stale Realtime snapshot of the outgoing
+  // chat that arrives mid-flight. Writes keep using rowSteps/rowProposals: what's on screen is a
+  // prediction, what's on the server is what we mutate.
+  const [predicted, setPredicted] = useState<{ steps: AgentStep[]; proposals: AgentProposal[]; since?: string } | null>(null);
+  const steps = predicted ? predicted.steps : rowSteps;
+  const proposals = predicted ? predicted.proposals : rowProposals;
+  useEffect(() => {
+    if (predicted && row?.updated_at && row.updated_at !== predicted.since) setPredicted(null);
+  }, [predicted, row]);
   // Nodes carrying STAGED OPTIONS (book_nodes.proposals, written by the agent's propose_options). The tree
   // renders the same decision in place via ProposalPicker; surfacing it here too is what makes the rail
   // self-sufficient — every choice the agent puts to the author (proposal · question · options) is now
@@ -326,16 +339,46 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
   // After archiving/restoring a chat, the count badge and (if reopened) the full list need a fresh read.
   const invalidateSessions = () => { setSessionsStale(true); if (threadId) void fetchAgentSessionCount(threadId).then(setSessionCount); };
 
+  // Blank the rail first, then archive. Even as a single RPC the write is a round trip the author would
+  // otherwise spend staring at the conversation they just asked to leave, so we show them the empty
+  // thread now and reconcile after. Rolls back on failure — the prediction can't outlive its write.
   const newChat = async () => {
-    if (!row || busy || active) return;
-    try { await startNewAgentSession(row.id); setHistoryOpen(false); invalidateSessions(); refetch(); }
-    catch (e) { toast({ title: "Couldn't start a new chat", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+    if (!row || busy || active || predicted) return;
+    const prevCount = sessionCount;
+    setPredicted({ steps: [], proposals: [], since: row.updated_at });
+    setSessionCount((c) => c + 1); // the archive-to-be; invalidateSessions replaces this with the truth
+    setHistoryOpen(false);
+    try { await startNewAgentSession(row.id); invalidateSessions(); refetch(); }
+    catch (e) {
+      setPredicted(null); setSessionCount(prevCount);
+      toast({ title: "Couldn't start a new chat", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    }
   };
 
+  // Same trick, and here we can predict the *content*: the session's steps are already in hand from the
+  // "Past chats" fetch that rendered the button, so the restored chat can paint before the swap lands.
   const resume = async (sessionId: number) => {
-    if (!row || busy || active) return;
-    try { await resumeAgentSession(row.id, sessionId); setHistoryOpen(false); invalidateSessions(); refetch(); }
-    catch (e) { toast({ title: "Couldn't continue that chat", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+    if (!row || busy || active || predicted) return;
+    const target = sessions.find((s) => s.id === sessionId);
+    const prevCount = sessionCount;
+    if (target) setPredicted({ steps: target.steps ?? [], proposals: target.proposals ?? [], since: row.updated_at });
+    // One row leaves the archive (the restored one) and, unless the live thread is empty, one joins it.
+    setSessionCount((c) => Math.max(0, c - 1 + (rowSteps.length > 0 ? 1 : 0)));
+    setHistoryOpen(false);
+    try {
+      const restored = await resumeAgentSession(row.id, sessionId);
+      invalidateSessions(); refetch();
+      // The session was gone (another tab got there first). Nothing was written, so nothing will bump
+      // updated_at to release the prediction — drop it by hand or the rail shows a chat that isn't there.
+      if (!restored) {
+        setPredicted(null); setSessionCount(prevCount);
+        toast({ title: "That chat is no longer there", description: "It was resumed or removed somewhere else." });
+      }
+    }
+    catch (e) {
+      setPredicted(null); setSessionCount(prevCount);
+      toast({ title: "Couldn't continue that chat", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    }
   };
 
   const apply = async (p: AgentProposal) => {
@@ -345,7 +388,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
     const controller = isAbortable ? new AbortController() : null;
     applyingAbortRef.current = controller;
     try {
-      const { rejected } = await applyAgentProposal(bookId, row.id, p, proposals, nodes, controller?.signal);
+      const { rejected } = await applyAgentProposal(bookId, row.id, p, rowProposals, nodes, controller?.signal);
       refetch();
       if (rejected.length) {
         const reasons = rejected.map((r) => r.reasons[0]).filter(Boolean).slice(0, 3).join("; ");
@@ -366,7 +409,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
 
   const discard = async (p: AgentProposal) => {
     if (!row) return;
-    try { await discardAgentProposal(row.id, p.id, proposals); refetch(); }
+    try { await discardAgentProposal(row.id, p.id, rowProposals); refetch(); }
     catch (e) { toast({ title: "Couldn't discard", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
   };
 
