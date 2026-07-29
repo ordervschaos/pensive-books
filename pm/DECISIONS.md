@@ -6,6 +6,27 @@
 
 ## Log
 
+### 2026-07-29 — Version RPCs grant admins, not "anyone who can edit"
+`create_book_version` / `publish_version` were the last holdouts still hand-rolling
+`owner_id = auth.uid()` while `check_book_access`, `user_can_edit_book` and the books/book_access RLS
+policies had all learned about `admin_users`. That drift let an admin edit another user's book and flip
+its visibility but not commit — stranding books at `is_public=true` + `published_version_id=NULL`, which
+the marketing reader correctly serves as a **404** (this is what took book 1326 down).
+
+The obvious fix — point them at `user_can_edit_book`, the canonical predicate — was **rejected**: it
+also returns true for invited editors, so it would quietly hand every collaborator the right to publish
+a book *publicly*. That's a product call about who can push content to pensive.me, not a bug fix. Went
+with the narrower `admin_users` bypass instead, matching the inline idiom already used in
+`check_book_access` step 3.
+
+`rollback_to_version` was left owner-only on purpose: its page-restore loop stamps
+`owner_id = auth.uid()`, so widening the guard would reassign page ownership to the admin performing
+the rollback. Fix that stamp before widening it. Migration
+`20260729120000_version_fns_admin_override.sql`.
+
+**Known gap, not addressed:** nothing enforces `is_public = true ⇒ published_version_id IS NOT NULL`.
+The invariant is real, its violation is invisible in-app and only shows up as a public 404.
+
 ### 2026-07-24 — `ai_provider` switched `auto` → `deepseek` (MuleRouter balance is negative)
 Building the logline eval exposed that `admin_settings.ai_provider = "auto"` was a **live production
 outage**: for a `provider/model` id like `deepseek/deepseek-v4-pro`, the auto-order tries **MuleRouter

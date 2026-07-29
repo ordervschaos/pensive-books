@@ -17,6 +17,33 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-29 — Admins can commit/publish books they don't own `[ship]`
+- **What:** Book 1326 404'd on pensive.me — not a slug bug (bare-id URL 404'd too) but no published
+  version. Root cause of *that*: `create_book_version` + `publish_version` hand-rolled a bare
+  `owner_id = auth.uid()` guard while `check_book_access`, `user_can_edit_book` and the RLS policies
+  had all learned about `admin_users` — authorization predicate drift. Admin could edit and toggle
+  visibility, then get stonewalled at commit, leaving `is_public=true` + `published_version_id=NULL`,
+  which the marketing reader correctly serves as 404. Added an admin bypass to both publish-path
+  functions; verified live via a `BEGIN…ROLLBACK` dry-run impersonating a non-owner admin.
+- **Files/commits:** `supabase/migrations/20260729120000_version_fns_admin_override.sql` (pushed,
+  uncommitted). Diagnosis touched `apps/marketing/lib/public-books.ts:194-196`.
+- **PM impact:** none — standalone bug fix, no Now slot. Two follow-ups logged below, neither blocking.
+  - `book_versions` SELECT policies aren't admin-aware (7 policies, duplicated) → unpublished commits
+    invisible to admins in version history. Publishing works regardless.
+  - No constraint enforces `is_public = true ⇒ published_version_id IS NOT NULL` — the invariant whose
+    violation produced the silent public-facing 404.
+  - Deliberately NOT done: widening to `user_can_edit_book` (would let invited editors publish
+    publicly) and widening `rollback_to_version` (its restore loop stamps `owner_id = auth.uid()`,
+    which would reassign page ownership to the admin).
+
+## 2026-07-29 — Committed the AgentRail redesign session `[chore]`
+- **What:** Squashed the day's seven-pass AgentRail thread (header-overflow fix, left dock, canvas/
+  chrome split, drag-resize, border cleanup, minimal scrollbars) into one commit on
+  `agent-rail-self-sufficient`. All prior passes already have their own WORKLOG entries above; this
+  entry just records the commit itself.
+- **Files/commits:** `38f5ab6` — AgentRail.tsx, search.tsx, DnaTreePage.tsx, pm/WORKLOG.md.
+- **PM impact:** none — same UI-polish scope as the entries above, now landed.
+
 ## 2026-07-29 — AgentRail: scrollbar flush against the rail's true right edge `[ship]`
 - **What:** Seventh pass, same thread. The conversation scrollbar sat with a visible gap from the
   rail's edge (the shell's own `px-3.5` plus the scroll div's `pr-1` stacked to ~18px of inset).
