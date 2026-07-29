@@ -16,7 +16,7 @@ export function AgentRailControls({
   onClose?: () => void;
 }) {
   return (
-    <div className="ml-auto flex items-center gap-2">
+    <div className="ml-auto flex shrink-0 items-center gap-2">
       {/* #12 — a labeled two-position segment (manual/auto), not a single unlabeled icon pill: autonomy
           is the most consequential behavior in the studio, so both states should read at a glance. */}
       <div className="inline-flex items-center gap-0.5 rounded-full border border-[hsl(var(--pv-border-soft))] p-0.5">

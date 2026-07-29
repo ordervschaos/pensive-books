@@ -8,7 +8,7 @@ import { KIND_COLOR, MONO, SERIF, T } from "./treeChrome";
 function GhostRow({ item, depth }: { item: GhostItem; depth: number }) {
   const color = KIND_COLOR[item.kind] ?? T.muted;
   return (
-    <div style={{ opacity: 0.6 }}>
+    <div>
       <div style={{
         display: "flex", alignItems: "baseline", gap: 8,
         paddingLeft: depth * 20 + (depth > 0 ? 20 : 4), paddingRight: 12, paddingTop: 3, paddingBottom: 3,
@@ -37,5 +37,7 @@ function GhostRow({ item, depth }: { item: GhostItem; depth: number }) {
 
 export function GhostRows({ items, depth }: { items: GhostItem[]; depth: number }) {
   if (!items.length) return null;
-  return <>{items.map((it, i) => <GhostRow key={i} item={it} depth={depth} />)}</>;
+  // opacity lives here ONCE — nested per-row opacity would compound multiplicatively with depth
+  // (0.6, 0.36, 0.216, ...) and fade deeper ghosts into invisibility.
+  return <div style={{ opacity: 0.6 }}>{items.map((it, i) => <GhostRow key={i} item={it} depth={depth} />)}</div>;
 }

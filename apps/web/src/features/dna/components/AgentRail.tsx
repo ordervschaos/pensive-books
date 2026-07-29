@@ -6,7 +6,7 @@
 // and projects the row live (refresh = no-op). Mirrors ReviseChat's shape but is driven by the
 // agent's `steps` feed rather than a per-layer chat thread.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Loader2, Wand2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, WandSparkles, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow } from "@/hooks/useLatestTaskRow";
 import { stopRun } from "@/lib/stopRun";
@@ -422,8 +422,8 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
   return (
     <Panel variant="soft" className="flex h-full flex-col rounded-none px-4 py-3.5">
       <div className="flex shrink-0 items-center gap-2">
-        <Wand2 className="h-4 w-4 text-[hsl(var(--pv-accent))]" />
-        <Eyebrow tone="accent">Agent</Eyebrow>
+        <WandSparkles className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />
+        <Eyebrow tone="accent" className="shrink-0">Agent</Eyebrow>
         <AgentRailControls
           auto={auto} onToggleAuto={toggleAuto}
           effort={effort} onSetEffort={setEffortMode}
@@ -479,7 +479,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
             <button type="button" onClick={() => void send(nextStepMessage, { isNextStep: true })} disabled={busy}
               title="Let the agent lead you through this step"
               className="flex w-full items-center gap-2.5 rounded-2xl border border-dashed border-[hsl(var(--pv-accent))]/35 bg-[hsl(var(--pv-accent))]/[0.05] px-3.5 py-2.5 text-left transition-colors hover:border-[hsl(var(--pv-accent))]/60 hover:bg-[hsl(var(--pv-accent))]/[0.08] disabled:opacity-50">
-              <Wand2 className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />
+              <WandSparkles className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />
               <span className="min-w-0 flex-1">
                 <span className="block pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">next step</span>
                 {draftTarget ? (

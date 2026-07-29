@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
 import { backlinkIndex, beatsInOrder, byId, childrenOf, isEntityKind, newId, pillarOf, refsOf, scenesInOrder, type BookSettings, type DnaIssue, type DnaNode } from "@/features/dna/lib/novelDna";
 import { ensureSeed } from "@/features/dna/lib/dnaExpand";
+import { ghostBeatsForAct, ghostFromPremise, ghostFromSeed } from "@/features/dna/lib/dnaSkeleton";
 import { KIND_LEVEL } from "@/features/dna/lib/dnaSchema";
 import type { Brief } from "@/lib/brief";
 import { AgentRail } from "@/features/dna/components/AgentRail";
@@ -192,18 +193,28 @@ export default function DnaTreePage() {
       setBrief(loadedBrief);
       setSettings({ title: book?.name ?? undefined, author: (book?.author as string | null) ?? undefined,
         word_target: loadedBrief?.scope?.word_target });
-      const loaded = (nodeRows ?? []) as DnaNode[];
+      let loaded = (nodeRows ?? []) as DnaNode[];
       // Bootstrap the ROOT: the agent can't create a parent-less seed node, so an empty tree gets one
       // automatically (the seed = the logline origin, left empty until the author or agent drafts it).
       // The agent builds everything below it — this replaces the old manual "seed the tree" button.
       if (loaded.length === 0) {
         try {
           const seed = await ensureSeed(bookId);
-          setNodes([seed]); setOpenSet((p) => new Set(p).add(seed.id));
-          return;
+          loaded = [seed];
         } catch { /* leave the tree empty; the live subscription still reflects reality */ }
       }
       setNodes(loaded);
+      // Open every node whose ghost preview (dnaSkeleton) has something to show — a childless seed/premise/act
+      // defaults CLOSED (openSet is opt-in, unlike collapsedSet) so the forecast of what's next would
+      // otherwise be invisible until the author clicks in. This is a one-time default on load, not a live
+      // rule, so an author who deliberately re-collapses one doesn't get overridden by a later Realtime tick.
+      const frontier = new Set<string>();
+      for (const n of loaded) {
+        if (n.kind === "seed" && ghostFromSeed(loaded).length) frontier.add(n.id);
+        if (n.kind === "premise" && ghostFromPremise(loaded).length) frontier.add(n.id);
+        if (n.kind === "act" && ghostBeatsForAct(loaded, n).length) frontier.add(n.id);
+      }
+      if (frontier.size) setOpenSet((p) => new Set([...p, ...frontier]));
     })();
   }, [bookId]);
 
