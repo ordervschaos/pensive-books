@@ -23,7 +23,7 @@ import { useChatScroll } from "@/components/book/shared/useChatScroll";
 import { useAutoAccept } from "@/features/dna/hooks/useAutoAccept";
 import { useAdmin } from "@/hooks/use-admin";
 import { useLatestAiCall } from "@/features/dna/hooks/useLatestAiCall";
-import { ActionLink, Eyebrow, Panel, RunError } from "@/components/book/shared/studioUi";
+import { ActionLink, Eyebrow, RunError } from "@/components/book/shared/studioUi";
 import { snapshotTree } from "@/features/dna/lib/treeVersions";
 import { briefIdea, type Brief } from "@/lib/brief";
 import { NEXT_STEP_MESSAGE, STEP_TEACH, IDEA_TEACH, IDEA_MESSAGE } from "./agentRail/journeyContent";
@@ -420,8 +420,12 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
     : (objectiveKey && NEXT_STEP_MESSAGE[objectiveKey]) || objectiveHeadline || "Let's work on the next step.";
 
   return (
-    <Panel variant="soft" className="flex h-full flex-col rounded-none px-4 py-3.5">
-      <div className="flex shrink-0 items-center gap-2">
+    // No panel bg/border here — this sits on the same chrome tone as the page's title bar (set by the
+    // fixed rail container in DnaTreePage.tsx). Header height (h-11 = 44px = DnaTreePage's HEADER_H)
+    // and border-bottom match the title bar's exactly, so the two read as ONE merged top strip with
+    // no seam between them.
+    <div className="flex h-full flex-col px-3.5 pb-3">
+      <div className="box-border flex h-11 shrink-0 items-center gap-2 border-b border-[hsl(var(--pv-border-soft))]">
         <WandSparkles className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />
         <Eyebrow tone="accent" className="shrink-0">Agent</Eyebrow>
         <AgentRailControls
@@ -436,14 +440,16 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
 
       {/* Past chats — archived conversations, read-only until resumed. */}
       {historyOpen && sessions.length > 0 && (
-        <div className="mt-2 shrink-0 max-h-[40%] overflow-y-auto rounded-xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-3 py-2">
+        <div className="sidebar-scroll mt-2 shrink-0 max-h-[40%] overflow-y-auto rounded-xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-3 py-2">
           <SessionHistory sessions={sessions} onResume={resume} busy={busy || active} nodes={nodes} />
         </div>
       )}
 
-      {/* Conversation */}
-      <div className="relative mt-3 min-h-0 flex-1">
-        <div ref={scrollRef} className="h-full space-y-3.5 overflow-y-auto pr-1">
+      {/* Conversation — bleeds past the shell's own right padding (-mr-3.5 cancels it) so the
+          scrollbar sits flush on the rail's true edge instead of floating with a gap; pr-3.5 puts
+          that same inset back as padding, so the text itself still lines up with everything else. */}
+      <div className="relative mt-3 min-h-0 flex-1 -mr-3.5">
+        <div ref={scrollRef} className="sidebar-scroll h-full space-y-3.5 overflow-y-auto pr-3.5">
           {/* The guide's greeting — the agent speaks first. Journey-aware and scripted (zero cost, zero
               latency): orient, teach the current rung's concept, and let the next-step card below carry
               the offer. On a fresh brief this is the "explain what a logline is" moment; on an emptied
@@ -475,29 +481,32 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
               only when the agent's work is settled: idle, nothing running/awaiting, no proposal to review,
               no error. So it reads as "here's what's next", not a pinned CTA. One click hands the step to
               the agent (the objective itself already rides every message's context). */}
-          {!active && !optimistic && proposals.length === 0 && optionNodes.length === 0 && row?.status !== "error" && objectiveHeadline && (
-            <button type="button" onClick={() => void send(nextStepMessage, { isNextStep: true })} disabled={busy}
-              title="Let the agent lead you through this step"
-              className="flex w-full items-center gap-2.5 rounded-2xl border border-dashed border-[hsl(var(--pv-accent))]/35 bg-[hsl(var(--pv-accent))]/[0.05] px-3.5 py-2.5 text-left transition-colors hover:border-[hsl(var(--pv-accent))]/60 hover:bg-[hsl(var(--pv-accent))]/[0.08] disabled:opacity-50">
-              <WandSparkles className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />
-              <span className="min-w-0 flex-1">
-                <span className="block pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">next step</span>
-                {draftTarget ? (
-                  <>
-                    <span className="block truncate pv-serif text-[13px] leading-snug text-foreground">
-                      Write “{nodeLabel(draftTarget.scene)}”
-                    </span>
-                    <span className="block pv-mono text-[9.5px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">
-                      Scene {draftTarget.orderIndex} of {draftTarget.total}
-                    </span>
-                  </>
-                ) : (
-                  <span className="block pv-serif text-[13px] leading-snug text-foreground">{needsIdea ? "Find the story idea — pitch me a few directions" : objectiveHeadline}</span>
+          {!active && !optimistic && proposals.length === 0 && optionNodes.length === 0 && row?.status !== "error" && objectiveHeadline && (() => {
+            // "▸ Step 1/5 · Idea – Interview" (dnaJourney.currentObjective) → badge "1/5" + the rest as the
+            // row's description. draftTarget carries its own scene tally instead of the step badge.
+            const stepMatch = objectiveHeadline.match(/^Step\s+(\d+)\/(\d+)\s*·\s*(.*)$/);
+            const badge = draftTarget ? `${draftTarget.orderIndex}/${draftTarget.total}` : stepMatch ? `${stepMatch[1]}/${stepMatch[2]}` : null;
+            const desc = draftTarget
+              ? `Write “${nodeLabel(draftTarget.scene)}”`
+              : needsIdea ? "Find the story idea — pitch me a few directions" : (stepMatch ? stepMatch[3] : objectiveHeadline);
+            return (
+              <div className="flex items-center gap-2 rounded-xl border border-dashed border-[hsl(var(--pv-accent))]/35 bg-[hsl(var(--pv-accent))]/[0.05] px-3 py-2">
+                <WandSparkles className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />
+                <span className="shrink-0 pv-serif text-[13px] font-medium text-foreground">Next step</span>
+                {badge && (
+                  <span className="shrink-0 rounded-full bg-[hsl(var(--pv-accent))]/10 px-2 py-0.5 pv-mono text-[9.5px] text-[hsl(var(--pv-accent))]">
+                    {badge}
+                  </span>
                 )}
-              </span>
-              <ArrowUp className="h-3.5 w-3.5 shrink-0 rotate-90 text-[hsl(var(--pv-text-faint))]" />
-            </button>
-          )}
+                <span className="min-w-0 flex-1 truncate pv-serif text-[12.5px] text-[hsl(var(--pv-text-muted))]" title={desc}>{desc}</span>
+                <button type="button" onClick={() => void send(nextStepMessage, { isNextStep: true })} disabled={busy}
+                  title="Let the agent lead you through this step"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[hsl(var(--pv-accent))]/50 px-2.5 py-1 pv-mono text-[10px] uppercase tracking-[0.06em] text-[hsl(var(--pv-accent))] transition-colors hover:bg-[hsl(var(--pv-accent))]/10 disabled:opacity-50">
+                  Continue <ArrowUp className="h-3 w-3 rotate-90" />
+                </button>
+              </div>
+            );
+          })()}
           {optimistic && (
             <div className="flex justify-end">
               <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-[hsl(var(--pv-surface-2))] px-3.5 py-2 pv-serif text-[14px] leading-[1.55] text-foreground whitespace-pre-wrap opacity-60">
@@ -553,6 +562,6 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
           menu={menu} taRef={taRef} stopping={stopping}
         />
       </div>
-    </Panel>
+    </div>
   );
 }

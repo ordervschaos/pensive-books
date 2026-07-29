@@ -17,6 +17,93 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-07-29 — AgentRail: scrollbar flush against the rail's true right edge `[ship]`
+- **What:** Seventh pass, same thread. The conversation scrollbar sat with a visible gap from the
+  rail's edge (the shell's own `px-3.5` plus the scroll div's `pr-1` stacked to ~18px of inset).
+  Cancelled the shell's contribution with `-mr-3.5` on the conversation wrapper and moved that same
+  inset onto the scroll div's own `pr-3.5`, so the scrollbar now sits flush at the true edge while text
+  keeps its original alignment. Verified via geometry (scroll div's right edge === rail width, exactly).
+- **Files/commits:** `apps/web/src/features/dna/components/AgentRail.tsx` — uncommitted, verified live
+  (`tsc --noEmit` clean, no console errors).
+- **PM impact:** none — UI polish on AgentRail, no roadmap/State change.
+
+## 2026-07-29 — AgentRail: minimal scrollbars on rail/search/canvas `[ship]`
+- **What:** Sixth pass, same thread. The default OS scrollbar (thick, opaque) looked out of place next
+  to the flat/borderless redesign. Reused the app's existing `.sidebar-scroll` utility (already used
+  elsewhere: 6px, transparent track, 20%-opacity thumb) on the rail's conversation + past-chats list,
+  the search results list, and the canvas's own scroll container — matching the Lovable reference.
+- **Files/commits:** `apps/web/src/features/dna/components/AgentRail.tsx`,
+  `.../components/tree/search.tsx`, `.../pages/DnaTreePage.tsx` — uncommitted, verified live (CSS
+  rules confirmed applied via devtools, `tsc --noEmit` clean, no console errors).
+- **PM impact:** none — UI polish on AgentRail, no roadmap/State change.
+
+## 2026-07-29 — AgentRail: drop the last border lines for a continuous rail/canvas surface `[ship]`
+- **What:** Fifth pass, same thread. Removed the canvas card's remaining `border` stroke (color +
+  rounded corners alone now read as the card) and made the resize handle's idle-state line transparent
+  (was a faint permanent `T.border` line) — visible only on hover/drag. Rail and canvas now read as one
+  continuous surface at rest, per feedback that the leftover border broke that continuity.
+- **Files/commits:** `apps/web/src/features/dna/pages/DnaTreePage.tsx` — uncommitted, verified live
+  (`tsc --noEmit` clean, no console errors).
+- **PM impact:** none — UI polish on AgentRail, no roadmap/State change.
+
+## 2026-07-29 — AgentRail: fixed-viewport shell, sticky header, canvas as inset card `[ship]`
+- **What:** Fourth pass in the same-day AgentRail redesign thread. The whole page used to be one
+  long window-scroll, so the title bar/tab-strip scrolled away with tree content. Converted the shell
+  to a fixed-height flex layout: title bar pinned, tab strip `sticky` inside the canvas's own
+  `overflow-y:auto` container (rail's chat already scrolled independently). Per follow-up feedback,
+  restored the canvas as a rounded/bordered inset card (nested inside the "control panel," not flush
+  edge-to-edge) and matched the rail-header/title-bar heights (44px) with no border between them — the
+  drag-resize handle now starts below that shared strip, sitting exactly on the canvas card's own left
+  edge instead of cutting through the merged header.
+- **Files/commits:** `apps/web/src/features/dna/pages/DnaTreePage.tsx` (fixed-viewport `base`, sticky
+  tab strip, canvas card + `HEADER_H`/`CANVAS_MARGIN` consts), `.../components/AgentRail.tsx` (header
+  height/border matched to `HEADER_H`) — uncommitted, verified live (independent scroll confirmed,
+  `tsc --noEmit` clean, no console errors).
+- **PM impact:** none — UI polish on AgentRail, no roadmap/State change.
+
+## 2026-07-29 — AgentRail: drop card borders, make the rail edge a real drag-to-resize handle `[ship]`
+- **What:** Third pass in the same-day AgentRail redesign thread. Per feedback that the two card
+  borders (chatbox + canvas) read as clutter next to Lovable's flat reference, removed both — rail
+  and canvas are now flat regions distinguished by color only (`T.surface` vs `T.raised`). Replaced
+  the static rail width with real drag-to-resize on the rail/canvas edge itself (hover tooltip +
+  accent highlight, clamped 320–760px, persisted per-book in localStorage) — also closes the original
+  "width isn't adjustable" complaint from earlier today, this time for real.
+- **Files/commits:** `apps/web/src/features/dna/components/AgentRail.tsx`,
+  `.../pages/DnaTreePage.tsx` (`railWidth` state + drag handlers, replacing the fixed `RAIL_W` const)
+  — uncommitted, verified live (hover/drag/persist + `tsc --noEmit` clean, no console errors).
+- **PM impact:** none — UI polish on AgentRail, no roadmap/State change.
+
+## 2026-07-29 — AgentRail: merge top chrome with rail header, card the chatbox `[ship]`
+- **What:** Follow-up to the same-day left-dock/canvas redesign. Per a Lovable UI reference, unified
+  AgentRail's own header (Agent/manual-auto/fast-deep/close) with the tree's title bar into one
+  continuous top strip (both now on `T.surface`/`--pv-surface-2`, no color seam), then wrapped the
+  conversation + next-step nudge + composer in their own bordered, distinctly-toned "chatbox" card —
+  mirroring the canvas card already carved out on the tree side.
+- **Files/commits:** `apps/web/src/features/dna/components/AgentRail.tsx` (dropped the outer `Panel`,
+  added a bordered chatbox wrapper), `.../pages/DnaTreePage.tsx` (rail container bg `T.raised` →
+  `T.surface`, `borderRight` softened) — uncommitted, verified live + `tsc --noEmit` clean.
+- **PM impact:** none — UI polish on AgentRail, no roadmap/State change.
+
+## 2026-07-29 — AgentRail: fix header overflow, redock left, canvas/chrome visual split `[ship]`
+- **What:** Traced 3 reported bugs (wand icon vanishing, close button off-screen, "width not
+  adjustable") to one flexbox overflow in the rail header — `shrink-0` guards + a width bump fixed
+  it (a concurrent session landed the same header fix independently as commit `2aef127`; converged
+  cleanly). Then, on live redirect, moved AgentRail to the left dock (Search swapped to the right),
+  replaced the "Editor" text toggle with an icon-only pane button next to the book title, redesigned
+  the "next step" nudge as a compact row (icon + label + step badge + Continue), and wrapped the
+  tab strip + all tab bodies in one rounded `T.raised` "canvas" card against a `T.surface` "chrome"
+  page background (title bar/rail read as controls around it) — matching a Lovable reference the
+  user shared mid-task.
+- **Files/commits:** `apps/web/src/features/dna/components/AgentRail.tsx`,
+  `.../components/tree/search.tsx`, `.../pages/DnaTreePage.tsx` (uncommitted, verified live via
+  browser + `tsc --noEmit`, no console errors).
+- **PM impact:** none — UI polish on an already-shipped surface (AgentRail), no roadmap/State change.
+
+## 2026-07-29 — Committed + pushed the DNA tree skeleton fix `[chore]`
+- **What:** Committed the already-catalogued ghost-skeleton fix (below) plus the pending AgentRail Wand2/shrink-0 cleanup, and pushed `agent-rail-self-sufficient` to origin (new branch, upstream set).
+- **Files/commits:** 2aef127 "DNA tree: default-open empty skeleton, fix ghost opacity compounding".
+- **PM impact:** none — same work already logged, this entry just closes the commit/push loop.
+
 ## 2026-07-29 — DNA tree: default-open the empty skeleton, fix ghost opacity compounding `[ship]`
 - **What:** The DNA tree's ghost-preview machinery (dnaSkeleton.ts/GhostRows) already existed but was invisible on a revisited book — the SEED node defaults collapsed (openSet is opt-in for childless nodes) unless freshly bootstrapped this session. Now the loader auto-opens any seed/premise/act whose ghost preview has content, so a book with an empty tree shows its forecasted shape (premise→pillar→cast→acts→template beats) on load, no click needed. Also fixed a real bug found while verifying: each recursive GhostRow wrapped itself in its own `opacity:0.6` div, so nested opacity compounded per depth (0.6, 0.36, 0.216...) fading deeper ghost rows toward invisibility — moved the opacity to one wrapper in GhostRows.
 - **Files/commits:** apps/web/src/features/dna/pages/DnaTreePage.tsx, apps/web/src/features/dna/components/tree/GhostRows.tsx (uncommitted).

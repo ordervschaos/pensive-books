@@ -3,7 +3,7 @@ import { type DnaNode } from "@/features/dna/lib/novelDna";
 import { KIND_COLOR, MONO, T } from "./treeChrome";
 import { nodeTitle } from "./nodeDisplay";
 
-// ── Search (⌕) — a persistent left-docked panel, VS Code's Search sidebar rather than its Quick Open: stays
+// ── Search (⌕) — a persistent right-docked panel, VS Code's Search sidebar rather than its Quick Open: stays
 // open across jumps (so several hits can be clicked through without re-typing), case/whole-word/regex
 // toggles, an include-kind filter (kind is DNA's "which file" — the natural grouping unit here), results
 // grouped by kind with collapsible headers, and the match highlighted in place. Closed only by Esc, the ✕,
@@ -120,8 +120,8 @@ export function SearchPanel({
 
   return (
     <div style={{
-      position: "fixed", top: 0, left: 0, bottom: 0, width: 320, zIndex: 22,
-      background: `${T.raised}f2`, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column",
+      position: "fixed", top: 0, right: 0, bottom: 0, width: 320, zIndex: 22,
+      background: `${T.raised}f2`, borderLeft: `1px solid ${T.border}`, display: "flex", flexDirection: "column",
       fontFamily: MONO, backdropFilter: "blur(6px)",
     }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px 6px" }}>
@@ -160,7 +160,7 @@ export function SearchPanel({
           {query.trim() ? `${hits.length} result${hits.length === 1 ? "" : "s"} in ${groups.length} kind${groups.length === 1 ? "" : "s"}` : "type to search titles + content"}
         </span>
       </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: "4px 0 12px" }}>
+      <div className="sidebar-scroll" style={{ flex: 1, overflowY: "auto", padding: "4px 0 12px" }}>
         {query.trim() && hits.length === 0 && !invalidRegex && (
           <div style={{ padding: "10px 12px", fontSize: 11, color: T.muted }}>no matches</div>
         )}
