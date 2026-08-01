@@ -49,7 +49,8 @@ with `autoRefreshToken: false` and bounces to `app.pensive.me/auth?returnTo=…`
 | Var | Where | Notes |
 |---|---|---|
 | `SUPABASE_SERVICE_ROLE_KEY` | server | The pipeline acts for a sleeping user — no JWT to present |
-| `ANTHROPIC_API_KEY` | server | Both stages. Gather = Opus 5 (drives `web_search` + judges source quality), write = Sonnet 5 |
+| `ANTHROPIC_API_KEY` | server | **Gather only.** Opus 5 drives `web_search` + judges source quality |
+| `DEEPSEEK_API_KEY` | server | **Write only.** `deepseek-v4-pro` writes every section and the intro |
 | `MAILGUN_API_KEY` / `MAILGUN_DOMAIN` | server | Must be the **same domain** the Kindle OTP flow got approved |
 | `CRON_SECRET` | server | Shared secret on `POST /api/cron/tick` |
 | `MAILGUN_SIGNING_KEY` | server | HMAC key for the **inbound** webhook. Missing = every inbound message is rejected (fail-closed) |
@@ -245,12 +246,33 @@ Gather cost differs enormously by section kind, which is why `search` is behind 
 | `unread` | one DB read | Reads posts the corpus already paid to fetch. |
 | `sitewatch` | one fetch per watched url | Emits nothing at all unless the page changed. |
 | `video` | 1–2 fetches per item | Transcript where one exists, else the description. |
-| `quiz` | one Sonnet call | A **closer**, not a source — see below. |
+| `quiz` | one write call | A **closer**, not a source — see below. |
 | `search` | **Opus 5 + the `web_search` server tool, every run** | Bills whether or not it finds anything. |
 
-Writing is Sonnet 5 for every kind. An all-RSS issue therefore makes *no* Opus calls — verified: a 4-section
-RSS issue compiled in ~25s with 5 Sonnet calls and zero Opus. Feed sections do carry more *input* tokens
-(full article text, ~8k/section) than search sections did, but that is Sonnet input, not Opus plus tool fees.
+### Two providers, chosen by model id
+
+Writing runs on **DeepSeek `deepseek-v4-pro`**; gather stays on **Anthropic Opus 5**. `lib/digest/llm.ts` is
+the one chokepoint and routes on the model id alone (`providerFor`) — there is no separate provider switch to
+keep in sync, so a stage cannot end up pointed at a model its provider doesn't serve.
+
+**Gather cannot move to DeepSeek.** `web_search` is an Anthropic *server* tool: it runs inside Anthropic's
+infrastructure and returns results in the same call. Point that stage elsewhere and the tool is silently
+dropped — no error, just a model answering from memory, which is the exact failure this pipeline exists to
+prevent. `callModel` throws if a DeepSeek model is handed `tools`, so the mistake fails loudly instead.
+
+Two integration hazards worth knowing, both handled:
+
+- **DeepSeek charges reasoning tokens against `max_tokens`** (Anthropic bounds visible output only). Every
+  `maxTokens` in this app was picked under the Anthropic meaning — `writeIntro` asks for 400, which is fine
+  for two sentences and *nothing at all* once reasoning eats it first. The DeepSeek path adds
+  `REASONING_HEADROOM` per effort level, and logs `truncated` to `ai_calls` if a call still hits the cap.
+- **Citation habits differ per model.** DeepSeek brackets its citations — `[[Anthropic](url)]` — which the
+  renderer turned into link text `[Anthropic` plus an orphaned `]`. Fixed in `render.ts` by unwrapping a
+  bracket pair around a whole link, not in the prompt: the renderer is the one place that sees every model's
+  output, and literal brackets (`[1, 2]`) still survive.
+
+No `cache_control` on the DeepSeek path — it caches prompt prefixes automatically, server-side. `ai_calls`
+records `provider` per row, so cost stays attributable per host.
 
 The toggle is enforced inside `searchAdapter`, not at the call site, so a paid path can't be reached by
 accident from some future caller. Existing digests were defaulted to `false` by the migration: a section

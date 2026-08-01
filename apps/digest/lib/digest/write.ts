@@ -1,5 +1,5 @@
 import type { Item, RenderedSection, RunCtx, Section } from "./types";
-import { callClaude } from "./llm";
+import { callModel } from "./llm";
 
 // The WRITE stage. One LLM call per section, and it sees ONLY the text the gather stage handed it.
 //
@@ -105,7 +105,7 @@ export async function writeSection(
         .join("\n\n---\n\n")
     : "(No source material — write from the section instructions alone.)";
 
-  const { text } = await callClaude(
+  const { text } = await callModel(
     {
       system,
       prompt:
@@ -143,7 +143,7 @@ export async function writeIntro(
   issueId: number | null,
 ): Promise<string> {
   if (sections.length < 2) return "";
-  const { text } = await callClaude(
+  const { text } = await callModel(
     {
       system:
         "You write the two-sentence opener for a daily digest. State what is actually in today's issue and " +

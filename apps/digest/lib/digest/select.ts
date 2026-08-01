@@ -1,4 +1,4 @@
-import { callClaude } from "./llm";
+import { callModel } from "./llm";
 import type { RunCtx, Section } from "./types";
 
 // ②½ SELECT — the editorial cut.
@@ -71,7 +71,7 @@ export async function selectValuable<T extends Candidate>(
   const voice = ctx.digest.voice?.trim();
 
   try {
-    const { text } = await callClaude(
+    const { text } = await callModel(
       {
         system: voice ? `${SYSTEM}\n\nABOUT THIS READER (honor this):\n${voice}` : SYSTEM,
         prompt:

@@ -9,7 +9,7 @@ import type {
   Section,
   SerialSection,
 } from "./types";
-import { callClaude, MODEL_GATHER, WEB_SEARCH_TOOL } from "./llm";
+import { callModel, MODEL_GATHER, WEB_SEARCH_TOOL } from "./llm";
 import { urlHash } from "./canonical";
 import { createServiceClient } from "@/lib/supabase/server";
 import { dailyReview, randomHighlights, type Highlight } from "./readwise";
@@ -45,7 +45,7 @@ const searchAdapter: Adapter = async (section, ctx) => {
     console.info(`section ${s.id}: web search is off for this digest — skipping`);
     return [];
   }
-  const { text, sources } = await callClaude(
+  const { text, sources } = await callModel(
     {
       system:
         "You are a research assistant gathering source material for a daily reading digest. " +

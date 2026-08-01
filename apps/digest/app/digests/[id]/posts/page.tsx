@@ -136,12 +136,6 @@ export default async function PostsPage({
   );
 }
 
-// A post whose identity is a Readwise permalink is a highlight, not an article. Keyed off the URL rather
-// than the section id because sections get renamed and deleted while the corpus rows outlive them.
-function isQuote(p: { url: string | null }): boolean {
-  return Boolean(p.url?.startsWith("https://readwise.io/"));
-}
-
 // Age is shown as neutral context, not as a warning: an old piece that is good is good. It stays only
 // because "when was this written" is genuinely useful when inspecting why a section chose something.
 function ageDays(published: string | null): number {

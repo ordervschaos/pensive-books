@@ -87,6 +87,8 @@ stance to the DNA pipeline. See `apps/digest/README.md`; owner checklist in `app
 | Readwise source kind | shipped | Per-user token in `digest_user_settings`; quotes bypass the LLM entirely |
 | Six new source kinds (`ranked`/`inbox`/`unread`/`sitewatch`/`video`/`quiz`) | shipped (code) | 2026-08-01. hn/arxiv/lobsters verified live; **`inbox` inert until `MAILGUN_SIGNING_KEY` + a Mailgun inbound route exist** (SETUP.md §A/§B). Uncommitted, migration already pushed |
 | `Closer` contract + per-section cadence | shipped | Second contract for sections that read the issue instead of retrieving; `daily/weekdays/weekly` per section |
+| Deployment (Vercel `pensive-digest`) | shipped 2026-08-01 | Live at `pensive-digest.vercel.app` (CLI upload, not git-connected). `digest.pensive.me` attached but needs `A digest 76.76.21.21` at Squarespace DNS. Preview env vars unset (CLI 54.1.0 bug) |
+| Mailgun inbound route | blocked (owner) | Route creation needed a publicly reachable URL — now available. Also needs `MAILGUN_SIGNING_KEY` in prod, without which the endpoint 401s every message by design |
 | pg_cron `digest-tick` schedule | **not scheduled** | Nothing arrives at 6am on its own yet — README §Scheduling, needs the deployed origin + Vault secret |
 | EPUB delivery | gap | v0 sends HTML (Amazon converts it). Builder is browser-only; lifting it into `packages/shared` is the follow-up |
 

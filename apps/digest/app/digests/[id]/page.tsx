@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Digest, Section } from "@/lib/digest/types";
 import { removeSection } from "../actions";
-import { MaxItemsField } from "./MaxItemsField";
 import { AddSectionForm } from "./AddSectionForm";
 import { InboxAddress } from "./InboxAddress";
 
@@ -44,33 +43,32 @@ export default async function SectionsPage({ params }: { params: { id: string } 
         <p className="text-sm text-muted">No sources yet — add one below.</p>
       )}
       {(digest.sections ?? []).map((s: Section) => (
-        <div key={s.id} className="flex items-start justify-between rounded border border-rule bg-white/50 p-4">
-          <div className="space-y-1">
-            <p>
-              {s.title} <span className="font-mono text-xs text-muted">· {s.kind}</span>
-            </p>
-            <p className="text-sm text-muted">{sectionDetail(s)}</p>
-            {s.cadence && s.cadence !== "daily" && (
-              <p className="font-mono text-xs text-muted">runs {cadenceLabel(s)}</p>
-            )}
-            {s.kind === "search" && !digest.web_search_enabled && (
-              <p className="text-sm text-muted">
-                ⚠ Skipped — live web search is off for this digest.
+        <div key={s.id} className="space-y-3 rounded border border-rule bg-white/50 p-4">
+          <div className="flex items-start justify-between">
+            <div className="space-y-1">
+              <p>
+                {s.title} <span className="font-mono text-xs text-muted">· {s.kind}</span>
               </p>
-            )}
-            {s.kind === "readwise" && !readwiseReady && (
-              <p className="text-sm text-muted">
-                ⚠ Skipped — Readwise isn&apos;t connected.{" "}
-                <a href="/settings" className="underline">
-                  Connect it
-                </a>
-                .
-              </p>
-            )}
-            {s.instructions && <p className="text-sm text-muted">{s.instructions}</p>}
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            <MaxItemsField digestId={digest.id} sectionId={s.id} initial={s.max_items ?? 5} />
+              <p className="text-sm text-muted">{sectionDetail(s)}</p>
+              {s.cadence && s.cadence !== "daily" && (
+                <p className="font-mono text-xs text-muted">runs {cadenceLabel(s)}</p>
+              )}
+              {s.kind === "search" && !digest.web_search_enabled && (
+                <p className="text-sm text-muted">
+                  ⚠ Skipped — live web search is off for this digest.
+                </p>
+              )}
+              {s.kind === "readwise" && !readwiseReady && (
+                <p className="text-sm text-muted">
+                  ⚠ Skipped — Readwise isn&apos;t connected.{" "}
+                  <a href="/settings" className="underline">
+                    Connect it
+                  </a>
+                  .
+                </p>
+              )}
+              {s.instructions && <p className="text-sm text-muted">{s.instructions}</p>}
+            </div>
             <form action={removeSection}>
               <input type="hidden" name="id" value={digest.id} />
               <input type="hidden" name="section_id" value={s.id} />
@@ -79,6 +77,12 @@ export default async function SectionsPage({ params }: { params: { id: string } 
               </button>
             </form>
           </div>
+          <details>
+            <summary className="cursor-pointer font-mono text-xs text-muted hover:text-ink">edit</summary>
+            <div className="mt-3">
+              <AddSectionForm digestId={digest.id} section={s} />
+            </div>
+          </details>
         </div>
       ))}
 

@@ -57,29 +57,18 @@ export async function updateDigest(form: FormData) {
   revalidatePath(`/digests/${id}`, "layout");
 }
 
-// Sections live as jsonb (policy-as-data), so add/remove is a read-modify-write of the array rather than a
-// schema change per source kind.
-export async function addSection(form: FormData) {
-  const id = Number(form.get("id"));
-  const kind = str(form, "kind") as SectionKind;
-  const supabase = createClient();
-
-  const { data: digest, error: readErr } = await supabase
-    .from("digests")
-    .select("sections")
-    .eq("id", id)
-    .single();
-  if (readErr) throw new Error(readErr.message);
-
+// Shared by add and edit: everything about turning the section form's FormData into a Section, except the
+// identity/bookkeeping fields (id, max_items, enabled) — those come from the caller, since "new section" and
+// "editing an existing one" disagree on where max_items/enabled come from (a fresh default vs. carried over).
+function buildSection(
+  form: FormData,
+  identity: { id: string; kind: SectionKind; max_items: number; enabled: boolean },
+): Section {
   const cadence = str(form, "cadence");
-  const base = {
-    // Timestamp-based id: stable across edits, and unique enough for a hand-authored list.
-    id: `s${Date.now().toString(36)}`,
-    kind,
+  const shared = {
+    ...identity,
     title: str(form, "title") || "Untitled section",
     instructions: str(form, "instructions") || undefined,
-    max_items: Number(form.get("max_items")) || 5,
-    enabled: true,
     // Omitted rather than stored when it's the default: "no cadence" and "daily" mean the same thing, and
     // one of them doesn't need a row of jsonb to say so.
     cadence: cadence && cadence !== "daily" ? (cadence as Cadence) : undefined,
@@ -95,38 +84,33 @@ export async function addSection(form: FormData) {
       .filter(Boolean);
   const num = (key: string) => (Number(form.get(key)) > 0 ? Number(form.get(key)) : undefined);
 
-  let section: Section;
-  switch (kind) {
+  switch (identity.kind) {
     case "search":
-      section = { ...base, kind: "search", query: str(form, "query") };
-      break;
+      return { ...shared, kind: "search", query: str(form, "query") };
     case "feed":
-      section = {
-        ...base,
+      return {
+        ...shared,
         kind: "feed",
         urls: str(form, "urls").split(/[\s,]+/).filter((u) => u.startsWith("http")),
       };
-      break;
     case "serial":
-      section = {
-        ...base,
+      return {
+        ...shared,
         kind: "serial",
         book_id: Number(form.get("book_id")),
         pages_per_day: Number(form.get("pages_per_day")) || 1,
       };
-      break;
     case "readwise":
-      section = {
-        ...base,
+      return {
+        ...shared,
         kind: "readwise",
         mode: str(form, "readwise_mode") === "random" ? "random" : "review",
         // "any" is the empty case, not a value — a section with no category draws from the whole vault.
         category: (str(form, "readwise_category") || undefined) as ReadwiseSection["category"],
       };
-      break;
     case "ranked":
-      section = {
-        ...base,
+      return {
+        ...shared,
         kind: "ranked",
         source: (str(form, "ranked_source") || "hn") as RankedSection["source"],
         query: str(form, "query") || undefined,
@@ -134,49 +118,53 @@ export async function addSection(form: FormData) {
         min_score: num("min_score"),
         days: num("days"),
       };
-      break;
     case "inbox":
-      section = {
-        ...base,
+      return {
+        ...shared,
         kind: "inbox",
         // Sender filters are matched as substrings, so "stratechery.com" and a full address both work.
         senders: list("senders"),
         days: num("days"),
       };
-      break;
     case "unread":
-      section = {
-        ...base,
+      return {
+        ...shared,
         kind: "unread",
         min_age_days: num("min_age_days"),
         max_age_days: num("max_age_days"),
       };
-      break;
     case "sitewatch":
-      section = {
-        ...base,
-        kind: "sitewatch",
-        urls: list("urls").filter((u) => u.startsWith("http")),
-      };
-      break;
+      return { ...shared, kind: "sitewatch", urls: list("urls").filter((u) => u.startsWith("http")) };
     case "video":
-      section = {
-        ...base,
-        kind: "video",
-        channels: list("channels"),
-        days: num("days"),
-      };
-      break;
+      return { ...shared, kind: "video", channels: list("channels"), days: num("days") };
     case "quiz":
-      section = {
-        ...base,
-        kind: "quiz",
-        over: str(form, "quiz_over") === "today" ? "today" : "previous",
-      };
-      break;
+      return { ...shared, kind: "quiz", over: str(form, "quiz_over") === "today" ? "today" : "previous" };
     default:
-      section = { ...base, kind: "prompt" };
+      return { ...shared, kind: "prompt" };
   }
+}
+
+// Sections live as jsonb (policy-as-data), so add/edit/remove is a read-modify-write of the array rather
+// than a schema change per source kind.
+export async function addSection(form: FormData) {
+  const id = Number(form.get("id"));
+  const kind = str(form, "kind") as SectionKind;
+  const supabase = createClient();
+
+  const { data: digest, error: readErr } = await supabase
+    .from("digests")
+    .select("sections")
+    .eq("id", id)
+    .single();
+  if (readErr) throw new Error(readErr.message);
+
+  const section = buildSection(form, {
+    // Timestamp-based id: stable across edits, and unique enough for a hand-authored list.
+    id: `s${Date.now().toString(36)}`,
+    kind,
+    max_items: Number(form.get("max_items")) || 5,
+    enabled: true,
+  });
 
   const sections = [...((digest.sections ?? []) as Section[]), section];
   const { error } = await supabase.from("digests").update({ sections }).eq("id", id);
@@ -186,8 +174,12 @@ export async function addSection(form: FormData) {
   revalidatePath(`/digests/${id}`, "layout");
 }
 
-export async function updateSectionMaxItems(id: number, sectionId: string, maxItems: number) {
+export async function updateSection(form: FormData) {
+  const id = Number(form.get("id"));
+  const sectionId = str(form, "section_id");
+  const kind = str(form, "kind") as SectionKind;
   const supabase = createClient();
+
   const { data: digest, error: readErr } = await supabase
     .from("digests")
     .select("sections")
@@ -195,9 +187,17 @@ export async function updateSectionMaxItems(id: number, sectionId: string, maxIt
     .single();
   if (readErr) throw new Error(readErr.message);
 
-  const sections = ((digest.sections ?? []) as Section[]).map((s) =>
-    s.id === sectionId ? { ...s, max_items: maxItems } : s,
-  );
+  const existing = ((digest.sections ?? []) as Section[]).find((s) => s.id === sectionId);
+  if (!existing) throw new Error("Section not found");
+
+  const section = buildSection(form, {
+    id: sectionId,
+    kind,
+    max_items: Number(form.get("max_items")) || existing.max_items || 5,
+    enabled: existing.enabled ?? true,
+  });
+
+  const sections = ((digest.sections ?? []) as Section[]).map((s) => (s.id === sectionId ? section : s));
   const { error } = await supabase.from("digests").update({ sections }).eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath(`/digests/${id}`, "layout");

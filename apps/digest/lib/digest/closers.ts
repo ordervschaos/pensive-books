@@ -1,5 +1,5 @@
 import type { Closer, QuizSection, RenderedSection, RunCtx, Section } from "./types";
-import { callClaude } from "./llm";
+import { callModel } from "./llm";
 import { createServiceClient } from "@/lib/supabase/server";
 
 // CLOSERS — the second contract.
@@ -41,7 +41,7 @@ const quizCloser: Closer = async (section, sections, ctx, issueId) => {
   // can't be honest is dropped, same rule as every other section in the pipeline.
   if (!material || material.length < 400) return null;
 
-  const { text } = await callClaude(
+  const { text } = await callModel(
     {
       system: QUIZ_SYSTEM,
       prompt:

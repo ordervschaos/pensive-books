@@ -18,6 +18,83 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-01 — Digest write stage moves to DeepSeek `[ship]`
+- **What:** owner directive — write on DeepSeek instead of Sonnet. `lib/digest/llm.ts` now routes on the
+  **model id alone** (`providerFor`), so there's no second switch to keep in sync; `MODEL_WRITE =
+  deepseek-v4-pro`, `MODEL_GATHER` stays `claude-opus-5`. Gather **cannot** move: `web_search` is an
+  Anthropic server tool and would be silently dropped, so `callModel` throws if a DeepSeek model is handed
+  `tools`. Renamed `callClaude` → `callModel` (5 sites) — a function named Claude that dials DeepSeek is
+  exactly the drift this repo keeps paying for. Two hazards found and fixed: (1) DeepSeek charges reasoning
+  against `max_tokens`, so `writeIntro`'s 400 would have returned empty — added `REASONING_HEADROOM` per
+  effort level + a `truncated` marker in `ai_calls`; (2) DeepSeek brackets citations (`[[Anthropic](url)]`),
+  which rendered as link text `[Anthropic` plus an orphan `]` — fixed in `render.ts` by unwrapping a bracket
+  pair around a whole link (literal `[1, 2]` still survives), deliberately render-side since citation habits
+  differ per model. Verified live: intro 156 chars/5.1s, section 229 chars with a correct citation, tools
+  guard fires, `ai_calls` rows land as `provider=deepseek`.
+- **Files/commits:** uncommitted. `apps/digest/lib/digest/{llm.ts,render.ts,write.ts,adapters.ts,select.ts,closers.ts}`,
+  `apps/digest/.env.local` (DEEPSEEK_API_KEY), README (env table + new "Two providers" section).
+- **PM impact:** none — it applies the standing `ai_provider = deepseek` decision (2026-07-10) to a second
+  app rather than making a new call. Noted here so the digest's cost profile is traceable.
+- **Open, not mine:** `updateSectionMaxItems` is imported by `MaxItemsField.tsx` but no longer exported from
+  `app/digests/actions.ts` — the parallel session deleted it mid-flight; it is the only typecheck error and
+  it blocks `next build`. Left for them.
+- **Raised by owner, not built:** section config has no required/optional contract — the field schema is
+  triplicated across `types.ts`, `AddSectionForm.tsx` and `actions.ts`, and `addSection` validates nothing,
+  so a `feed` with no URLs or a `serial` with no book saves happily and gathers 0 items forever (verified);
+  an empty `search` query is worse — it still burns an Opus call. Fix = one per-kind field schema as SSOT,
+  same shape as `dnaSchema.ts`. Proposed, awaiting the owner's call.
+
+## 2026-08-01 — Digest: sections are now editable, not just add/remove `[ship]`
+- **What:** Sections previously could only be added or removed — no way to fix a typo'd query or bump
+  `max_items` after creation. Started narrow (an autosave-on-blur `max_items` field) but the real gap was
+  broader, so generalized: extracted `buildSection()` out of `addSection`'s per-kind switch and added
+  `updateSection`, a read-modify-write that replaces one section by id. `AddSectionForm` now does double
+  duty as the edit form — takes an optional `section` prop, prefills every field via a generic `val()`
+  reader, posts to `updateSection` instead of `addSection` when editing. Each section row gets a native
+  `<details>/<summary>` "edit" disclosure (no client state needed for open/close). Removed the one-off
+  `MaxItemsField.tsx` autosave widget — it's now subsumed by full editing and would've been a second,
+  conflicting way to change the same value. Verified with `tsc --noEmit` and `next build` (auth-gated
+  dev server, couldn't click-test in browser).
+- **Files/commits:** `apps/digest/app/digests/actions.ts` (buildSection extraction + updateSection),
+  `apps/digest/app/digests/[id]/AddSectionForm.tsx` (edit mode), `apps/digest/app/digests/[id]/page.tsx`
+  (details/summary wiring), deleted `apps/digest/app/digests/[id]/MaxItemsField.tsx`. Uncommitted.
+- **PM impact:** none — digest still has no STATE board row (parallel session owns it, per the prior
+  entry); this rides along with whoever catalogues that row.
+
+## 2026-08-01 — Digest deployed: third Vercel project, live at pensive-digest.vercel.app `[ship]`
+- **What:** Created + linked Vercel project `pensive-digest` (root dir `apps/digest`, `vercel.json` mirroring
+  marketing's monorepo `ignoreCommand`), set 5 production env vars, deployed to production. Verified live:
+  root 307s to `app.pensive.me/auth` (shared-cookie bounce works), `/api/inbound/mailgun` returns 401
+  (reachable + fail-closed on the absent signing key). `digest.pensive.me` attached but unconfigured —
+  `pensive.me` is on Squarespace/NS1 nameservers, needs `A digest 76.76.21.21` added by hand. Preview env
+  vars NOT set: the pinned CLI (54.1.0) loops on `git_branch_required` even with `--yes`.
+- **Files/commits:** `apps/digest/vercel.json` (new), `apps/digest/.vercel/` (gitignored), SETUP.md §B/§F
+  rewritten to match reality. Deployment `dpl_GrWPfDEohXgtQiK1LuA7oVEPYbXv` — a **CLI upload, not a
+  git-connected build**, so no push-to-deploy yet.
+- **PM impact:** STATE Morning Digest table — deploy row now true; `inbox` still blocked on
+  `MAILGUN_SIGNING_KEY` + the Mailgun route (which can now be created against the `.vercel.app` URL).
+
+## 2026-08-01 — Mailgun route blocker resolved: the digest app was never deployed `[chore]`
+- **What:** Real error out of `POST /v3/routes` was `"...must be publicly accessible"` — not the regex and
+  not the plan. Confirmed: `digest.pensive.me` does not resolve, and `vercel projects ls` shows no digest
+  project (`apps/digest` was never linked). SETUP.md ordering was wrong (§B Mailgun before §F deploy);
+  §B now carries a deploy-first gate with the verbatim error. Noted that the route can point at the raw
+  `*.vercel.app` production URL, so the custom domain isn't required to start testing `inbox`.
+- **Files/commits:** `apps/digest/SETUP.md` (§B gate). No code.
+- **PM impact:** none — STATE already records `inbox` as inert pending the route; the reason is now known.
+  Awaiting owner's call on who creates the Vercel project (new public surface, not doing it unilaterally).
+
+## 2026-08-01 — Mailgun inbound route: diagnosed, not yet created `[chore]`
+- **What:** Owner hit "Failed to create route" in the Mailgun UI. Verified read-only that this is NOT a DNS
+  problem — `pensive.me` MX → `mxa/mxb.mailgun.org`, both valid, domain active, 0 routes existing. API
+  creation attempt returned `401 insufficient permissions`: the key in `.env.local` is a domain-scoped
+  SENDING key, not an account key. Two live candidates left: an unescaped `+` in the match_recipient regex
+  (must be `^read\+.*@pensive\.me$`), or routes being gated behind a paid plan (Upgrade button present).
+  Fallback if it's the plan: inbound-only on a `read.pensive.me` subdomain via Cloudflare Email Workers or
+  SendGrid Inbound Parse — sending stays on Mailgun so the Kindle approved-sender path is untouched.
+- **Files/commits:** none (diagnosis). `apps/digest/SETUP.md` §B is the affected step.
+- **PM impact:** none — `inbox` was already recorded in STATE as inert pending the route.
+
 ## 2026-08-01 — Digest: six new source kinds + closer contract + per-section cadence `[ship]`
 - **What:** Built the whole backlog from the morning's ideation. New kinds: `ranked` (HN/arXiv/GitHub/
   Lobsters/reddit — borrows the world's ranking instead of building one), `inbox` (Mailgun inbound →
@@ -53,9 +130,16 @@
   `apps/digest/lib/digest/{readwise.ts,adapters.ts,types.ts,write.ts,render.ts}`;
   `apps/digest/app/settings/{page.tsx,actions.ts}`; `apps/digest/app/digests/{actions.ts,[id]/page.tsx,[id]/posts/page.tsx}`;
   `apps/digest/app/{layout.tsx,globals.css}`; README + `doc_1785584624000.md`.
+- **Follow-up same day:** the account-vs-digest settings split wasn't discoverable — the reader looked
+  for Readwise on the digest's own Settings tab and concluded it wasn't built. Added a signpost there
+  pointing at `/settings`. Reconciled with the parallel `adapters.ts` refactor that landed meanwhile
+  (six more source kinds): Readwise adapter, registry entry, write short-circuit, blockquote render and
+  the add-section fields all survived it, and that session's extracted `AddSectionForm` improved the
+  fields to show only when `readwise` is picked. Dropped my posts-page staleness exclusion — they had
+  already reframed age as neutral context, so it was dead code. App typechecks at 0 errors and builds.
 - **PM impact:** DECISIONS (credential grain + verbatim-render call). No STATE row — the digest
-  project has no board row yet and a parallel session is mid-refactor in `adapters.ts` (adding
-  `ranked`/`inbox`/`unread`/`sitewatch`/`video`/`quiz`); left the row for whoever catalogues that.
+  project has no board row yet and the parallel session owns that app's board entry; left it for
+  whoever catalogues the six-source-kind work.
 
 ## 2026-08-01 — Digest: content-kind ideation (source taxonomy + backlog) `[wip]`
 - **What:** Ideation pass over `apps/digest` for new section kinds. Framed the gap as *coverage*, not
