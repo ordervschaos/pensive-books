@@ -6,7 +6,7 @@
 // and projects the row live (refresh = no-op). Mirrors ReviseChat's shape but is driven by the
 // agent's `steps` feed rather than a per-layer chat thread.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Loader2, Wand2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, WandSparkles, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow } from "@/hooks/useLatestTaskRow";
 import { stopRun } from "@/lib/stopRun";
@@ -23,7 +23,7 @@ import { useChatScroll } from "@/components/book/shared/useChatScroll";
 import { useAutoAccept } from "@/features/dna/hooks/useAutoAccept";
 import { useAdmin } from "@/hooks/use-admin";
 import { useLatestAiCall } from "@/features/dna/hooks/useLatestAiCall";
-import { ActionLink, Eyebrow, Panel, RunError } from "@/components/book/shared/studioUi";
+import { ActionLink, Eyebrow, RunError } from "@/components/book/shared/studioUi";
 import { snapshotTree } from "@/features/dna/lib/treeVersions";
 import { briefIdea, type Brief } from "@/lib/brief";
 import { NEXT_STEP_MESSAGE, STEP_TEACH, IDEA_TEACH, IDEA_MESSAGE } from "./agentRail/journeyContent";
@@ -31,13 +31,19 @@ import { AgentRailControls } from "./agentRail/AgentRailControls";
 import { StepBubble } from "./agentRail/StepBubble";
 import { ProposalCard } from "./agentRail/ProposalCard";
 import { SessionHistory } from "./agentRail/SessionHistory";
-import { Composer } from "./agentRail/Composer";
+import { Composer, type ComposerMenu } from "./agentRail/Composer";
+import { OptionsCard } from "./agentRail/OptionsCard";
 import { AdminPromptPeek } from "./agentRail/AdminPromptPeek";
 
-export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedIds = [], onDetach, onClose, onJump }: {
+// The composer's "@" trigger: group 1 = the boundary (start-of-draft or the whitespace before "@"), which the
+// strip-on-pick replacement restores; group 2 = the query typed after it.
+const MENTION_RE = /(^|\s)@([^@\n]*)$/;
+
+export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedIds = [], onAttach, onDetach, onClose, onJump }: {
   bookId: number; nodes: DnaNode[]; settings: BookSettings; bookSlug?: string; // bookSlug feeds the reader URL into the final render/publish hand-off
   brief?: Brief | null; // the books.brief — lets the greeting tell "no idea yet" (ideate) from "idea set, no logline" (teach the logline)
   attachedIds?: string[]; onDetach?: (id: string) => void; // slice 2 — the context tray (anchors); omitted = no tray
+  onAttach?: (id: string) => void; // "@" in the composer — attach an anchor WITHOUT going to the tree row's @ icon
   onClose?: () => void; // folds the rail's own close affordance into its header row instead of a floating sibling
   onJump?: (id: string) => void; // reveals + scrolls to a node in the tree — lets a staged-options step jump to its picker
 }) {
@@ -136,8 +142,26 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
     staleMs: 6 * 60 * 1000,
   });
 
-  const steps = useMemo(() => (Array.isArray(row?.steps) ? row!.steps! : []) as AgentStep[], [row]);
-  const proposals = useMemo(() => (Array.isArray(row?.proposals) ? row!.proposals! : []) as AgentProposal[], [row]);
+  const rowSteps = useMemo(() => (Array.isArray(row?.steps) ? row!.steps! : []) as AgentStep[], [row]);
+  const rowProposals = useMemo(() => (Array.isArray(row?.proposals) ? row!.proposals! : []) as AgentProposal[], [row]);
+  // Optimistic chat switching (newChat / resume below). Both archive-and-swap the whole thread, and both
+  // outcomes are known at click time, so the rail renders the destination immediately and lets the write
+  // land under it. `since` is the row's updated_at as it was when the author clicked: a BEFORE UPDATE
+  // trigger bumps that column, so "updated_at moved" is the exact signal that OUR write committed and
+  // came back — which is also what makes this safe against the stale Realtime snapshot of the outgoing
+  // chat that arrives mid-flight. Writes keep using rowSteps/rowProposals: what's on screen is a
+  // prediction, what's on the server is what we mutate.
+  const [predicted, setPredicted] = useState<{ steps: AgentStep[]; proposals: AgentProposal[]; since?: string } | null>(null);
+  const steps = predicted ? predicted.steps : rowSteps;
+  const proposals = predicted ? predicted.proposals : rowProposals;
+  useEffect(() => {
+    if (predicted && row?.updated_at && row.updated_at !== predicted.since) setPredicted(null);
+  }, [predicted, row]);
+  // Nodes carrying STAGED OPTIONS (book_nodes.proposals, written by the agent's propose_options). The tree
+  // renders the same decision in place via ProposalPicker; surfacing it here too is what makes the rail
+  // self-sufficient — every choice the agent puts to the author (proposal · question · options) is now
+  // resolvable without leaving the conversation. Same writes either way (lib/dnaProposals.ts).
+  const optionNodes = useMemo(() => nodes.filter((n) => (n.proposals?.length ?? 0) > 0), [nodes]);
   const running = row?.status === "running";
   const awaiting = row?.status === "awaiting_input";
   const active = running || awaiting;
@@ -180,27 +204,77 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
   }, [historyOpen, threadId, sessionsStale]);
   // Optimistic echo of the just-sent message until the row reflects it over Realtime.
   const [optimistic, setOptimistic] = useState<string | null>(null);
-  const { scrollRef, atBottom, scrollToBottom } = useChatScroll([steps.length, proposals.length, running, awaiting, !!optimistic] as const);
+  const { scrollRef, atBottom, scrollToBottom } = useChatScroll([steps.length, proposals.length, optionNodes.length, running, awaiting, !!optimistic] as const);
 
-  // ── Slash-command menu ── Type "/" to open a filtered command list; picking one drops its editable
-  // prompt into the composer and focuses the context filter to the command's aspects.
+  // ── Composer autocomplete ── Two triggers over one popover (Composer owns the rendering + keys):
+  //   "/" at the start of the draft → the slash-command list; picking one drops its editable prompt in.
+  //   "@" anywhere → a node picker that attaches an anchor to the context tray. Before this, attaching
+  //   context meant leaving the chat for the tree row's "@" icon — the last routine gesture the rail
+  //   couldn't perform itself.
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const focusComposer = () => requestAnimationFrame(() => {
+    const el = taRef.current;
+    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  });
+
   const slashQuery = draft.startsWith("/") ? draft.slice(1) : null;
   const cmds = useMemo(
     () => (slashQuery === null ? [] : matchCommands(availableCommands(available), slashQuery)),
     [slashQuery, available],
   );
-  const showMenu = slashQuery !== null && cmds.length > 0 && !active;
+
+  // The "@" token being typed: an "@…" run at the caret-end of the draft, anchored to a word boundary so a
+  // mid-word "@" (an email address) doesn't open the picker. The query may contain spaces — node labels are
+  // prose, not handles — which is safe because a query that matches nothing closes the menu on its own.
+  // Slash wins when both could match (a draft can only start with one of them, so they're disjoint anyway).
+  const mentionQuery = useMemo(() => {
+    if (slashQuery !== null) return null;
+    return draft.match(MENTION_RE)?.[2] ?? null;
+  }, [draft, slashQuery]);
+  const mentionHits = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.trim().toLowerCase();
+    return nodes
+      .filter((n) => !attachedIds.includes(n.id))
+      .filter((n) => !q || nodeLabel(n, n.kind).toLowerCase().includes(q) || n.kind.includes(q))
+      .slice(0, 8);
+  }, [mentionQuery, nodes, attachedIds]);
+
   const [hi, setHi] = useState(0);
-  useEffect(() => { setHi(0); }, [slashQuery]);
+  useEffect(() => { setHi(0); }, [slashQuery, mentionQuery]);
 
   const pickCommand = (c: AgentCommand) => {
     setDraft(c.prompt);
-    requestAnimationFrame(() => {
-      const el = taRef.current;
-      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
-    });
+    focusComposer();
   };
+  // Attaching consumes the "@query" token — the anchor rides out-of-band on the message (attachedLiveIds),
+  // so leaving the text behind would double-say it.
+  const pickMention = (n: DnaNode) => {
+    onAttach?.(n.id);
+    setDraft(draft.replace(MENTION_RE, "$1"));
+    focusComposer();
+  };
+
+  const menu = useMemo<ComposerMenu | null>(() => {
+    if (active) return null;
+    if (slashQuery !== null) {
+      if (!cmds.length) return null;
+      return {
+        items: cmds.map((c) => ({ key: c.id, left: `/${c.trigger}`, right: c.hint })),
+        hi, setHi, onPick: (i) => pickCommand(cmds[i]), onEscape: () => setDraft(""),
+      };
+    }
+    if (mentionQuery !== null && onAttach) {
+      if (!mentionHits.length) return null;
+      return {
+        items: mentionHits.map((n) => ({ key: n.id, left: n.kind, right: nodeLabel(n, n.kind) })),
+        hi, setHi, onPick: (i) => pickMention(mentionHits[i]),
+        onEscape: () => setDraft(draft.replace(MENTION_RE, "$1")),
+      };
+    }
+    return null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, slashQuery, cmds, mentionQuery, mentionHits, hi, draft, onAttach]);
 
   useEffect(() => {
     // Clear the echo once the row reflects it — a free message lands as a 'user' step, an answer to a
@@ -265,16 +339,46 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
   // After archiving/restoring a chat, the count badge and (if reopened) the full list need a fresh read.
   const invalidateSessions = () => { setSessionsStale(true); if (threadId) void fetchAgentSessionCount(threadId).then(setSessionCount); };
 
+  // Blank the rail first, then archive. Even as a single RPC the write is a round trip the author would
+  // otherwise spend staring at the conversation they just asked to leave, so we show them the empty
+  // thread now and reconcile after. Rolls back on failure — the prediction can't outlive its write.
   const newChat = async () => {
-    if (!row || busy || active) return;
-    try { await startNewAgentSession(row.id); setHistoryOpen(false); invalidateSessions(); refetch(); }
-    catch (e) { toast({ title: "Couldn't start a new chat", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+    if (!row || busy || active || predicted) return;
+    const prevCount = sessionCount;
+    setPredicted({ steps: [], proposals: [], since: row.updated_at });
+    setSessionCount((c) => c + 1); // the archive-to-be; invalidateSessions replaces this with the truth
+    setHistoryOpen(false);
+    try { await startNewAgentSession(row.id); invalidateSessions(); refetch(); }
+    catch (e) {
+      setPredicted(null); setSessionCount(prevCount);
+      toast({ title: "Couldn't start a new chat", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    }
   };
 
+  // Same trick, and here we can predict the *content*: the session's steps are already in hand from the
+  // "Past chats" fetch that rendered the button, so the restored chat can paint before the swap lands.
   const resume = async (sessionId: number) => {
-    if (!row || busy || active) return;
-    try { await resumeAgentSession(row.id, sessionId); setHistoryOpen(false); invalidateSessions(); refetch(); }
-    catch (e) { toast({ title: "Couldn't continue that chat", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+    if (!row || busy || active || predicted) return;
+    const target = sessions.find((s) => s.id === sessionId);
+    const prevCount = sessionCount;
+    if (target) setPredicted({ steps: target.steps ?? [], proposals: target.proposals ?? [], since: row.updated_at });
+    // One row leaves the archive (the restored one) and, unless the live thread is empty, one joins it.
+    setSessionCount((c) => Math.max(0, c - 1 + (rowSteps.length > 0 ? 1 : 0)));
+    setHistoryOpen(false);
+    try {
+      const restored = await resumeAgentSession(row.id, sessionId);
+      invalidateSessions(); refetch();
+      // The session was gone (another tab got there first). Nothing was written, so nothing will bump
+      // updated_at to release the prediction — drop it by hand or the rail shows a chat that isn't there.
+      if (!restored) {
+        setPredicted(null); setSessionCount(prevCount);
+        toast({ title: "That chat is no longer there", description: "It was resumed or removed somewhere else." });
+      }
+    }
+    catch (e) {
+      setPredicted(null); setSessionCount(prevCount);
+      toast({ title: "Couldn't continue that chat", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    }
   };
 
   const apply = async (p: AgentProposal) => {
@@ -284,7 +388,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
     const controller = isAbortable ? new AbortController() : null;
     applyingAbortRef.current = controller;
     try {
-      const { rejected } = await applyAgentProposal(bookId, row.id, p, proposals, nodes, controller?.signal);
+      const { rejected } = await applyAgentProposal(bookId, row.id, p, rowProposals, nodes, controller?.signal);
       refetch();
       if (rejected.length) {
         const reasons = rejected.map((r) => r.reasons[0]).filter(Boolean).slice(0, 3).join("; ");
@@ -305,7 +409,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
 
   const discard = async (p: AgentProposal) => {
     if (!row) return;
-    try { await discardAgentProposal(row.id, p.id, proposals); refetch(); }
+    try { await discardAgentProposal(row.id, p.id, rowProposals); refetch(); }
     catch (e) { toast({ title: "Couldn't discard", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
   };
 
@@ -316,10 +420,14 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
     : (objectiveKey && NEXT_STEP_MESSAGE[objectiveKey]) || objectiveHeadline || "Let's work on the next step.";
 
   return (
-    <Panel variant="soft" className="flex h-full flex-col rounded-none px-4 py-3.5">
-      <div className="flex shrink-0 items-center gap-2">
-        <Wand2 className="h-4 w-4 text-[hsl(var(--pv-accent))]" />
-        <Eyebrow tone="accent">Agent</Eyebrow>
+    // No panel bg/border here — this sits on the same chrome tone as the page's title bar (set by the
+    // fixed rail container in DnaTreePage.tsx). Header height (h-11 = 44px = DnaTreePage's HEADER_H)
+    // and border-bottom match the title bar's exactly, so the two read as ONE merged top strip with
+    // no seam between them.
+    <div className="flex h-full flex-col px-3.5 pb-3">
+      <div className="box-border flex h-11 shrink-0 items-center gap-2 border-b border-[hsl(var(--pv-border-soft))]">
+        <WandSparkles className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />
+        <Eyebrow tone="accent" className="shrink-0">Agent</Eyebrow>
         <AgentRailControls
           auto={auto} onToggleAuto={toggleAuto}
           effort={effort} onSetEffort={setEffortMode}
@@ -332,14 +440,16 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
 
       {/* Past chats — archived conversations, read-only until resumed. */}
       {historyOpen && sessions.length > 0 && (
-        <div className="mt-2 shrink-0 max-h-[40%] overflow-y-auto rounded-xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-3 py-2">
+        <div className="sidebar-scroll mt-2 shrink-0 max-h-[40%] overflow-y-auto rounded-xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-3 py-2">
           <SessionHistory sessions={sessions} onResume={resume} busy={busy || active} nodes={nodes} />
         </div>
       )}
 
-      {/* Conversation */}
-      <div className="relative mt-3 min-h-0 flex-1">
-        <div ref={scrollRef} className="h-full space-y-3.5 overflow-y-auto pr-1">
+      {/* Conversation — bleeds past the shell's own right padding (-mr-3.5 cancels it) so the
+          scrollbar sits flush on the rail's true edge instead of floating with a gap; pr-3.5 puts
+          that same inset back as padding, so the text itself still lines up with everything else. */}
+      <div className="relative mt-3 min-h-0 flex-1 -mr-3.5">
+        <div ref={scrollRef} className="sidebar-scroll h-full space-y-3.5 overflow-y-auto pr-3.5">
           {/* The guide's greeting — the agent speaks first. Journey-aware and scripted (zero cost, zero
               latency): orient, teach the current rung's concept, and let the next-step card below carry
               the offer. On a fresh brief this is the "explain what a logline is" moment; on an emptied
@@ -365,33 +475,38 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
             <ProposalCard key={p.id} proposal={p} nodes={nodes}
               applying={applyingId === p.id} onApply={() => void apply(p)} onDiscard={() => void discard(p)} onStop={stopApply} />
           ))}
+          {/* Staged options (propose_options) — pickable right here, not only at the node's row in the tree. */}
+          {optionNodes.map((n) => <OptionsCard key={n.id} node={n} nodes={nodes} onJump={onJump} />)}
           {/* Guided-flow nudge (lib/dnaJourney.currentObjective) — appears in the feed as the LAST item
               only when the agent's work is settled: idle, nothing running/awaiting, no proposal to review,
               no error. So it reads as "here's what's next", not a pinned CTA. One click hands the step to
               the agent (the objective itself already rides every message's context). */}
-          {!active && !optimistic && proposals.length === 0 && row?.status !== "error" && objectiveHeadline && (
-            <button type="button" onClick={() => void send(nextStepMessage, { isNextStep: true })} disabled={busy}
-              title="Let the agent lead you through this step"
-              className="flex w-full items-center gap-2.5 rounded-2xl border border-dashed border-[hsl(var(--pv-accent))]/35 bg-[hsl(var(--pv-accent))]/[0.05] px-3.5 py-2.5 text-left transition-colors hover:border-[hsl(var(--pv-accent))]/60 hover:bg-[hsl(var(--pv-accent))]/[0.08] disabled:opacity-50">
-              <Wand2 className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />
-              <span className="min-w-0 flex-1">
-                <span className="block pv-mono text-[9px] uppercase tracking-[0.12em] text-[hsl(var(--pv-accent))]">next step</span>
-                {draftTarget ? (
-                  <>
-                    <span className="block truncate pv-serif text-[13px] leading-snug text-foreground">
-                      Write “{nodeLabel(draftTarget.scene)}”
-                    </span>
-                    <span className="block pv-mono text-[9.5px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">
-                      Scene {draftTarget.orderIndex} of {draftTarget.total}
-                    </span>
-                  </>
-                ) : (
-                  <span className="block pv-serif text-[13px] leading-snug text-foreground">{needsIdea ? "Find the story idea — pitch me a few directions" : objectiveHeadline}</span>
+          {!active && !optimistic && proposals.length === 0 && optionNodes.length === 0 && row?.status !== "error" && objectiveHeadline && (() => {
+            // "▸ Step 1/5 · Idea – Interview" (dnaJourney.currentObjective) → badge "1/5" + the rest as the
+            // row's description. draftTarget carries its own scene tally instead of the step badge.
+            const stepMatch = objectiveHeadline.match(/^Step\s+(\d+)\/(\d+)\s*·\s*(.*)$/);
+            const badge = draftTarget ? `${draftTarget.orderIndex}/${draftTarget.total}` : stepMatch ? `${stepMatch[1]}/${stepMatch[2]}` : null;
+            const desc = draftTarget
+              ? `Write “${nodeLabel(draftTarget.scene)}”`
+              : needsIdea ? "Find the story idea — pitch me a few directions" : (stepMatch ? stepMatch[3] : objectiveHeadline);
+            return (
+              <div className="flex items-center gap-2 rounded-xl border border-dashed border-[hsl(var(--pv-accent))]/35 bg-[hsl(var(--pv-accent))]/[0.05] px-3 py-2">
+                <WandSparkles className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />
+                <span className="shrink-0 pv-serif text-[13px] font-medium text-foreground">Next step</span>
+                {badge && (
+                  <span className="shrink-0 rounded-full bg-[hsl(var(--pv-accent))]/10 px-2 py-0.5 pv-mono text-[9.5px] text-[hsl(var(--pv-accent))]">
+                    {badge}
+                  </span>
                 )}
-              </span>
-              <ArrowUp className="h-3.5 w-3.5 shrink-0 rotate-90 text-[hsl(var(--pv-text-faint))]" />
-            </button>
-          )}
+                <span className="min-w-0 flex-1 truncate pv-serif text-[12.5px] text-[hsl(var(--pv-text-muted))]" title={desc}>{desc}</span>
+                <button type="button" onClick={() => void send(nextStepMessage, { isNextStep: true })} disabled={busy}
+                  title="Let the agent lead you through this step"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[hsl(var(--pv-accent))]/50 px-2.5 py-1 pv-mono text-[10px] uppercase tracking-[0.06em] text-[hsl(var(--pv-accent))] transition-colors hover:bg-[hsl(var(--pv-accent))]/10 disabled:opacity-50">
+                  Continue <ArrowUp className="h-3 w-3 rotate-90" />
+                </button>
+              </div>
+            );
+          })()}
           {optimistic && (
             <div className="flex justify-end">
               <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-[hsl(var(--pv-surface-2))] px-3.5 py-2 pv-serif text-[14px] leading-[1.55] text-foreground whitespace-pre-wrap opacity-60">
@@ -420,8 +535,8 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
         )}
       </div>
 
-      {/* Context tray (slice 2) — the DNA nodes the author attached as anchors. Add from a node's kebab in
-          the tree; remove here. On send they become a "Focus" prefix on the message. */}
+      {/* Context tray (slice 2) — the DNA nodes the author attached as anchors. Add by typing "@" in the
+          composer (or from the node's row in the tree); remove here. The ids ride out-of-band on send. */}
       {attached.length > 0 && (
         <div className="mt-2.5 flex shrink-0 flex-wrap items-center gap-1.5">
           <span className="pv-mono text-[9.5px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">focus</span>
@@ -444,10 +559,9 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
           onReply={(t) => void reply(t)} answer={answer} setAnswer={setAnswer}
           onStop={() => void stop()} stopDisabled={!!row?.cancel_requested} cancelRequested={!!row?.cancel_requested}
           draft={draft} setDraft={setDraft} onSend={(t) => void send(t)} running={running} active={active} busy={busy}
-          showMenu={showMenu} cmds={cmds} hi={hi} setHi={setHi} onPickCommand={pickCommand}
-          taRef={taRef} stopping={stopping}
+          menu={menu} taRef={taRef} stopping={stopping}
         />
       </div>
-    </Panel>
+    </div>
   );
 }

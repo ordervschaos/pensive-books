@@ -279,19 +279,15 @@ async function resolveProposal(
   if (error) throw error;
 }
 
-// ── Chat history ── archive the current conversation and start fresh / restore a past one. Client-side
-// (RLS allows editor updates) and only safe while the thread is idle — the rail gates on `busy`/active.
+// ── Chat history ── archive the current conversation and start fresh / restore a past one.
 // Archived sessions live in book_agent_sessions (one row per chat, see 20260701150000) — NOT embedded on
 // the thread row — so archiving is a single INSERT instead of a read-modify-write of the whole history,
 // and the (REPLICA IDENTITY FULL) thread row never carries past chats over Realtime.
-
-const LIVE_COLS = "status, book_id, steps, transcript, proposals, title";
-
-/** True while the row is mid-turn — the edge fn owns transcript/steps/proposals then, so a client write
- *  (archiving/restoring a session) would race it. Same guard `logAgentTurn`/`stageGeneratedProposal` use. */
-function isBusy(status: unknown): boolean {
-  return status === "running" || status === "awaiting_input";
-}
+//
+// Both mutations are RPCs (20260728120000 / 20260728130000) rather than statement chains from the
+// browser: one round trip instead of three and five, one transaction instead of none, and the mid-turn
+// guard runs under a row lock instead of as a check-then-act the edge function could slip between.
+// They're invoker-rights, so the same RLS that allowed the client writes still governs.
 
 /** How many archived chats this thread has — cheap enough to load whenever the thread does (the "Past
  *  chats" badge), unlike the full sessions themselves. */
@@ -308,47 +304,30 @@ export async function fetchAgentSessions(threadId: number): Promise<AgentSession
   return (data ?? []) as unknown as AgentSession[];
 }
 
-/** Archive the live conversation as a new book_agent_sessions row and start a fresh, empty thread. */
+/** Archive the live conversation as a new book_agent_sessions row and start a fresh, empty thread.
+ *
+ *  One round trip, not three. This used to be SELECT → INSERT → UPDATE from the client, each waiting
+ *  on the one before it, which cost the author ~2s and — because the three weren't a transaction — could
+ *  leave a chat archived AND still live if anything died between the INSERT and the UPDATE. The RPC
+ *  (20260728120000) does all three under one row lock; the mid-turn guard and the "nothing to archive"
+ *  no-op moved in with it. Invoker-rights, so RLS is unchanged. */
 export async function startNewAgentSession(threadId: number): Promise<void> {
-  const { data } = await supabase.from("book_agent_runs").select(LIVE_COLS).eq("id", threadId).maybeSingle();
-  if (isBusy(data?.status)) throw new Error("The agent is mid-turn — wait for it to finish, then start a new chat.");
-  const steps = Array.isArray(data?.steps) ? (data!.steps as AgentStep[]) : [];
-  if (steps.length === 0) return; // nothing to archive
-  const { error: insertError } = await supabase.from("book_agent_sessions").insert({
-    thread_id: threadId, book_id: data!.book_id,
-    steps, transcript: data?.transcript ?? [], proposals: data?.proposals ?? [],
-    title: (data as { title?: string | null } | null)?.title ?? null,
-    ended_at: new Date().toISOString(),
-  });
-  if (insertError) throw insertError;
-  // Reset title too — the next chat's first message names it afresh (a stale title would mislabel the new chat).
-  const { error } = await supabase.from("book_agent_runs")
-    .update({ steps: [], transcript: [], proposals: [], pending: null, status: "idle", title: null })
-    .eq("id", threadId);
+  const { error } = await supabase.rpc("start_new_agent_session", { p_thread_id: threadId });
   if (error) throw error;
 }
 
-/** Restore a past session as the live thread, archiving the current one first (symmetric with new chat). */
-export async function resumeAgentSession(threadId: number, sessionId: number): Promise<void> {
-  const { data } = await supabase.from("book_agent_runs").select(LIVE_COLS).eq("id", threadId).maybeSingle();
-  if (isBusy(data?.status)) throw new Error("The agent is mid-turn — wait for it to finish, then continue that chat.");
-  const { data: target } = await supabase.from("book_agent_sessions").select("steps, transcript, proposals, title").eq("id", sessionId).maybeSingle();
-  if (!target) return;
-  const liveSteps = Array.isArray(data?.steps) ? (data!.steps as AgentStep[]) : [];
-  if (liveSteps.length > 0) {
-    const { error: insertError } = await supabase.from("book_agent_sessions").insert({
-      thread_id: threadId, book_id: data!.book_id,
-      steps: liveSteps, transcript: data?.transcript ?? [], proposals: data?.proposals ?? [],
-      title: (data as { title?: string | null } | null)?.title ?? null,
-      ended_at: new Date().toISOString(),
-    });
-    if (insertError) throw insertError;
-  }
-  const { error: deleteError } = await supabase.from("book_agent_sessions").delete().eq("id", sessionId);
-  if (deleteError) throw deleteError;
-  // Restore the resumed chat's own title onto the live thread, so if it's archived again it keeps its name.
-  const { error } = await supabase.from("book_agent_runs")
-    .update({ steps: target.steps, transcript: target.transcript, proposals: target.proposals, pending: null, status: "idle", title: (target as { title?: string | null }).title ?? null })
-    .eq("id", threadId);
+/** Restore a past session as the live thread, archiving the current one first (symmetric with new chat).
+ *
+ *  One round trip, not five. Same story as startNewAgentSession above, one degree worse: the old
+ *  client chain (SELECT thread → SELECT target → INSERT archive → DELETE target → UPDATE thread) could
+ *  delete an archived chat without restoring it — losing it — if it died in the middle. The RPC
+ *  (20260728130000, fixed in …140000) runs the lot in one transaction under a row lock, and additionally
+ *  scopes the session lookup to this thread: the old version looked it up by id alone.
+ *
+ *  Returns false when the session is already gone (resumed or deleted from another tab) — a benign
+ *  no-op, but the caller has to know: it's holding an optimistic render of a chat that never arrived. */
+export async function resumeAgentSession(threadId: number, sessionId: number): Promise<boolean> {
+  const { data, error } = await supabase.rpc("resume_agent_session", { p_thread_id: threadId, p_session_id: sessionId });
   if (error) throw error;
+  return data === true;
 }

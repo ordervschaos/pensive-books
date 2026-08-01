@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
 import { backlinkIndex, beatsInOrder, byId, childrenOf, isEntityKind, newId, pillarOf, refsOf, scenesInOrder, type BookSettings, type DnaIssue, type DnaNode } from "@/features/dna/lib/novelDna";
 import { ensureSeed } from "@/features/dna/lib/dnaExpand";
+import { ghostBeatsForAct, ghostFromPremise, ghostFromSeed } from "@/features/dna/lib/dnaSkeleton";
 import { KIND_LEVEL } from "@/features/dna/lib/dnaSchema";
 import type { Brief } from "@/lib/brief";
 import { AgentRail } from "@/features/dna/components/AgentRail";
@@ -20,6 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { reconcileDna } from "@/features/dna/lib/novelDnaRender";
 import { MONO, QuickToggle, SERIF, setConsoleTheme, T } from "@/features/dna/components/tree/treeChrome";
+import { PanelLeft } from "lucide-react";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { AppearanceMenu } from "@/components/navigation/AppearanceMenu";
 import { DecomposeButton } from "@/features/dna/components/tree/DecomposeButton";
@@ -38,6 +40,18 @@ import { DiscardStoryModal, HistoryModal, NodeDetailsModal, ProseReaderModal } f
 import { useBookNodesLiveSync } from "@/features/dna/hooks/useBookNodesLiveSync";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
+
+// The two docked panels' widths — the agent rail (left, resizable by dragging its edge) and search
+// (right, fixed). Named so the handful of inset calculations below (page margin, legend popover,
+// FocusPanel, SpineTimeline) can't drift apart.
+const RAIL_W_DEFAULT = 460;
+const RAIL_W_MIN = 320;
+const RAIL_W_MAX = 760;
+const SEARCH_W = 320;
+// The shared top strip's height (title bar + rail header, kept the same height so they read as one
+// row) — the canvas card and its drag handle both start below this, never crossing into it.
+const HEADER_H = 44;
+const CANVAS_MARGIN = 16;
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function DnaTreePage() {
@@ -93,6 +107,37 @@ export default function DnaTreePage() {
   // closed it ("0"). Unset (new book / first visit) lands with the rail open.
   const [railOpen, setRailOpen] = useState<boolean>(() => localStorage.getItem(railKey) !== "0");
   useEffect(() => { localStorage.setItem(railKey, railOpen ? "1" : "0"); }, [railKey, railOpen]);
+  // Drag-to-resize (Lovable's canvas-edge handle): the rail's own right edge doubles as the resize grip
+  // — no separate control needed. Width is per-book, like railOpen; dragging only commits to localStorage
+  // on mouseup (React state updates live during the drag for feedback, the write is just once at the end).
+  const railWidthKey = `dna-rail-width:${bookId}`;
+  const [railWidth, setRailWidth] = useState<number>(() => {
+    const saved = Number(localStorage.getItem(railWidthKey));
+    return Number.isFinite(saved) && saved >= RAIL_W_MIN && saved <= RAIL_W_MAX ? saved : RAIL_W_DEFAULT;
+  });
+  const [railDragging, setRailDragging] = useState(false);
+  const [railHandleHover, setRailHandleHover] = useState(false);
+  const railDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const onRailHandleDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    railDragRef.current = { startX: e.clientX, startWidth: railWidth };
+    setRailDragging(true);
+    const onMove = (ev: MouseEvent) => {
+      const drag = railDragRef.current;
+      if (!drag) return;
+      const next = Math.min(RAIL_W_MAX, Math.max(RAIL_W_MIN, drag.startWidth + (ev.clientX - drag.startX)));
+      setRailWidth(next);
+    };
+    const onUp = () => {
+      railDragRef.current = null;
+      setRailDragging(false);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      setRailWidth((w) => { localStorage.setItem(railWidthKey, String(w)); return w; });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
   // Slice 2 (docs/agent-context-model.md): the agent's context tray — DNA node ids the author attached as
   // anchors (Cursor's @-file model). Persisted per book; the agent always sees the whole book, these just
   // bias where it looks. Attach from the node row's "@" icon; detach from the chip in the rail. Opening the rail on
@@ -192,18 +237,28 @@ export default function DnaTreePage() {
       setBrief(loadedBrief);
       setSettings({ title: book?.name ?? undefined, author: (book?.author as string | null) ?? undefined,
         word_target: loadedBrief?.scope?.word_target });
-      const loaded = (nodeRows ?? []) as DnaNode[];
+      let loaded = (nodeRows ?? []) as DnaNode[];
       // Bootstrap the ROOT: the agent can't create a parent-less seed node, so an empty tree gets one
       // automatically (the seed = the logline origin, left empty until the author or agent drafts it).
       // The agent builds everything below it — this replaces the old manual "seed the tree" button.
       if (loaded.length === 0) {
         try {
           const seed = await ensureSeed(bookId);
-          setNodes([seed]); setOpenSet((p) => new Set(p).add(seed.id));
-          return;
+          loaded = [seed];
         } catch { /* leave the tree empty; the live subscription still reflects reality */ }
       }
       setNodes(loaded);
+      // Open every node whose ghost preview (dnaSkeleton) has something to show — a childless seed/premise/act
+      // defaults CLOSED (openSet is opt-in, unlike collapsedSet) so the forecast of what's next would
+      // otherwise be invisible until the author clicks in. This is a one-time default on load, not a live
+      // rule, so an author who deliberately re-collapses one doesn't get overridden by a later Realtime tick.
+      const frontier = new Set<string>();
+      for (const n of loaded) {
+        if (n.kind === "seed" && ghostFromSeed(loaded).length) frontier.add(n.id);
+        if (n.kind === "premise" && ghostFromPremise(loaded).length) frontier.add(n.id);
+        if (n.kind === "act" && ghostBeatsForAct(loaded, n).length) frontier.add(n.id);
+      }
+      if (frontier.size) setOpenSet((p) => new Set([...p, ...frontier]));
     })();
   }, [bookId]);
 
@@ -503,10 +558,14 @@ export default function DnaTreePage() {
     if (focusId) jumpTo(focusId); else goStage(key);
   }, [tab, navigate, treePath, jumpTo, goStage]);
 
+  // Fixed-viewport app shell (not a scrolling page): the title bar + tab strip stay put, and only the
+  // canvas below them scrolls (its own `overflow-y: auto`, see the canvas div below) — same "sticky
+  // header, independently-scrolling body" shape the rail already has for its own header vs. conversation.
   const base: React.CSSProperties = {
-    margin: 0, minHeight: "100vh",
+    margin: 0, height: "100vh", overflow: "hidden",
+    display: "flex", flexDirection: "column",
     fontFamily: MONO,
-    background: T.bg, color: T.inkSoft,
+    background: T.surface, color: T.inkSoft,
     userSelect: "text",
   };
   const smallBtnStyle: React.CSSProperties = { background: "none", border: "none", color: T.muted, fontSize: 10.5, cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: MONO, padding: 0 };
@@ -574,7 +633,7 @@ export default function DnaTreePage() {
   );
 
   return (
-    <div key={consoleMode} className={themeClass} style={{ ...base, marginRight: railOpen ? 420 : 0, marginLeft: searchOpen ? 320 : 0 }}>
+    <div key={consoleMode} className={themeClass} style={{ ...base, marginLeft: railOpen ? railWidth : 0, marginRight: searchOpen ? SEARCH_W : 0 }}>
       {searchOpen && (
         <SearchPanel nodes={nodes} query={searchQuery} onQueryChange={setSearchQuery}
           caseSensitive={searchCaseSensitive} onCaseSensitiveChange={setSearchCaseSensitive}
@@ -586,7 +645,7 @@ export default function DnaTreePage() {
       {/* #1 — the status-dot/glyph key, popover-only (was a permanent chrome row) */}
       {legendOpen && (
         <div style={{
-          position: "fixed", top: 96, right: railOpen ? 436 : 16, zIndex: 25, width: 300,
+          position: "fixed", top: 96, right: searchOpen ? SEARCH_W + 16 : 16, zIndex: 25, width: 300,
           background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: T.shadow,
           padding: "10px 14px", display: "flex", flexDirection: "column", gap: 8,
         }}>
@@ -616,37 +675,74 @@ export default function DnaTreePage() {
       )}
       {/* The tool-using editor's agent (durable book-agent thread), promoted into the tree rail. The
           studio components read the Paper-DS CSS vars, which the theme-paper wrapper above resolves —
-          the rail wears the same light paper skin as the rest of the studio. */}
+          the rail wears the same light paper skin as the rest of the studio. Background matches the
+          title bar's chrome tone (T.surface, same value as --pv-surface-2) so the rail's own header
+          and the page's title bar read as ONE merged top strip. No border here — the drag handle
+          below (Lovable's "edge of the canvas" pattern) is the one line marking where the rail ends. */}
       {railOpen && (
         <div style={{
-          position: "fixed", top: 0, right: 0, bottom: 0, width: 420, zIndex: 20,
-          background: T.raised, borderLeft: `1px solid ${T.border}`, display: "flex", flexDirection: "column",
+          position: "fixed", top: 0, left: 0, bottom: 0, width: railWidth, zIndex: 20,
+          background: T.surface, display: "flex", flexDirection: "column",
         }}>
           <div style={{ flex: 1, minHeight: 0 }}>
-            <AgentRail bookId={bookId} nodes={nodes} settings={settings} bookSlug={bookSlug} brief={brief} attachedIds={attachedIds} onDetach={detachNode} onClose={() => setRailOpen(false)} onJump={jumpTo} />
+            <AgentRail bookId={bookId} nodes={nodes} settings={settings} bookSlug={bookSlug} brief={brief} attachedIds={attachedIds} onAttach={attachNode} onDetach={detachNode} onClose={() => setRailOpen(false)} onJump={jumpTo} />
           </div>
+        </div>
+      )}
+      {/* Drag-to-resize handle — literally the canvas card's own left edge (Lovable's "edge of the
+          canvas" grip), not a separate control. Starts below HEADER_H so it never crosses into the
+          merged rail/title-bar strip above — there's no border there, only below where the canvas
+          card actually begins. A wide invisible hit-area over a thin visible line, so it's easy to
+          grab without needing pixel precision; highlights + shows a tooltip on hover/drag. */}
+      {railOpen && (
+        <div
+          onMouseDown={onRailHandleDown}
+          onMouseEnter={() => setRailHandleHover(true)}
+          onMouseLeave={() => setRailHandleHover(false)}
+          style={{ position: "fixed", top: HEADER_H, bottom: 0, left: railWidth + CANVAS_MARGIN - 3, width: 7, zIndex: 21, cursor: "col-resize", display: "flex", justifyContent: "center" }}
+        >
+          <div style={{ width: 1, height: "100%", background: railDragging || railHandleHover ? T.accent : "transparent", transition: railDragging ? "none" : "background 0.15s" }} />
+          {(railDragging || railHandleHover) && (
+            <span style={{
+              position: "fixed", top: HEADER_H + 12, left: railWidth + CANVAS_MARGIN + 12, zIndex: 22,
+              background: T.raised, border: `1px solid ${T.border}`, borderRadius: 6, boxShadow: T.shadow,
+              padding: "4px 9px", fontFamily: MONO, fontSize: 10, color: T.muted, whiteSpace: "nowrap",
+            }}>
+              drag to resize
+            </span>
+          )}
         </div>
       )}
       {/* #7 — the focus readout: "what controls this" for the badge-clicked node (bottom-left, clears of the rail) */}
       {tab === "tree" && ctxNode && (
         <FocusPanel node={ctxNode} index={index} consumes={ctxConsumes} consumedBy={ctxConsumedBy}
           onJump={jumpTo} onClear={() => setContextId(null)} bottomInset={timelineOpen ? 212 : 16}
-          leftInset={searchOpen ? 336 : 16}
+          leftInset={railOpen ? railWidth + CANVAS_MARGIN : 16}
           staleActions={staleActionsFor(ctxNode, index)} />
       )}
       {/* The serial spine — reading-order filmstrip across the bottom (acts → beats → scenes) */}
       {tab === "tree" && timelineOpen && (
-        <SpineTimeline nodes={nodes} rightInset={railOpen ? 420 : 0} leftInset={searchOpen ? 320 : 0} seq={seq}
+        <SpineTimeline nodes={nodes} rightInset={searchOpen ? SEARCH_W : 0} leftInset={railOpen ? railWidth : 0} seq={seq}
           onJump={jumpTo} onClose={() => setTimelineOpen(false)} />
       )}
       {/* Top menu — identity + the two surfaces that are global, not tab-scoped (search, editor). In
           normal flow (not position:fixed) so it can never overlap the tab strip below it, and so it
-          shifts with the rail/search panels automatically via the outer container's margin. */}
-      <div style={{ padding: "10px 16px", borderBottom: `1px solid ${T.borderSoft}`, display: "flex", alignItems: "center", gap: 16 }}>
+          shifts with the rail/search panels automatically via the outer container's margin. shrink-0:
+          the outer shell is now a fixed-height flex column, so this stays put while the canvas scrolls. */}
+      <div style={{ flexShrink: 0, height: HEADER_H, boxSizing: "border-box", padding: "0 16px", borderBottom: `1px solid ${T.borderSoft}`, display: "flex", alignItems: "center", gap: 16 }}>
         <Link to={`/books/${bookSlug}`} title="Back to the book" style={{ display: "inline-flex", alignItems: "baseline", gap: 8, minWidth: 0, textDecoration: "none" }}>
           <span style={{ fontFamily: SERIF, fontSize: 16, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{bookName || bookSlug}</span>
           <span style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: T.faint }}>dna</span>
         </Link>
+        {/* Canvas/control equivalence: this toggle governs the one control that isn't tab-scoped (the
+            agent), so it sits with the book identity rather than drifting to the far-right action cluster. */}
+        <button onClick={() => setRailOpen((v) => !v)} title="Editor" style={{
+          display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+          background: railOpen ? `${T.accent}14` : "transparent", border: `1px solid ${railOpen ? `${T.accent}55` : "transparent"}`,
+          borderRadius: 6, padding: "4px 7px", color: railOpen ? T.accent : T.muted,
+        }}>
+          <PanelLeft className="h-3.5 w-3.5" />
+        </button>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 3 }}>
           {/* #13 — the payoff action, reachable from anywhere in the studio, not just the Story tab */}
           <button onClick={() => void renderAndRead()} disabled={!!rendering} title="Render the tree onto pages and read the current draft"
@@ -659,7 +755,6 @@ export default function DnaTreePage() {
             {rendering === "read" ? "reading…" : "read →"}
           </button>
           <QuickToggle active={searchOpen} accent={T.accent} icon="⌕" label="Search" title="Search ( / )" onClick={() => setSearchOpen((v) => !v)} />
-          <QuickToggle active={railOpen} accent={T.accent} icon="✦" label="Editor" onClick={() => setRailOpen((v) => !v)} />
           {/* The app-wide theme picker — the studio renders its own chrome (no main nav), so it
               mounts here too; picking "Terminal" flips the studio to the dark console skin. */}
           <AppearanceMenu />
@@ -671,12 +766,27 @@ export default function DnaTreePage() {
           on a shared baseline. Working surfaces (overview / tree / voice) vs. read-only projections
           (analytics / characters / story) are visually grouped by a thin divider between them —
           same route, splat path, no remount. */}
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 2, padding: "8px 16px 0" }}>
+      {/* The canvas — tab strip + every tab body — nested INSIDE the control panel as its own rounded
+          card (margin on every side), rather than a flat edge-to-edge region: everything outside this
+          card (title bar, rail) is a control; everything inside it is the story/DNA structure the
+          controls act on. No border/stroke — color + corner-rounding alone are the card, so the rail
+          and canvas read as one continuous surface at rest (the resize handle below is the only line,
+          and only on hover). The outer box clips to its rounded corners (overflow:hidden) and just
+          lays out top-to-bottom; the INNER box is the actual scroll container, so rounding +
+          independent scrolling can coexist. The tab strip stays `sticky` inside that inner scroller —
+          it rides along at the top of whatever's scrolled into view instead of disappearing with it. */}
+      <div style={{
+        margin: `12px ${CANVAS_MARGIN}px ${CANVAS_MARGIN}px ${CANVAS_MARGIN}px`, borderRadius: 12,
+        background: T.raised, flex: 1, minHeight: 0, overflow: "hidden",
+        display: "flex", flexDirection: "column",
+      }}>
+      <div className="sidebar-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+      <div style={{ position: "sticky", top: 0, zIndex: 5, background: T.raised, display: "flex", alignItems: "flex-end", gap: 2, padding: "8px 16px 0" }}>
         {([["overview", "overview", overviewPath], ["tree", "tree", treePath], ["taste", "voice", `${treePath}/taste`]] as const).map(([key, label, to]) => (
           <button key={key} onClick={() => navigate(to)} style={{
-            background: tab === key ? T.bg : "transparent",
+            background: tab === key ? T.raised : "transparent",
             border: `1px solid ${tab === key ? T.border : "transparent"}`,
-            borderBottom: `1px solid ${tab === key ? T.bg : "transparent"}`,
+            borderBottom: `1px solid ${tab === key ? T.raised : "transparent"}`,
             marginBottom: -1, borderRadius: "7px 7px 0 0",
             color: tab === key ? T.accent : T.muted, fontSize: 11, cursor: "pointer",
             letterSpacing: "0.1em", textTransform: "uppercase", padding: "7px 16px", fontFamily: MONO,
@@ -685,9 +795,9 @@ export default function DnaTreePage() {
         <span style={{ width: 1, alignSelf: "stretch", marginBottom: 6, background: T.border }} />
         {([["analytics", "analytics", analyticsPath], ["characters", "characters", charactersPath], ["story", "story", storyPath], ["craft", "craft notes", craftPath]] as const).map(([key, label, to]) => (
           <button key={key} onClick={() => navigate(to)} style={{
-            background: tab === key ? T.bg : "transparent",
+            background: tab === key ? T.raised : "transparent",
             border: `1px solid ${tab === key ? T.border : "transparent"}`,
-            borderBottom: `1px solid ${tab === key ? T.bg : "transparent"}`,
+            borderBottom: `1px solid ${tab === key ? T.raised : "transparent"}`,
             marginBottom: -1, borderRadius: "7px 7px 0 0",
             color: tab === key ? T.accent : T.muted, fontSize: 11, cursor: "pointer",
             letterSpacing: "0.1em", textTransform: "uppercase", padding: "7px 16px", fontFamily: MONO,
@@ -834,6 +944,8 @@ export default function DnaTreePage() {
         ))}
       </div>
       </>)}
+      </div>
+      </div>
       {proseReaderSceneId && nodes && (
         <ProseReaderModal
           sceneId={proseReaderSceneId}

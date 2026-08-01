@@ -40,6 +40,8 @@ learning_*.md
 # DNA scratch data (book-specific JSON exports, never commit)
 scripts/.dna-*.json
 scripts/.dna-*.md
+scripts/.dna-*.out
+scripts/.eval-*
 
 # PM worklog Stop-hook sentinel (local state, not shared)
 .claude/.pm-wrap-state

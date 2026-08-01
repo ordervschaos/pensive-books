@@ -11,8 +11,9 @@ import { ResolvedCard } from "./ResolvedCard";
 // questions → prose; a page-read → a muted activity line.
 export function StepBubble({ step, nodes, onJump }: { step: AgentStep; nodes: DnaNode[]; onJump?: (id: string) => void }) {
   const index = useMemo(() => byId(nodes), [nodes]);
-  // A 'plan' step that staged options ON a node — the picker lives in the tree, not the chat. Render it as a
-  // clickable card that jumps to (and reveals) that node, so "staged where?" is answered by a tap, not prose.
+  // A 'plan' step that staged options ON a node. The picker itself now renders in the feed (OptionsCard), so
+  // this is the historical marker: a clickable card that jumps to (and reveals) the node in the tree, for
+  // when the author wants to see the choice in its structural place rather than in the conversation.
   if (step.t === "plan" && step.nodeId && onJump && index.get(step.nodeId)) {
     const targetId = step.nodeId;
     return (

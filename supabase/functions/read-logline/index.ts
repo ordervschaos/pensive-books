@@ -51,7 +51,9 @@ Deno.serve(async (req: Request) => {
     const meta: CallMeta = { fn: "read-logline", bookId, taskTable: "book_nodes", taskId: bookId };
     const data = await callLLM({
       model,
-      max_tokens: 1200,
+      // Reasoning tiers (deepseek-v4) charge thinking INSIDE max_tokens; at 1200 the reasoning starved the
+      // 4-axis JSON and it truncated mid-array (JSON.parse "Unexpected end of JSON input"). Give headroom.
+      max_tokens: 3000,
       thinking: { type: "adaptive" },
       output_config: { effort: "low" },
       system: [{
@@ -60,7 +62,7 @@ Deno.serve(async (req: Request) => {
           "You are a calibrated development editor comparing a LOGLINE against the BRIEF it must honor. " +
           "This is what a good logline looks like:\n\n" + LOGLINE_CRAFT + "\n\n" +
           "Score the logline on EXACTLY the axes listed, 1–5 each, with a one-line note per axis. Judge the " +
-          "LOGLINE TEXT on the page against the BRIEF TEXT on the page, not what a good version would say. " +
+          "LOGLINE TEXT on the page against the BRIEF TEXT on the page, not just what a good version would say. " +
           "Be calibrated: do not flatter a serviceable-but-generic logline — it scores 3.",
       }],
       messages: [{

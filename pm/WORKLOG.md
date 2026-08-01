@@ -15,7 +15,427 @@
 > `ship` (landed → promote to STATE) · `decision` (→ DECISIONS) · `park` (→ STATE/ROADMAP) ·
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
+
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+
+## 2026-08-01 — Digest: six new source kinds + closer contract + per-section cadence `[ship]`
+- **What:** Built the whole backlog from the morning's ideation. New kinds: `ranked` (HN/arXiv/GitHub/
+  Lobsters/reddit — borrows the world's ranking instead of building one), `inbox` (Mailgun inbound →
+  the pipeline's first PUSH source), `unread` (corpus leftovers), `sitewatch` (page diff, url-versioned),
+  `video` (YouTube/podcast), `quiz` (first **closer**: reads the last issue, retrieves nothing).
+  Structural: `Closer` as a second contract with `ADAPTERS`/`CLOSERS` split on `isCloser`, and
+  `cadence: daily|weekdays|weekly` per section. Adapters split into `lib/digest/sources/*` with shared
+  `fetch.ts` + `feedparse.ts`; add-section form made kind-aware. Verified live: hn/arxiv/lobsters return
+  real ranked items; YouTube transcripts proven *unavailable* server-side (falls back to description);
+  reddit 403 and github 60/hr-per-IP both measured and documented.
+- **Files/commits:** `apps/digest/lib/digest/{types,build,adapters,closers,fetch,feedparse}.ts`,
+  `lib/digest/sources/{ranked,inbox,unread,sitewatch,video}.ts`, `app/api/inbound/mailgun/route.ts`,
+  `app/digests/[id]/{AddSectionForm,InboxAddress}.tsx`, `scripts/smoke-{sources,db-sources}.ts`,
+  `supabase/migrations/20260803120000_digest_inbox.sql` (**pushed to remote**), README + new `SETUP.md`.
+  Uncommitted.
+- **PM impact:** DECISIONS entry (closer contract · push source · cadence · measured transcript finding).
+  Owner checklist at `apps/digest/SETUP.md` — needs `MAILGUN_SIGNING_KEY` + a Mailgun inbound route
+  before `inbox` does anything.
+
+## 2026-08-01 — Readwise as a digest source kind `[ship]`
+- **What:** `apps/digest` can now pull quotes from a reader's own Readwise vault — a fifth source
+  adapter, so gather/filter/write/render were untouched. Two draws: `review` (Readwise's own daily
+  spaced-repetition pick) and `random` (books list → books weighted by `num_highlights` → one random
+  page each, so cost is O(1) requests at any vault size). Credential grain is **per user**, not per
+  digest and not an env var: new `digest_user_settings` table + an account-level `/settings` page that
+  verifies the token against `GET /auth/` before storing it, and states the paid-plan requirement.
+  Quote sections skip the LLM entirely and render from a template — verbatim is the whole value, so a
+  model in that path can only paraphrase, pad, or misquote. Dedupe reuses `digest_posts` keyed on the
+  Readwise permalink, reconstructed for `/review/` which omits it. Verified end-to-end through the real
+  `previewIssue`: 5 real quotes, both modes, correct blockquote HTML, 5 corpus rows, zero gather/write
+  model calls.
+- **Files/commits:** uncommitted. `supabase/migrations/20260802090000_digest_user_settings.sql`;
+  `apps/digest/lib/digest/{readwise.ts,adapters.ts,types.ts,write.ts,render.ts}`;
+  `apps/digest/app/settings/{page.tsx,actions.ts}`; `apps/digest/app/digests/{actions.ts,[id]/page.tsx,[id]/posts/page.tsx}`;
+  `apps/digest/app/{layout.tsx,globals.css}`; README + `doc_1785584624000.md`.
+- **PM impact:** DECISIONS (credential grain + verbatim-render call). No STATE row — the digest
+  project has no board row yet and a parallel session is mid-refactor in `adapters.ts` (adding
+  `ranked`/`inbox`/`unread`/`sitewatch`/`video`/`quiz`); left the row for whoever catalogues that.
+
+## 2026-08-01 — Digest: content-kind ideation (source taxonomy + backlog) `[wip]`
+- **What:** Ideation pass over `apps/digest` for new section kinds. Framed the gap as *coverage*, not
+  ideas: the four existing kinds cover public-pull and owned-corpus only; missing are private push
+  (`inbox` via Mailgun inbound routes), exogenous ranking (`ranked` — HN/arXiv/GitHub, which dissolves
+  the "selection is not ranking" gap by picking sources that ship a score), and memory-of-issues
+  (`followup`, `quiz`). Two structural moves flagged as worth more than any single kind: per-section
+  cadence, and splitting `Adapter` into source vs transform before a third transform-shaped kind exists.
+  No code written.
+- **Files/commits:** `doc_1785583615575.md` (uncommitted); reference only — `apps/digest/lib/digest/{types,adapters}.ts`.
+- **PM impact:** none — backlog/proposal, not ratified. Promote if the author picks an order.
+
+## 2026-08-01 — Digest: read stored post bodies in-app; strip extractor preamble `[ship]`
+- **What:** Posts list only linked out, so the body we'd already paid to extract went unread. Added
+  `/digests/:id/posts/:postId` rendering the stored markdown with the same renderer the digest uses; the
+  list title now opens that, with `original ↗` demoted to a secondary link.
+  **Found while building it:** every stored body began with r.jina.ai's metadata block (`Title: … URL
+  Source: … Markdown Content:`) — present in 8/8 rows — which meant it was also being fed to the *writer*
+  as source material on every feed item. Now stripped at extraction (and again on read, so pre-existing
+  rows display correctly without a backfill), with its `Published Time` used as a fallback date. 5 cases
+  tested including a decoy marker deep in an article that must not truncate it.
+  Also: `_underscore_` emphasis (what the extractor emits) rendered literally — added, anchored so
+  snake_case identifiers survive; 5 cases tested.
+  **The corpus immediately paid off:** post ages are now visible and stark — James Clear **6.8y**, Daily
+  Stoic **3y**, Modern Stoicism **7mo**, against same-day Hyperallergic/ARTnews/Tricycle. Those feeds
+  republish evergreen archives, so the "daily" has been serving 2020 writing. List flags >6mo.
+- **Files/commits:** `apps/digest/lib/digest/{entities,adapters,render}.ts`,
+  `app/digests/[id]/posts/{page.tsx,[postId]/page.tsx}`, README. Uncommitted.
+- **PM impact:** none ranked. Recommended next: `max_age_days` per section — the evidence is now concrete.
+
+## 2026-08-01 — Digest: regenerate archives instead of overwriting `[ship]`
+- **What:** "Regenerate" (force-rebuild an already-sent issue) was overwriting `digest_issues.content`/`html`
+  in place — the old delivered morning was silently lost, because `(digest_id, issue_date)` uniqueness is
+  the idempotency key the scheduler relies on and can't change. Fix: snapshot the row into a new
+  `digest_issue_versions` table right before the overwrite (fails closed if the archive insert errors), so
+  the old render survives as history instead of vanishing. Issue page now lists archived versions with links
+  to a read-only snapshot view; the issues list shows a "regenerated (N archived)" badge. Chose this over
+  letting `digest_issues` hold multiple rows per day specifically to avoid touching
+  `claim_digest_issue`/`due_digests` — smaller blast radius for the same outcome.
+- **Files/commits:** `supabase/migrations/20260801190000_digest_issue_versions.sql` (applied),
+  `apps/digest/lib/digest/build.ts`, `apps/digest/components/IssueContentView.tsx` (new, extracted),
+  `apps/digest/app/issues/[id]/page.tsx`, `apps/digest/app/issues/[id]/versions/[versionId]/page.tsx` (new),
+  `apps/digest/app/digests/[id]/issues/page.tsx`. Uncommitted (part of the still-uncommitted `apps/digest/`
+  tree).
+- **PM impact:** none ranked — same uncommitted digest app as the prior entry below.
+
+## 2026-08-01 — Digest: persist every pulled post (`digest_posts`) `[ship]`
+- **What:** Fetched items were ephemeral — only what shipped survived, inside `digest_issues.content`. New
+  `digest_posts` (migration `20260801180000`) keeps every post any section pulls, with its extracted body,
+  source, section, image and published date. Unlocks the three things that were impossible: **visibility**
+  (`/digests/:id/posts`, with a per-source used/pulled hit rate — the unused half is the evidence for
+  whether a feed earns its place), **reuse** (stored bodies skip re-extraction), and **ranking** (the
+  "pick 3 of 40" gap is now at least implementable).
+  It **subsumes `digest_items_seen`** rather than sitting beside it: same `(digest_id, url_hash)` grain,
+  strict subset of columns — two tables at one grain is drift waiting to happen. "Seen" became
+  `used_at is not null`; the 14 existing rows were migrated with delivered-state intact before the drop.
+  Regenerate now *un-uses* posts instead of deleting them, so the corpus outlives a rebuild.
+  **Invariant held explicitly:** dedupe keys on delivered, never fetched — otherwise anything pulled and
+  passed over would be blacklisted forever. Previews record posts but never mark used.
+  Verified: corpus 14 → 24 across two previews, 10 fetched-but-unused posts now visible, dedupe correctly
+  surfaced the *next* items from each feed. Body reuse saves r.jina.ai calls, not wall-clock (19.9s warm vs
+  21.8s cold — extraction overlaps the parallel writes), and that's how it's documented.
+- **Files/commits:** `supabase/migrations/20260801180000_digest_posts.sql` (applied),
+  `apps/digest/lib/digest/{build,types,adapters}.ts`, `app/digests/[id]/posts/page.tsx`,
+  `app/digests/[id]/page.tsx`, README. Uncommitted.
+- **PM impact:** none ranked.
+
+## 2026-08-01 — Digest: content-quality review, no code changes `[chore]`
+- **What:** Owner asked how to improve digest content quality. Read the pipeline (adapters/write/README's
+  own Known gaps) and gave a ranked recommendation: (1) feed recency cutoff — highest leverage, cheap,
+  currently a correctness bug (evergreen archives surface as "today"); (2) source-quality domain allow/deny
+  list as a hard backstop to the existing soft prompt-only prior; (3) an editorial ranking pass within a
+  feed (selection, not just newest-N); (4) per-claim citation attribution; (5) cross-source clustering;
+  (6) the 👍/👎 feedback loop, correctly last since it amplifies whatever selection quality already exists.
+  Owner has not yet picked which to implement.
+- **Files/commits:** none — analysis only.
+- **PM impact:** none.
+
+## 2026-08-01 — Digest: regenerate a delivered day; Daily Stoic / James Clear / Marginalian feeds `[ship]`
+- **What:** **Regenerate** (`?force=1` + a button) for days that returned `already_sent`. The non-obvious
+  part: a naive rebuild produces an EMPTY issue, because the first build marked its own items seen and the
+  dedupe layer then eats them — correct behaviour in the one case you don't want it. Added
+  `digest_items_seen.issue_id` (migration `20260801170000`, `on delete set null` so dedupe memory outlives a
+  deleted issue) and regenerate deletes exactly that issue's rows first. Kept the unforced no-op: that guard
+  is what stops a watchdog retry or double tick from mailing twice, so overriding it is a separate button
+  with a confirm. Verified: unforced → `already_sent`; forced → `sent`, 4/4 sections, 11 items, ~29s.
+  Added the three requested feeds (probed first — `jamesclear.com/feed` works, `/feed.xml` 404s).
+  **Owner correction applied:** quote-plus-commentary is a legitimate newsletter format, not a defect — my
+  section instruction *and* the digest voice were both rejecting it; both rewritten, and that section now
+  ships (it was the one silently returning NOTHING_TODAY). Also fixed double-encoded feed titles
+  (`&#8220;` → `“`) by extracting `entities.ts` (dependency-free, so it is directly testable) — 7 cases pass.
+- **Files/commits:** `supabase/migrations/20260801170000_digest_items_seen_issue_id.sql` (applied),
+  `apps/digest/lib/digest/{build,adapters,entities}.ts`, `app/api/digests/[id]/run/route.ts`,
+  `app/digests/[id]/RunNowButton.tsx`, README. Uncommitted.
+- **PM impact:** none ranked. New known gap: feeds have no recency filter, so evergreen-archive feeds
+  (jamesclear.com) surface years-old posts as today's.
+
+## 2026-08-01 — Digest: web search behind an opt-in flag; RSS becomes the default path `[ship]`
+- **What:** `search` is the only gather path that bills every run (Opus 5 + web_search server tool) —
+  `feed`/`serial`/`prompt` cost nothing but fetches. Added `digests.web_search_enabled` (migration
+  `20260801160000`, **default false**, existing rows included) enforced inside `searchAdapter` itself so no
+  future caller can reach the paid path by accident; exposed as a checkbox on create + edit, with a "⚠
+  skipped" note on search sections while it's off, and the section-kind dropdown now defaults to `feed`.
+  **Fixed a real feed bug found while configuring multi-feed sections:** the old loop drained feed 1 to the
+  cap before ever reading feed 2, so with `max_items: 3` the later feeds were never read at all — and it
+  paid for article extraction on candidates the cap then discarded. Now reads all feeds, interleaves
+  round-robin, caps, and only then extracts. Probed 11 candidate feeds (10 live, theartnewspaper 404) and
+  reconfigured digest #1 to 3 RSS sections + the reflection. Verified with **preview** (no send, no state):
+  200, 3 sections, 7 items, 1 image, ~25s, **zero Opus calls**.
+- **Files/commits:** `supabase/migrations/20260801160000_digests_web_search_flag.sql` (applied),
+  `apps/digest/lib/digest/{types,adapters,build}.ts`, `app/digests/{actions.ts,new/page.tsx,[id]/page.tsx}`,
+  README. Uncommitted.
+- **PM impact:** none ranked. Open: a philosophy section with 7.7k tokens of material still returned
+  NOTHING_TODAY — likely an over-strict per-section instruction, worth a second look.
+
+## 2026-08-01 — Digest: local preview loop (compile without sending) `[ship]`
+- **What:** There was no way to see a digest without mailing yourself a Kindle document, so testing meant
+  ad-hoc scripts. Split `compile()` (①–⑤) out of `buildIssue` (persistence + delivery) and added
+  `previewIssue` + `GET /api/digests/:id/preview` + a Preview button: compiles today's issue through the
+  **same** code path the 6am job uses and returns it as a web page — no mail, no `digest_issues` row, no
+  seen-items; preview spend lands in `ai_calls` with `task_id = null`. `?ignoreSeen=1` compiles as if
+  nothing had been delivered, because a preview right after a real send correctly dedupes to nothing and
+  reads as a broken pipeline. Verified by minting a session via admin `generate_link` and driving the route:
+  200, 2 sections, 5 items, 3 citations, and confirmed zero DB side effects afterwards. Both auth gates
+  (preview session, tick secret) return 401 unauthenticated. README now documents the three run modes.
+- **Files/commits:** `apps/digest/lib/digest/build.ts`, `app/api/digests/[id]/preview/route.ts`,
+  `app/digests/[id]/RunNowButton.tsx`, README. Uncommitted.
+- **PM impact:** none ranked.
+
+## 2026-08-01 — Digest: Sonnet for writing, grounded images, small citations `[ship]`
+- **What:** Three owner-requested changes. (1) **Model split** — gather stays Opus 5 (drives web_search +
+  judges source quality, where a mistake poisons everything downstream), write moves to Sonnet 5, which is
+  where the daily token volume lives; `callClaude` takes a per-call model and `ai_calls` logs the one that
+  actually ran. (2) **Images, grounded the same way citations are** — `og:image` discovered deterministically
+  at gather time (top 3 items/section); the writer may reference `![](item:N)` by INDEX and can never author
+  a URL, so a fabricated image is structurally impossible; referenced images are inlined as `data:` URIs so
+  nothing depends on Amazon making outbound fetches. (3) **Citations render small/grey** via `<small
+  class="src">` + a terse-link-text rule in the constitution. Renderer behaviour checked on 6 cases incl. the
+  adversarial one (model-authored image URL → dropped). Issue #6 delivered (~49s); a forced image issue also
+  delivered to prove the inlining path, since the writer declined to use an image on its own.
+- **Files/commits:** `apps/digest/lib/digest/{llm,types,adapters,write,render,build}.ts`,
+  `app/issues/[id]/page.tsx`, README. Uncommitted.
+- **PM impact:** none ranked. Open question for the owner: does Amazon's converter render `webp`?
+
+## 2026-08-01 — Digest: stoicism/art/meditation config + source-quality and reflection fixes `[ship]`
+- **What:** Reconfigured digest #1 to the owner's actual interests and shipped issue #5 to the Kindle (~51s,
+  3 sections). Three fixes made it readable: (1) **source-quality prior** in the gather prompt — prefer
+  primary sources/criticism/institutions, silently discard SEO listicles and content farms, report empty
+  rather than build on slop; without it these beats are all "10 Stoic quotes to start your day". (2) New
+  **REFLECTION_CONSTITUTION** for `prompt` sections — the grounding constitution deadlocked them (nothing to
+  cite ⇒ nothing may be said); the binding rule flips to "quote no one, attribute nothing", since the failure
+  mode there is an invented Marcus Aurelius line, not an unsourced claim. (3) **Renderer ate backslash
+  escapes** — a magazine named `Wallpaper\*` rendered as "Wallpaper\"; escapes are now parked before the
+  emphasis passes and restored after, with the four cases checked.
+- **Files/commits:** `apps/digest/lib/digest/{adapters,write,render}.ts`. Uncommitted.
+- **PM impact:** none ranked — still a live prototype.
+
+## 2026-08-01 — Digest: full pipeline compiled and delivered a real issue `[ship]`
+- **What:** Ran the whole thing through the *scheduler* path (not the manual button): `due_digests` →
+  `claim_digest_issue` → gather (Anthropic web_search) → dedupe → per-section write → verify → assemble →
+  render → Mailgun → Kindle → mark-seen. Issue #4 landed on the device; 2 sections in parallel, ~74s.
+  Three bugs found by exercising it: (1) `max_uses: 5` on web_search exhausted by dynamic filtering's
+  fan-out, so sections shipped empty; (2) `NOTHING_TODAY` was too easy to reach — the writer bailed on real
+  material because the constitution framed the escape hatch as a virtue; now an emptiness test, not a
+  quality bar; (3) the researcher's process narration ("I'll run three searches…") was being read verbatim
+  as source material and poisoning the writer's judgement. Prose quality with the voice applied is good and
+  properly sourced. Biggest remaining gap: **source quality** — best available source was an SEO aggregator.
+- **Files/commits:** `apps/digest/lib/digest/{llm,write,adapters}.ts`, `apps/digest/README.md`. Uncommitted.
+- **PM impact:** none ranked — M1 items still own the Now slots; this is a live prototype, not a product.
+
+## 2026-08-01 — Digest: delivery leg proven on a real Kindle `[ship]`
+- **What:** Wired env (Mailgun + service role) and ran the render→Mailgun→Kindle path for real. Amazon
+  returned `delivered / OK` and the issue opened on the device — approved sender, `.html` attachment, and
+  Amazon's HTML→book conversion all confirmed, which is what justifies deferring EPUB to v1.
+  **Caught a silent-failure bug pre-send:** `deliver.ts` used `mailgun@pensive.me` (copied from
+  notify-task-done); the approved sender is `hello@pensive.me` (what send-kindle-verification and
+  BookInfo.tsx both use). Wrong From = Send-to-Kindle drops the mail with no bounce, so every digest would
+  have vanished silently. Gather + write remain unexercised — blocked on ANTHROPIC_API_KEY.
+- **Files/commits:** `apps/digest/lib/digest/deliver.ts`, `apps/digest/README.md`, `apps/digest/.env.local`
+  (gitignored). Uncommitted.
+- **PM impact:** none yet — the riskiest leg is de-risked, but no issue has been compiled end to end.
+
+## 2026-08-01 — Digest: full compile pipeline + config UI landed (unexercised) `[wip]`
+- **What:** Built the whole gather→filter→write→verify→assemble→render→deliver path. 4 source adapters
+  behind one contract (search via Anthropic `web_search` server tool; feed via RSS/Atom + r.jina.ai
+  extraction; serial off the long-unused `books.digest_bookmarked_page_index` cursor; prompt). One LLM
+  chokepoint (`lib/digest/llm.ts`, Anthropic direct, logs to `ai_calls` with source='digest'). Three-tier
+  instruction stack — immutable constitution / per-digest voice / per-section. Sections mapped in parallel
+  so 6 cost ~1 section's latency. Mailgun→Kindle as HTML (EPUB deferred; the builder is browser-only).
+  pg_cron→/api/cron/tick + a "Run now" button, both through `claim_digest_issue` so neither can double-send.
+  Config UI + issue reader. **Tagged wip, not ship: never run end-to-end** — needs ANTHROPIC_API_KEY,
+  MAILGUN_*, SUPABASE_SERVICE_ROLE_KEY and a real Kindle. Builds clean; canonicalization, RSS/Atom parsing
+  and markdown→HTML verified directly.
+- **Files/commits:** `apps/digest/**` (18 new source files + README), `@anthropic-ai/sdk` added. Uncommitted.
+- **PM impact:** none beyond the decision entry below — nothing shippable until the delivery leg is proven.
+
+## 2026-08-01 — Digest: new app decided + schema and scaffold landed `[decision]`
+- **What:** Ratified `digest.pensive.me` as a **separate bounded context, shared kernel** — its own
+  Next app/UI/tables, but the same Supabase project so it inherits `auth.users`, the shared
+  `.pensive.me` session cookie, the OTP-verified Kindle addresses, and the approved Mailgun sender.
+  Landed the spine: 3 tables + timezone-local scheduler (`due_digests`) + atomic claim
+  (`claim_digest_issue`, `unique(digest_id, issue_date)` as the idempotency lock), pushed live.
+  Scaffolded `apps/digest` (Next 14, builds clean). SPA now accepts a cross-origin `returnTo` on
+  `*.pensive.me` (host allow-listed against open redirect) so digest can bounce to it for sign-in —
+  the SPA keeps sole ownership of token refresh, avoiding the cross-subdomain rotation race.
+- **Files/commits:** `supabase/migrations/20260801120000_digest_schema.sql` (applied),
+  `apps/digest/**` (new), `apps/web/src/pages/auth/Auth.tsx`. Uncommitted.
+- **PM impact:** DECISIONS (new product surface + seam). Not ranked into ROADMAP Now — author's call.
+
+## 2026-08-01 — Morning Digest: system design (no code) `[wip]`
+- **What:** Designed a daily "morning digest → Kindle" feature. Core stance: the digest is
+  *compiled* from grounded sources, not *generated* — inverse of the DNA pipeline. Gather (no LLM)
+  → dedupe → per-section write (map) → verify → assemble → render → Mailgun. 3 new tables
+  (`digests`, `digest_issues`, `digest_items_seen`), 4 source adapters, stays on Supabase edge
+  (parallel fan-out fits the ~150s cap), v0 sends HTML not EPUB. Awaiting author go/no-go — not
+  ratified, not ranked into the roadmap.
+- **Files/commits:** `doc_1785565352472.md`, `learning_1785565352472_morning_digest_design.md` (uncommitted, untracked).
+- **PM impact:** none — proposal only.
+
+## 2026-07-29 — Admins can commit/publish books they don't own `[ship]`
+- **What:** Book 1326 404'd on pensive.me — not a slug bug (bare-id URL 404'd too) but no published
+  version. Root cause of *that*: `create_book_version` + `publish_version` hand-rolled a bare
+  `owner_id = auth.uid()` guard while `check_book_access`, `user_can_edit_book` and the RLS policies
+  had all learned about `admin_users` — authorization predicate drift. Admin could edit and toggle
+  visibility, then get stonewalled at commit, leaving `is_public=true` + `published_version_id=NULL`,
+  which the marketing reader correctly serves as 404. Added an admin bypass to both publish-path
+  functions; verified live via a `BEGIN…ROLLBACK` dry-run impersonating a non-owner admin.
+- **Files/commits:** `d886df9` — `supabase/migrations/20260729120000_version_fns_admin_override.sql`
+  (applied to prod *before* it was committed, so repo history trails the live schema here).
+  Diagnosis touched `apps/marketing/lib/public-books.ts:194-196`.
+- **PM impact:** none — standalone bug fix, no Now slot. Two follow-ups logged below, neither blocking.
+  - `book_versions` SELECT policies aren't admin-aware (7 policies, duplicated) → unpublished commits
+    invisible to admins in version history. Publishing works regardless.
+  - No constraint enforces `is_public = true ⇒ published_version_id IS NOT NULL` — the invariant whose
+    violation produced the silent public-facing 404.
+  - Deliberately NOT done: widening to `user_can_edit_book` (would let invited editors publish
+    publicly) and widening `rollback_to_version` (its restore loop stamps `owner_id = auth.uid()`,
+    which would reassign page ownership to the admin).
+
+## 2026-07-29 — Committed the AgentRail redesign session `[chore]`
+- **What:** Squashed the day's seven-pass AgentRail thread (header-overflow fix, left dock, canvas/
+  chrome split, drag-resize, border cleanup, minimal scrollbars) into one commit on
+  `agent-rail-self-sufficient`. All prior passes already have their own WORKLOG entries above; this
+  entry just records the commit itself.
+- **Files/commits:** `38f5ab6` — AgentRail.tsx, search.tsx, DnaTreePage.tsx, pm/WORKLOG.md.
+- **PM impact:** none — same UI-polish scope as the entries above, now landed.
+
+## 2026-07-29 — AgentRail: scrollbar flush against the rail's true right edge `[ship]`
+- **What:** Seventh pass, same thread. The conversation scrollbar sat with a visible gap from the
+  rail's edge (the shell's own `px-3.5` plus the scroll div's `pr-1` stacked to ~18px of inset).
+  Cancelled the shell's contribution with `-mr-3.5` on the conversation wrapper and moved that same
+  inset onto the scroll div's own `pr-3.5`, so the scrollbar now sits flush at the true edge while text
+  keeps its original alignment. Verified via geometry (scroll div's right edge === rail width, exactly).
+- **Files/commits:** `apps/web/src/features/dna/components/AgentRail.tsx` — uncommitted, verified live
+  (`tsc --noEmit` clean, no console errors).
+- **PM impact:** none — UI polish on AgentRail, no roadmap/State change.
+
+## 2026-07-29 — AgentRail: minimal scrollbars on rail/search/canvas `[ship]`
+- **What:** Sixth pass, same thread. The default OS scrollbar (thick, opaque) looked out of place next
+  to the flat/borderless redesign. Reused the app's existing `.sidebar-scroll` utility (already used
+  elsewhere: 6px, transparent track, 20%-opacity thumb) on the rail's conversation + past-chats list,
+  the search results list, and the canvas's own scroll container — matching the Lovable reference.
+- **Files/commits:** `apps/web/src/features/dna/components/AgentRail.tsx`,
+  `.../components/tree/search.tsx`, `.../pages/DnaTreePage.tsx` — uncommitted, verified live (CSS
+  rules confirmed applied via devtools, `tsc --noEmit` clean, no console errors).
+- **PM impact:** none — UI polish on AgentRail, no roadmap/State change.
+
+## 2026-07-29 — AgentRail: drop the last border lines for a continuous rail/canvas surface `[ship]`
+- **What:** Fifth pass, same thread. Removed the canvas card's remaining `border` stroke (color +
+  rounded corners alone now read as the card) and made the resize handle's idle-state line transparent
+  (was a faint permanent `T.border` line) — visible only on hover/drag. Rail and canvas now read as one
+  continuous surface at rest, per feedback that the leftover border broke that continuity.
+- **Files/commits:** `apps/web/src/features/dna/pages/DnaTreePage.tsx` — uncommitted, verified live
+  (`tsc --noEmit` clean, no console errors).
+- **PM impact:** none — UI polish on AgentRail, no roadmap/State change.
+
+## 2026-07-29 — AgentRail: fixed-viewport shell, sticky header, canvas as inset card `[ship]`
+- **What:** Fourth pass in the same-day AgentRail redesign thread. The whole page used to be one
+  long window-scroll, so the title bar/tab-strip scrolled away with tree content. Converted the shell
+  to a fixed-height flex layout: title bar pinned, tab strip `sticky` inside the canvas's own
+  `overflow-y:auto` container (rail's chat already scrolled independently). Per follow-up feedback,
+  restored the canvas as a rounded/bordered inset card (nested inside the "control panel," not flush
+  edge-to-edge) and matched the rail-header/title-bar heights (44px) with no border between them — the
+  drag-resize handle now starts below that shared strip, sitting exactly on the canvas card's own left
+  edge instead of cutting through the merged header.
+- **Files/commits:** `apps/web/src/features/dna/pages/DnaTreePage.tsx` (fixed-viewport `base`, sticky
+  tab strip, canvas card + `HEADER_H`/`CANVAS_MARGIN` consts), `.../components/AgentRail.tsx` (header
+  height/border matched to `HEADER_H`) — uncommitted, verified live (independent scroll confirmed,
+  `tsc --noEmit` clean, no console errors).
+- **PM impact:** none — UI polish on AgentRail, no roadmap/State change.
+
+## 2026-07-29 — AgentRail: drop card borders, make the rail edge a real drag-to-resize handle `[ship]`
+- **What:** Third pass in the same-day AgentRail redesign thread. Per feedback that the two card
+  borders (chatbox + canvas) read as clutter next to Lovable's flat reference, removed both — rail
+  and canvas are now flat regions distinguished by color only (`T.surface` vs `T.raised`). Replaced
+  the static rail width with real drag-to-resize on the rail/canvas edge itself (hover tooltip +
+  accent highlight, clamped 320–760px, persisted per-book in localStorage) — also closes the original
+  "width isn't adjustable" complaint from earlier today, this time for real.
+- **Files/commits:** `apps/web/src/features/dna/components/AgentRail.tsx`,
+  `.../pages/DnaTreePage.tsx` (`railWidth` state + drag handlers, replacing the fixed `RAIL_W` const)
+  — uncommitted, verified live (hover/drag/persist + `tsc --noEmit` clean, no console errors).
+- **PM impact:** none — UI polish on AgentRail, no roadmap/State change.
+
+## 2026-07-29 — AgentRail: merge top chrome with rail header, card the chatbox `[ship]`
+- **What:** Follow-up to the same-day left-dock/canvas redesign. Per a Lovable UI reference, unified
+  AgentRail's own header (Agent/manual-auto/fast-deep/close) with the tree's title bar into one
+  continuous top strip (both now on `T.surface`/`--pv-surface-2`, no color seam), then wrapped the
+  conversation + next-step nudge + composer in their own bordered, distinctly-toned "chatbox" card —
+  mirroring the canvas card already carved out on the tree side.
+- **Files/commits:** `apps/web/src/features/dna/components/AgentRail.tsx` (dropped the outer `Panel`,
+  added a bordered chatbox wrapper), `.../pages/DnaTreePage.tsx` (rail container bg `T.raised` →
+  `T.surface`, `borderRight` softened) — uncommitted, verified live + `tsc --noEmit` clean.
+- **PM impact:** none — UI polish on AgentRail, no roadmap/State change.
+
+## 2026-07-29 — AgentRail: fix header overflow, redock left, canvas/chrome visual split `[ship]`
+- **What:** Traced 3 reported bugs (wand icon vanishing, close button off-screen, "width not
+  adjustable") to one flexbox overflow in the rail header — `shrink-0` guards + a width bump fixed
+  it (a concurrent session landed the same header fix independently as commit `2aef127`; converged
+  cleanly). Then, on live redirect, moved AgentRail to the left dock (Search swapped to the right),
+  replaced the "Editor" text toggle with an icon-only pane button next to the book title, redesigned
+  the "next step" nudge as a compact row (icon + label + step badge + Continue), and wrapped the
+  tab strip + all tab bodies in one rounded `T.raised` "canvas" card against a `T.surface` "chrome"
+  page background (title bar/rail read as controls around it) — matching a Lovable reference the
+  user shared mid-task.
+- **Files/commits:** `apps/web/src/features/dna/components/AgentRail.tsx`,
+  `.../components/tree/search.tsx`, `.../pages/DnaTreePage.tsx` (uncommitted, verified live via
+  browser + `tsc --noEmit`, no console errors).
+- **PM impact:** none — UI polish on an already-shipped surface (AgentRail), no roadmap/State change.
+
+## 2026-07-29 — Committed + pushed the DNA tree skeleton fix `[chore]`
+- **What:** Committed the already-catalogued ghost-skeleton fix (below) plus the pending AgentRail Wand2/shrink-0 cleanup, and pushed `agent-rail-self-sufficient` to origin (new branch, upstream set).
+- **Files/commits:** 2aef127 "DNA tree: default-open empty skeleton, fix ghost opacity compounding".
+- **PM impact:** none — same work already logged, this entry just closes the commit/push loop.
+
+## 2026-07-29 — DNA tree: default-open the empty skeleton, fix ghost opacity compounding `[ship]`
+- **What:** The DNA tree's ghost-preview machinery (dnaSkeleton.ts/GhostRows) already existed but was invisible on a revisited book — the SEED node defaults collapsed (openSet is opt-in for childless nodes) unless freshly bootstrapped this session. Now the loader auto-opens any seed/premise/act whose ghost preview has content, so a book with an empty tree shows its forecasted shape (premise→pillar→cast→acts→template beats) on load, no click needed. Also fixed a real bug found while verifying: each recursive GhostRow wrapped itself in its own `opacity:0.6` div, so nested opacity compounded per depth (0.6, 0.36, 0.216...) fading deeper ghost rows toward invisibility — moved the opacity to one wrapper in GhostRows.
+- **Files/commits:** apps/web/src/features/dna/pages/DnaTreePage.tsx, apps/web/src/features/dna/components/tree/GhostRows.tsx (uncommitted).
+- **PM impact:** none — small UX fix, not a roadmap item.
+
+## 2026-07-29 — Rename Wand2 → WandSparkles in AgentRail `[chore]`
+- **What:** Replaced deprecated lucide-react `Wand2` alias with its canonical `WandSparkles` name (import + 2 usages).
+- **Files/commits:** apps/web/src/features/dna/components/AgentRail.tsx (uncommitted).
+- **PM impact:** none.
+## 2026-07-28 — Resume-chat RPC + optimistic restore, and an RLS row-lock bug `[ship]`
+- **What:** Did the twin flagged below. `resumeAgentSession`'s five dependent statements (SELECT thread → SELECT target → INSERT archive → DELETE target → UPDATE thread, non-atomic — a mid-chain failure could **delete an archived chat without restoring it**) are now one `resume_agent_session` RPC. The rail predicts the *content* here, not just a blank: the session's steps are already in hand from the "Past chats" fetch, so the restored chat paints at **25ms**. Generalised the optimistic layer from `clearing: boolean` to `predicted: {steps, proposals, since}`, where `since` is the row's `updated_at` at click time — a BEFORE UPDATE trigger bumps it, making "updated_at moved" the exact "our write committed and came back" signal (strictly better than v1's "release when the row reads empty", which only worked because new-chat's destination is unique). **Bug found and fixed en route:** the first resume RPC locked the session row with `SELECT … FOR UPDATE` and silently restored nothing — twice — while *appearing* to work, because the optimistic prediction was never released (nothing wrote → `updated_at` never moved); only a reload showed the truth. Cause: **PostgreSQL applies a table's UPDATE policies to a locking `SELECT … FOR UPDATE`**, and `book_agent_sessions` has SELECT/INSERT/DELETE policies but **no UPDATE policy**, so the lock matched zero rows and the function took its "target gone" branch. `book_agent_runs` has `editors update agent runs`, which is why the identical lock on the thread row — and `start_new_agent_session` — was fine. Fix: drop the session lock (the thread lock already serialises), and change the return `bigint`→`boolean` because NULL had meant both "nothing to archive" (success) and "target gone" (no-op) — that ambiguity is what let it masquerade. Client now clears the prediction and says so on `false`. **Standing lesson: an optimistic UI can hide a total server failure — verify optimistic paths by reloading, never by reading the screen.**
+- **Files/commits:** `supabase/migrations/20260728130000_resume_agent_session_rpc.sql` + `20260728140000_resume_agent_session_rls_lock_fix.sql` (both **pushed**), `apps/web/src/features/dna/lib/agentThread.ts`, `components/AgentRail.tsx`, `doc_1785234486000.md` (§10). Uncommitted on `agent-rail-self-sufficient`. Typecheck clean; round-tripped both directions on book 1276 with reload-verified server truth, book left exactly as found.
+- **PM impact:** none — same reasoning as below. Both chat mutations are now single atomic RPCs; **still not exercised by hand: the mid-turn guard on either RPC and the empty-thread no-op.**
+
+## 2026-07-28 — "New chat" archive collapsed into one atomic RPC `[ship]`
+- **What:** Did the thing the entry below said it wasn't doing. `startNewAgentSession`'s SELECT → INSERT → UPDATE chain is now one `start_new_agent_session(p_thread_id)` Postgres function; the client is a single `supabase.rpc`. **SECURITY INVOKER** (default, same as `snapshot_book_tree`) so the caller's RLS still governs — this buys round trips, not reach. Three wins beyond speed: (1) `SELECT … FOR UPDATE` closes the **check-then-act race** the client had — it read `status`, then wrote with nothing holding the row, so a turn starting in between would be archived out from under the edge function; (2) INSERT-archive and UPDATE-thread-empty are now **one transaction**, closing the crash-leaves-a-duplicated-chat window flagged yesterday; (3) the mid-turn guard + "nothing to archive" no-op moved into SQL, guard message kept verbatim so the toast is unchanged. Measured on book 1276: one 412ms `rpc/start_new_agent_session` replaces the chain, server settles ~1.1s (was ~2.5s), click→blank still 3ms; verified by reload that the thread is empty and exactly one archive exists. **`resumeAgentSession` is untouched and still six round trips** with the same non-atomic shape — the symmetric twin, obvious next candidate. **Not exercised by hand:** the mid-turn guard and the empty-thread no-op (same logic, moved).
+- **Files/commits:** `supabase/migrations/20260728120000_start_new_agent_session_rpc.sql` (new, **pushed to remote**), `apps/web/src/features/dna/lib/agentThread.ts` (18 lines → 4), `doc_1785234486000.md` (§9). Uncommitted on `agent-rail-self-sufficient`. Typecheck clean.
+- **PM impact:** none — same reasoning as below; no Now slot, no project row. The atomicity gap noted yesterday is now closed for new-chat, still open for resume.
+
+## 2026-07-28 — Optimistic "New chat" in AgentRail: 1.9s frozen frame → 4ms `[ship]`
+- **What:** Acted on the trace diagnosis below. `newChat` now predicts its outcome instead of waiting for it: a `clearing` flag renders `steps`/`proposals` empty the moment the author clicks, and the three dependent writes run underneath. The flag is released only when the row itself reads empty over Realtime — which also **masks the stale Realtime snapshot of the old chat** that lands mid-flight — and is rolled back (with the optimistically-bumped Past-chats count) if the archive throws. It doubles as the double-click guard. Repointed the two proposal writes at `rowProposals` (server truth) rather than the displayed `proposals` (a prediction); the invariant is *predict on screen, mutate what the server has*. **Measured on book 1276: click → rail blank = 4ms, one frame**, down from a 1,924.6ms frozen frame; verified the prediction matched reality by reloading (thread genuinely empty server-side, archive landed). Consciously NOT done: the Postgres RPC. The three round trips still happen and the non-atomic INSERT-then-UPDATE window (crash → duplicated chat) is unchanged — they are just off the author's critical path now.
+- **Files/commits:** `apps/web/src/features/dna/components/AgentRail.tsx` (+35/-7), `doc_1785234486000.md` (§8 Resolution). Uncommitted on branch `agent-rail-self-sufficient`. Typecheck clean (`tsc -p tsconfig.app.json`), no new console errors.
+- **PM impact:** none — opportunistic fix on an existing surface, no Now slot consumed and no project row changed. The atomicity gap remains uncatalogued as work; it stays a note here.
+
+## 2026-07-28 — Diagnosed "New chat" latency in AgentRail: a 3-RTT waterfall, not a CPU cost `[chore]`
+- **What:** Read a DevTools performance trace of clicking "+ New chat" on book 1276. Verdict: **latency-bound, not CPU-bound** — ~440ms of main-thread work inside a ~3.1s window (~85% idle), and the Frames track shows a single **1,924.6ms frame**, i.e. the rail is visibly frozen for ~2s. Cause is `startNewAgentSession` (`agentThread.ts:312-329`) issuing three *dependent* round trips — `SELECT book_agent_runs` → `INSERT book_agent_sessions` → `UPDATE book_agent_runs` — whose own JS costs 0.3ms total; the UPDATE then fires Realtime, fanning out into ~4 more refetches (thread row + session count). Two follow-ups identified but **not applied**: (a) optimistic UI — blank the rail on click, reconcile after — hides all three RTTs for free; (b) collapse the three statements into one Postgres RPC, which also makes archiving atomic (today a crash between the INSERT and the UPDATE leaves a duplicated chat). Also noted a minor non-composited `color` animation (304ms) flagged red in the Animations track. No code changed — analysis + teaching write-up only.
+- **Files/commits:** `doc_1785234486000.md` (trace-reading walkthrough + diagnosis), `learning_1785234096258_profile_new_chat.md` (gitignored). No source edits, no commits.
+- **PM impact:** none — diagnosis only, no product surface changed and no priority proposed. The duplicated-chat-on-crash atomicity gap is the one item here worth escalating if it is ever observed in the wild.
+
+## 2026-07-28 — Groom worktree: headless eval tooling + accumulated session docs `[chore]`
+- **What:** Worktree had a week of uncommitted work sitting loose (two new headless eval scripts, a bridge export, an architecture doc, and five `doc_*.md` session notes). Grouped by relation and committed separately rather than one dump: (1) `dna-short-story.mjs`/`.mts` — drives a complete short story through the full DNA ladder incl. prose, headless, then grades it with novelDna's own lints + observed meter trace (needed a new `runReadMeters` export from `eval-bridge.mjs`); (2) `eval-logline.mjs` + task suite — single-turn eval of the deployed brief→logline forge (code graders + deployed judge + `ai_calls` metrics); (3) `agent-architecture-diagram.md` — visual companion to the existing architecture docs; (4) five standalone `doc_*.md` design/diagnosis notes from 07-14 through 07-24 (Frontier Engine options, RAG trade-offs, mobile PKCE bug, agent-hardening framing, Craft Notes tab design) that hadn't been committed yet. Also gitignored the `.dna-short*.out` scratch run logs the short-story script produces (same pattern as existing `.dna-*.json`/`.md` scratch rules).
+- **Files/commits:** `b7891dc` (short-story pipeline), `6d6dec9` (logline eval), `ad7a23e` (architecture diagram), `d491cee` (session notes) — all on branch `agent-rail-self-sufficient`, not pushed.
+- **PM impact:** none — bookkeeping/tooling, no product surface changed. The two eval scripts are candidate evidence-gate tooling for Now item #1 (read-round-trip counts) but weren't run as part of this task.
+
+## 2026-07-25 — AgentRail self-sufficiency: staged options + `@` mentions in the chat `[ship]`
+- **What:** The rail could not resolve everything the agent handed back. Staged options (`propose_options` → `book_nodes.proposals`) were pickable ONLY at the tree row — the seam followed *storage* (run-column vs node-column) instead of the user's task — so the chat rendered a "jump to the tree" card. Added `agentRail/OptionsCard`, the rail-native twin of the tree's `ProposalPicker`: presentational duplication only, both share the write (`lib/dnaProposals`) and the diff (`describeOps`). Also generalised `Composer`'s slash popover into a `ComposerMenu` and added an `@` trigger that attaches a context anchor without leaving the chat (the tray could previously only *detach*). **Invariant now recorded in `features/dna/FEATURE.md`:** every decision the agent puts to the author — proposal · question · staged options — must be resolvable in the rail. Verified live on book 1324 (pick-from-chat commits + clears both surfaces + logs its turn); synthetic test data restored exactly. Deliberately left: stale accept/discard (tree-computed state, not an agent-staged decision — needs a design answer for what occasions the card) and render/read (already global chrome).
+- **Files/commits:** one commit at the tip of branch **`agent-rail-self-sufficient`** (not merged to main, not pushed) — `apps/web/src/features/dna/components/agentRail/OptionsCard.tsx` (new) · `components/AgentRail.tsx` · `components/agentRail/Composer.tsx` · `components/agentRail/StepBubble.tsx` · `components/tree/proposalOverlay.tsx` · `pages/DnaTreePage.tsx` · `features/dna/FEATURE.md` · `doc_1784985294531.md`. Fold in with `git merge --ff-only agent-rail-self-sufficient`.
+- **PM impact:** none — a UI-completeness fix inside the existing AgentRail pillar, not a Now-slot item. Neither Now item (live full-book build re-run; monetization rails v1) is advanced or displaced.
+## 2026-07-25 — Brief intake: "Skip the brief" now fully dismisses `[ship]`
+- **What:** In `BriefIntakeSheet`, the skip button said "Skip this" but only advanced one step at a time — no way to bail out of the whole brief in one click. Renamed to "Skip the brief" and changed `skip()` to call `onOpenChange(false)` directly, same path as dismissing the dialog (Esc/overlay), which the caller (`NewBook.tsx`'s `closeIntake`) already routes into the manual/Studio choice fork. `Next` already had no validation blocker (unchanged).
+- **Files/commits:** `apps/web/src/components/book/BriefIntakeSheet.tsx`. Uncommitted.
+- **PM impact:** none — small UX fix, not Now-slot work.
+## 2026-07-24 — Logline eval + it caught 3 prod bugs (incl. an outage) `[ship]`
+- **What:** Built a single-turn eval for brief → logline (`knowledgebase/agents/eval.md` applied): grades the *deployed* `dna-expand` target=logline with a hybrid stack — code checks (shape + must_mention/avoid regex + Jaccard anti-restate) × the deployed `read-logline` LLM-judge × tokens/latency from `ai_calls`; reports pass@1 / pass^k. 8 balanced tasks each with a reference solution (`--refs` fairness mode). **The eval earned its keep immediately — surfaced 3 real bugs unit tests couldn't:** (1) **prod outage** — `ai_provider="auto"` routed every call to MuleRouter (negative balance) → all AI 402-failing; set switch to `deepseek`; (2) logline forge `max_tokens:400` + no effort bound → DeepSeek-v4 reasoning (counts inside max_tokens) burned the budget, returned empty; fixed `effort:"low"`+`max_tokens:3000`; (3) same truncation in `read-logline` judge (1200→3000). Path went 100% broken → 24/24 pass@1, all pass^3.
+- **Files/commits:** `scripts/eval-logline.mjs` + `scripts/eval-logline-tasks.json` (new), `supabase/functions/dna-expand/index.ts` + `supabase/functions/read-logline/index.ts` (reasoning-headroom fixes, both deployed), `.gitignore` (+`scripts/.eval-*`), `doc_1784887217516.md`. DB: `admin_settings.ai_provider` auto→deepseek. Uncommitted.
+- **PM impact:** DECISIONS (provider switch — see below). Adjacent to M1 Now-slot "live full-book build" (that path runs on this same DeepSeek config) but not the slot itself; Now unchanged. **Owner action pending:** keep `deepseek` or top up MuleRouter + revert to `auto`.
 ## 2026-07-24 — Craft Notes: prose note + expansion configs; backlog committed `[ship]`
 - **What:** Closed the coverage gap the earlier Craft Notes entry left. (1) Added the **Prose** craft note — the richest craft in the engine (fourth-wall voice rule, anti-repetition law, anti-tic budgets) was inline in dna-expand and unexposed; extracted to `PROSE_CRAFT` + wired through `craftBody`. (2) Added a second **"Structure generation"** section exposing the config-driven passes that have no code craft const (cast/world/relationships/set-pieces/threads/games/acts/beats/scenes/voice_profile/pillar): their `role` + `count` from the global `node_type_configs` table are now overridable per book via new `books.expansion_overrides`; the generic expander merges override-over-config. `schema_json`/`slots` deliberately NOT editable (output contract); `premise` excluded (special-cased). Defaults read live from `node_type_configs` — its own SSOT, so no mirror/lock needed (unlike the code-const notes). (3) Also committed the pre-existing **ai_calls observability + speak-and-act** backlog at the owner's direction — the two threads are entangled in `advance.ts` so they went in as one honestly-labelled commit (not authored/verified this session).
 - **Files/commits:** `bd88b94` (craft notes tab + prose), `e2bc43d` (expansion configs, migration `20260724130000`), `db05196` (ai_calls + speak-and-act, migrations `20260723*`), `9798a0b` (this catalogue). main is 6 ahead of origin — **not pushed**.
