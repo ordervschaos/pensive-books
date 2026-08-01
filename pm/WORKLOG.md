@@ -15,7 +15,265 @@
 > `ship` (landed → promote to STATE) · `decision` (→ DECISIONS) · `park` (→ STATE/ROADMAP) ·
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
+
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+
+## 2026-08-01 — Digest: six new source kinds + closer contract + per-section cadence `[ship]`
+- **What:** Built the whole backlog from the morning's ideation. New kinds: `ranked` (HN/arXiv/GitHub/
+  Lobsters/reddit — borrows the world's ranking instead of building one), `inbox` (Mailgun inbound →
+  the pipeline's first PUSH source), `unread` (corpus leftovers), `sitewatch` (page diff, url-versioned),
+  `video` (YouTube/podcast), `quiz` (first **closer**: reads the last issue, retrieves nothing).
+  Structural: `Closer` as a second contract with `ADAPTERS`/`CLOSERS` split on `isCloser`, and
+  `cadence: daily|weekdays|weekly` per section. Adapters split into `lib/digest/sources/*` with shared
+  `fetch.ts` + `feedparse.ts`; add-section form made kind-aware. Verified live: hn/arxiv/lobsters return
+  real ranked items; YouTube transcripts proven *unavailable* server-side (falls back to description);
+  reddit 403 and github 60/hr-per-IP both measured and documented.
+- **Files/commits:** `apps/digest/lib/digest/{types,build,adapters,closers,fetch,feedparse}.ts`,
+  `lib/digest/sources/{ranked,inbox,unread,sitewatch,video}.ts`, `app/api/inbound/mailgun/route.ts`,
+  `app/digests/[id]/{AddSectionForm,InboxAddress}.tsx`, `scripts/smoke-{sources,db-sources}.ts`,
+  `supabase/migrations/20260803120000_digest_inbox.sql` (**pushed to remote**), README + new `SETUP.md`.
+  Uncommitted.
+- **PM impact:** DECISIONS entry (closer contract · push source · cadence · measured transcript finding).
+  Owner checklist at `apps/digest/SETUP.md` — needs `MAILGUN_SIGNING_KEY` + a Mailgun inbound route
+  before `inbox` does anything.
+
+## 2026-08-01 — Readwise as a digest source kind `[ship]`
+- **What:** `apps/digest` can now pull quotes from a reader's own Readwise vault — a fifth source
+  adapter, so gather/filter/write/render were untouched. Two draws: `review` (Readwise's own daily
+  spaced-repetition pick) and `random` (books list → books weighted by `num_highlights` → one random
+  page each, so cost is O(1) requests at any vault size). Credential grain is **per user**, not per
+  digest and not an env var: new `digest_user_settings` table + an account-level `/settings` page that
+  verifies the token against `GET /auth/` before storing it, and states the paid-plan requirement.
+  Quote sections skip the LLM entirely and render from a template — verbatim is the whole value, so a
+  model in that path can only paraphrase, pad, or misquote. Dedupe reuses `digest_posts` keyed on the
+  Readwise permalink, reconstructed for `/review/` which omits it. Verified end-to-end through the real
+  `previewIssue`: 5 real quotes, both modes, correct blockquote HTML, 5 corpus rows, zero gather/write
+  model calls.
+- **Files/commits:** uncommitted. `supabase/migrations/20260802090000_digest_user_settings.sql`;
+  `apps/digest/lib/digest/{readwise.ts,adapters.ts,types.ts,write.ts,render.ts}`;
+  `apps/digest/app/settings/{page.tsx,actions.ts}`; `apps/digest/app/digests/{actions.ts,[id]/page.tsx,[id]/posts/page.tsx}`;
+  `apps/digest/app/{layout.tsx,globals.css}`; README + `doc_1785584624000.md`.
+- **PM impact:** DECISIONS (credential grain + verbatim-render call). No STATE row — the digest
+  project has no board row yet and a parallel session is mid-refactor in `adapters.ts` (adding
+  `ranked`/`inbox`/`unread`/`sitewatch`/`video`/`quiz`); left the row for whoever catalogues that.
+
+## 2026-08-01 — Digest: content-kind ideation (source taxonomy + backlog) `[wip]`
+- **What:** Ideation pass over `apps/digest` for new section kinds. Framed the gap as *coverage*, not
+  ideas: the four existing kinds cover public-pull and owned-corpus only; missing are private push
+  (`inbox` via Mailgun inbound routes), exogenous ranking (`ranked` — HN/arXiv/GitHub, which dissolves
+  the "selection is not ranking" gap by picking sources that ship a score), and memory-of-issues
+  (`followup`, `quiz`). Two structural moves flagged as worth more than any single kind: per-section
+  cadence, and splitting `Adapter` into source vs transform before a third transform-shaped kind exists.
+  No code written.
+- **Files/commits:** `doc_1785583615575.md` (uncommitted); reference only — `apps/digest/lib/digest/{types,adapters}.ts`.
+- **PM impact:** none — backlog/proposal, not ratified. Promote if the author picks an order.
+
+## 2026-08-01 — Digest: read stored post bodies in-app; strip extractor preamble `[ship]`
+- **What:** Posts list only linked out, so the body we'd already paid to extract went unread. Added
+  `/digests/:id/posts/:postId` rendering the stored markdown with the same renderer the digest uses; the
+  list title now opens that, with `original ↗` demoted to a secondary link.
+  **Found while building it:** every stored body began with r.jina.ai's metadata block (`Title: … URL
+  Source: … Markdown Content:`) — present in 8/8 rows — which meant it was also being fed to the *writer*
+  as source material on every feed item. Now stripped at extraction (and again on read, so pre-existing
+  rows display correctly without a backfill), with its `Published Time` used as a fallback date. 5 cases
+  tested including a decoy marker deep in an article that must not truncate it.
+  Also: `_underscore_` emphasis (what the extractor emits) rendered literally — added, anchored so
+  snake_case identifiers survive; 5 cases tested.
+  **The corpus immediately paid off:** post ages are now visible and stark — James Clear **6.8y**, Daily
+  Stoic **3y**, Modern Stoicism **7mo**, against same-day Hyperallergic/ARTnews/Tricycle. Those feeds
+  republish evergreen archives, so the "daily" has been serving 2020 writing. List flags >6mo.
+- **Files/commits:** `apps/digest/lib/digest/{entities,adapters,render}.ts`,
+  `app/digests/[id]/posts/{page.tsx,[postId]/page.tsx}`, README. Uncommitted.
+- **PM impact:** none ranked. Recommended next: `max_age_days` per section — the evidence is now concrete.
+
+## 2026-08-01 — Digest: regenerate archives instead of overwriting `[ship]`
+- **What:** "Regenerate" (force-rebuild an already-sent issue) was overwriting `digest_issues.content`/`html`
+  in place — the old delivered morning was silently lost, because `(digest_id, issue_date)` uniqueness is
+  the idempotency key the scheduler relies on and can't change. Fix: snapshot the row into a new
+  `digest_issue_versions` table right before the overwrite (fails closed if the archive insert errors), so
+  the old render survives as history instead of vanishing. Issue page now lists archived versions with links
+  to a read-only snapshot view; the issues list shows a "regenerated (N archived)" badge. Chose this over
+  letting `digest_issues` hold multiple rows per day specifically to avoid touching
+  `claim_digest_issue`/`due_digests` — smaller blast radius for the same outcome.
+- **Files/commits:** `supabase/migrations/20260801190000_digest_issue_versions.sql` (applied),
+  `apps/digest/lib/digest/build.ts`, `apps/digest/components/IssueContentView.tsx` (new, extracted),
+  `apps/digest/app/issues/[id]/page.tsx`, `apps/digest/app/issues/[id]/versions/[versionId]/page.tsx` (new),
+  `apps/digest/app/digests/[id]/issues/page.tsx`. Uncommitted (part of the still-uncommitted `apps/digest/`
+  tree).
+- **PM impact:** none ranked — same uncommitted digest app as the prior entry below.
+
+## 2026-08-01 — Digest: persist every pulled post (`digest_posts`) `[ship]`
+- **What:** Fetched items were ephemeral — only what shipped survived, inside `digest_issues.content`. New
+  `digest_posts` (migration `20260801180000`) keeps every post any section pulls, with its extracted body,
+  source, section, image and published date. Unlocks the three things that were impossible: **visibility**
+  (`/digests/:id/posts`, with a per-source used/pulled hit rate — the unused half is the evidence for
+  whether a feed earns its place), **reuse** (stored bodies skip re-extraction), and **ranking** (the
+  "pick 3 of 40" gap is now at least implementable).
+  It **subsumes `digest_items_seen`** rather than sitting beside it: same `(digest_id, url_hash)` grain,
+  strict subset of columns — two tables at one grain is drift waiting to happen. "Seen" became
+  `used_at is not null`; the 14 existing rows were migrated with delivered-state intact before the drop.
+  Regenerate now *un-uses* posts instead of deleting them, so the corpus outlives a rebuild.
+  **Invariant held explicitly:** dedupe keys on delivered, never fetched — otherwise anything pulled and
+  passed over would be blacklisted forever. Previews record posts but never mark used.
+  Verified: corpus 14 → 24 across two previews, 10 fetched-but-unused posts now visible, dedupe correctly
+  surfaced the *next* items from each feed. Body reuse saves r.jina.ai calls, not wall-clock (19.9s warm vs
+  21.8s cold — extraction overlaps the parallel writes), and that's how it's documented.
+- **Files/commits:** `supabase/migrations/20260801180000_digest_posts.sql` (applied),
+  `apps/digest/lib/digest/{build,types,adapters}.ts`, `app/digests/[id]/posts/page.tsx`,
+  `app/digests/[id]/page.tsx`, README. Uncommitted.
+- **PM impact:** none ranked.
+
+## 2026-08-01 — Digest: content-quality review, no code changes `[chore]`
+- **What:** Owner asked how to improve digest content quality. Read the pipeline (adapters/write/README's
+  own Known gaps) and gave a ranked recommendation: (1) feed recency cutoff — highest leverage, cheap,
+  currently a correctness bug (evergreen archives surface as "today"); (2) source-quality domain allow/deny
+  list as a hard backstop to the existing soft prompt-only prior; (3) an editorial ranking pass within a
+  feed (selection, not just newest-N); (4) per-claim citation attribution; (5) cross-source clustering;
+  (6) the 👍/👎 feedback loop, correctly last since it amplifies whatever selection quality already exists.
+  Owner has not yet picked which to implement.
+- **Files/commits:** none — analysis only.
+- **PM impact:** none.
+
+## 2026-08-01 — Digest: regenerate a delivered day; Daily Stoic / James Clear / Marginalian feeds `[ship]`
+- **What:** **Regenerate** (`?force=1` + a button) for days that returned `already_sent`. The non-obvious
+  part: a naive rebuild produces an EMPTY issue, because the first build marked its own items seen and the
+  dedupe layer then eats them — correct behaviour in the one case you don't want it. Added
+  `digest_items_seen.issue_id` (migration `20260801170000`, `on delete set null` so dedupe memory outlives a
+  deleted issue) and regenerate deletes exactly that issue's rows first. Kept the unforced no-op: that guard
+  is what stops a watchdog retry or double tick from mailing twice, so overriding it is a separate button
+  with a confirm. Verified: unforced → `already_sent`; forced → `sent`, 4/4 sections, 11 items, ~29s.
+  Added the three requested feeds (probed first — `jamesclear.com/feed` works, `/feed.xml` 404s).
+  **Owner correction applied:** quote-plus-commentary is a legitimate newsletter format, not a defect — my
+  section instruction *and* the digest voice were both rejecting it; both rewritten, and that section now
+  ships (it was the one silently returning NOTHING_TODAY). Also fixed double-encoded feed titles
+  (`&#8220;` → `“`) by extracting `entities.ts` (dependency-free, so it is directly testable) — 7 cases pass.
+- **Files/commits:** `supabase/migrations/20260801170000_digest_items_seen_issue_id.sql` (applied),
+  `apps/digest/lib/digest/{build,adapters,entities}.ts`, `app/api/digests/[id]/run/route.ts`,
+  `app/digests/[id]/RunNowButton.tsx`, README. Uncommitted.
+- **PM impact:** none ranked. New known gap: feeds have no recency filter, so evergreen-archive feeds
+  (jamesclear.com) surface years-old posts as today's.
+
+## 2026-08-01 — Digest: web search behind an opt-in flag; RSS becomes the default path `[ship]`
+- **What:** `search` is the only gather path that bills every run (Opus 5 + web_search server tool) —
+  `feed`/`serial`/`prompt` cost nothing but fetches. Added `digests.web_search_enabled` (migration
+  `20260801160000`, **default false**, existing rows included) enforced inside `searchAdapter` itself so no
+  future caller can reach the paid path by accident; exposed as a checkbox on create + edit, with a "⚠
+  skipped" note on search sections while it's off, and the section-kind dropdown now defaults to `feed`.
+  **Fixed a real feed bug found while configuring multi-feed sections:** the old loop drained feed 1 to the
+  cap before ever reading feed 2, so with `max_items: 3` the later feeds were never read at all — and it
+  paid for article extraction on candidates the cap then discarded. Now reads all feeds, interleaves
+  round-robin, caps, and only then extracts. Probed 11 candidate feeds (10 live, theartnewspaper 404) and
+  reconfigured digest #1 to 3 RSS sections + the reflection. Verified with **preview** (no send, no state):
+  200, 3 sections, 7 items, 1 image, ~25s, **zero Opus calls**.
+- **Files/commits:** `supabase/migrations/20260801160000_digests_web_search_flag.sql` (applied),
+  `apps/digest/lib/digest/{types,adapters,build}.ts`, `app/digests/{actions.ts,new/page.tsx,[id]/page.tsx}`,
+  README. Uncommitted.
+- **PM impact:** none ranked. Open: a philosophy section with 7.7k tokens of material still returned
+  NOTHING_TODAY — likely an over-strict per-section instruction, worth a second look.
+
+## 2026-08-01 — Digest: local preview loop (compile without sending) `[ship]`
+- **What:** There was no way to see a digest without mailing yourself a Kindle document, so testing meant
+  ad-hoc scripts. Split `compile()` (①–⑤) out of `buildIssue` (persistence + delivery) and added
+  `previewIssue` + `GET /api/digests/:id/preview` + a Preview button: compiles today's issue through the
+  **same** code path the 6am job uses and returns it as a web page — no mail, no `digest_issues` row, no
+  seen-items; preview spend lands in `ai_calls` with `task_id = null`. `?ignoreSeen=1` compiles as if
+  nothing had been delivered, because a preview right after a real send correctly dedupes to nothing and
+  reads as a broken pipeline. Verified by minting a session via admin `generate_link` and driving the route:
+  200, 2 sections, 5 items, 3 citations, and confirmed zero DB side effects afterwards. Both auth gates
+  (preview session, tick secret) return 401 unauthenticated. README now documents the three run modes.
+- **Files/commits:** `apps/digest/lib/digest/build.ts`, `app/api/digests/[id]/preview/route.ts`,
+  `app/digests/[id]/RunNowButton.tsx`, README. Uncommitted.
+- **PM impact:** none ranked.
+
+## 2026-08-01 — Digest: Sonnet for writing, grounded images, small citations `[ship]`
+- **What:** Three owner-requested changes. (1) **Model split** — gather stays Opus 5 (drives web_search +
+  judges source quality, where a mistake poisons everything downstream), write moves to Sonnet 5, which is
+  where the daily token volume lives; `callClaude` takes a per-call model and `ai_calls` logs the one that
+  actually ran. (2) **Images, grounded the same way citations are** — `og:image` discovered deterministically
+  at gather time (top 3 items/section); the writer may reference `![](item:N)` by INDEX and can never author
+  a URL, so a fabricated image is structurally impossible; referenced images are inlined as `data:` URIs so
+  nothing depends on Amazon making outbound fetches. (3) **Citations render small/grey** via `<small
+  class="src">` + a terse-link-text rule in the constitution. Renderer behaviour checked on 6 cases incl. the
+  adversarial one (model-authored image URL → dropped). Issue #6 delivered (~49s); a forced image issue also
+  delivered to prove the inlining path, since the writer declined to use an image on its own.
+- **Files/commits:** `apps/digest/lib/digest/{llm,types,adapters,write,render,build}.ts`,
+  `app/issues/[id]/page.tsx`, README. Uncommitted.
+- **PM impact:** none ranked. Open question for the owner: does Amazon's converter render `webp`?
+
+## 2026-08-01 — Digest: stoicism/art/meditation config + source-quality and reflection fixes `[ship]`
+- **What:** Reconfigured digest #1 to the owner's actual interests and shipped issue #5 to the Kindle (~51s,
+  3 sections). Three fixes made it readable: (1) **source-quality prior** in the gather prompt — prefer
+  primary sources/criticism/institutions, silently discard SEO listicles and content farms, report empty
+  rather than build on slop; without it these beats are all "10 Stoic quotes to start your day". (2) New
+  **REFLECTION_CONSTITUTION** for `prompt` sections — the grounding constitution deadlocked them (nothing to
+  cite ⇒ nothing may be said); the binding rule flips to "quote no one, attribute nothing", since the failure
+  mode there is an invented Marcus Aurelius line, not an unsourced claim. (3) **Renderer ate backslash
+  escapes** — a magazine named `Wallpaper\*` rendered as "Wallpaper\"; escapes are now parked before the
+  emphasis passes and restored after, with the four cases checked.
+- **Files/commits:** `apps/digest/lib/digest/{adapters,write,render}.ts`. Uncommitted.
+- **PM impact:** none ranked — still a live prototype.
+
+## 2026-08-01 — Digest: full pipeline compiled and delivered a real issue `[ship]`
+- **What:** Ran the whole thing through the *scheduler* path (not the manual button): `due_digests` →
+  `claim_digest_issue` → gather (Anthropic web_search) → dedupe → per-section write → verify → assemble →
+  render → Mailgun → Kindle → mark-seen. Issue #4 landed on the device; 2 sections in parallel, ~74s.
+  Three bugs found by exercising it: (1) `max_uses: 5` on web_search exhausted by dynamic filtering's
+  fan-out, so sections shipped empty; (2) `NOTHING_TODAY` was too easy to reach — the writer bailed on real
+  material because the constitution framed the escape hatch as a virtue; now an emptiness test, not a
+  quality bar; (3) the researcher's process narration ("I'll run three searches…") was being read verbatim
+  as source material and poisoning the writer's judgement. Prose quality with the voice applied is good and
+  properly sourced. Biggest remaining gap: **source quality** — best available source was an SEO aggregator.
+- **Files/commits:** `apps/digest/lib/digest/{llm,write,adapters}.ts`, `apps/digest/README.md`. Uncommitted.
+- **PM impact:** none ranked — M1 items still own the Now slots; this is a live prototype, not a product.
+
+## 2026-08-01 — Digest: delivery leg proven on a real Kindle `[ship]`
+- **What:** Wired env (Mailgun + service role) and ran the render→Mailgun→Kindle path for real. Amazon
+  returned `delivered / OK` and the issue opened on the device — approved sender, `.html` attachment, and
+  Amazon's HTML→book conversion all confirmed, which is what justifies deferring EPUB to v1.
+  **Caught a silent-failure bug pre-send:** `deliver.ts` used `mailgun@pensive.me` (copied from
+  notify-task-done); the approved sender is `hello@pensive.me` (what send-kindle-verification and
+  BookInfo.tsx both use). Wrong From = Send-to-Kindle drops the mail with no bounce, so every digest would
+  have vanished silently. Gather + write remain unexercised — blocked on ANTHROPIC_API_KEY.
+- **Files/commits:** `apps/digest/lib/digest/deliver.ts`, `apps/digest/README.md`, `apps/digest/.env.local`
+  (gitignored). Uncommitted.
+- **PM impact:** none yet — the riskiest leg is de-risked, but no issue has been compiled end to end.
+
+## 2026-08-01 — Digest: full compile pipeline + config UI landed (unexercised) `[wip]`
+- **What:** Built the whole gather→filter→write→verify→assemble→render→deliver path. 4 source adapters
+  behind one contract (search via Anthropic `web_search` server tool; feed via RSS/Atom + r.jina.ai
+  extraction; serial off the long-unused `books.digest_bookmarked_page_index` cursor; prompt). One LLM
+  chokepoint (`lib/digest/llm.ts`, Anthropic direct, logs to `ai_calls` with source='digest'). Three-tier
+  instruction stack — immutable constitution / per-digest voice / per-section. Sections mapped in parallel
+  so 6 cost ~1 section's latency. Mailgun→Kindle as HTML (EPUB deferred; the builder is browser-only).
+  pg_cron→/api/cron/tick + a "Run now" button, both through `claim_digest_issue` so neither can double-send.
+  Config UI + issue reader. **Tagged wip, not ship: never run end-to-end** — needs ANTHROPIC_API_KEY,
+  MAILGUN_*, SUPABASE_SERVICE_ROLE_KEY and a real Kindle. Builds clean; canonicalization, RSS/Atom parsing
+  and markdown→HTML verified directly.
+- **Files/commits:** `apps/digest/**` (18 new source files + README), `@anthropic-ai/sdk` added. Uncommitted.
+- **PM impact:** none beyond the decision entry below — nothing shippable until the delivery leg is proven.
+
+## 2026-08-01 — Digest: new app decided + schema and scaffold landed `[decision]`
+- **What:** Ratified `digest.pensive.me` as a **separate bounded context, shared kernel** — its own
+  Next app/UI/tables, but the same Supabase project so it inherits `auth.users`, the shared
+  `.pensive.me` session cookie, the OTP-verified Kindle addresses, and the approved Mailgun sender.
+  Landed the spine: 3 tables + timezone-local scheduler (`due_digests`) + atomic claim
+  (`claim_digest_issue`, `unique(digest_id, issue_date)` as the idempotency lock), pushed live.
+  Scaffolded `apps/digest` (Next 14, builds clean). SPA now accepts a cross-origin `returnTo` on
+  `*.pensive.me` (host allow-listed against open redirect) so digest can bounce to it for sign-in —
+  the SPA keeps sole ownership of token refresh, avoiding the cross-subdomain rotation race.
+- **Files/commits:** `supabase/migrations/20260801120000_digest_schema.sql` (applied),
+  `apps/digest/**` (new), `apps/web/src/pages/auth/Auth.tsx`. Uncommitted.
+- **PM impact:** DECISIONS (new product surface + seam). Not ranked into ROADMAP Now — author's call.
+
+## 2026-08-01 — Morning Digest: system design (no code) `[wip]`
+- **What:** Designed a daily "morning digest → Kindle" feature. Core stance: the digest is
+  *compiled* from grounded sources, not *generated* — inverse of the DNA pipeline. Gather (no LLM)
+  → dedupe → per-section write (map) → verify → assemble → render → Mailgun. 3 new tables
+  (`digests`, `digest_issues`, `digest_items_seen`), 4 source adapters, stays on Supabase edge
+  (parallel fan-out fits the ~150s cap), v0 sends HTML not EPUB. Awaiting author go/no-go — not
+  ratified, not ranked into the roadmap.
+- **Files/commits:** `doc_1785565352472.md`, `learning_1785565352472_morning_digest_design.md` (uncommitted, untracked).
+- **PM impact:** none — proposal only.
 
 ## 2026-07-29 — Admins can commit/publish books they don't own `[ship]`
 - **What:** Book 1326 404'd on pensive.me — not a slug bug (bare-id URL 404'd too) but no published

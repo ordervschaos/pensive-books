@@ -6,6 +6,98 @@
 
 ## Log
 
+### 2026-08-01 — Digest gets a second contract (`Closer`), a push source, and per-section cadence
+
+Six new source kinds landed at once (`ranked`, `inbox`, `unread`, `sitewatch`, `video`, plus the closer
+`quiz`). Three structural calls inside that, in descending order of "someone will try to undo this":
+
+**`Closer` is a separate contract from `Adapter`.** `quiz` consumes the sections that were already
+written rather than retrieving anything. Modelling it as an Adapter would have meant pushing fake Items
+through the writer stage, and the ordering constraint (closers must run last) would have lived in a
+comment. So: `ADAPTERS` deliberately has **no** `quiz` entry, `CLOSERS` does, and `compile()` splits the
+section list on `isCloser(kind)`. The ordering is now a property of the type. This is also the seam for
+every future "reads the issue" kind — a letter framing, a "what to make of all this".
+
+**The digest now has a PUSH source.** `inbox` is mail delivered to `read+<token>@…` (Mailgun catch-all →
+`/api/inbound/mailgun` → `digest_inbox_messages`), read by the 6am build. Two reasons it earns the extra
+moving parts: the best writing on the internet stopped being in RSS and became newsletters, which cannot
+be polled; and it **sidesteps the pipeline's hardest unsolved problem** — source quality is a ranking
+problem for `search` and `feed`, but here the reader already solved it by subscribing. Fail-closed HMAC
+(no `MAILGUN_SIGNING_KEY` = reject everything), because unverified inbound text would reach the writer
+stage as *sourced material*. Status codes are Mailgun's retry protocol, so unknown recipient → 200 (a
+retry can't fix a nonexistent address) but DB failure → 503 (the mail is real; retry works).
+
+**Cadence is per section, not per digest.** `daily | weekdays | weekly` + `weekday`, evaluated against the
+*local* issue date. Half the useful kinds are weekly by nature (`unread`, resurfacing, a narrow beat), and
+forcing them onto a daily rhythm is precisely how a reader learns to expect empty sections — the failure
+the README already logged as "narrow beats produce empty days". `undefined` means daily, so nothing needed
+backfilling.
+
+Smaller calls worth not re-litigating: `ranked` borrows other people's ranking (HN points, arXiv category,
+release recency) instead of building one, which is the cheap answer to the standing "selection is not
+ranking" gap; `sitewatch` versions the url (`?v=<hash8>`) rather than adding a table, because the dedupe
+layer would otherwise suppress every change after the first; `inbox` items get a synthetic never-fetched
+permalink because the whole pipeline keys identity on `sha256(canonical url)` and mail has none.
+
+**Measured, not assumed** — YouTube transcripts are effectively unavailable server-side: `r.jina.ai` on a
+watch page returns page chrome that looks exactly like grounding, and the caption-track endpoint answers
+200-with-empty-body from a datacenter IP. `video` therefore falls back to the description and never
+fabricates. `reddit` is 403 from datacenter IPs; kept, labelled, fails to an empty section.
+
+### 2026-08-01 — Readwise: per-user credential, and quotes bypass the LLM
+
+Two calls inside the digest's Readwise source kind that someone will otherwise try to "simplify".
+
+**The token is stored per USER, in a digest-owned table** (`digest_user_settings`), not as an env var
+and not as a column on `digests`. An env var would make one deployment-level key stand in for every
+user's account; a column on `digests` would make you paste the same secret once per digest and give it
+two places to go stale. The token belongs to a *person* — one vault, however many digests. It also did
+**not** go into `user_data` (where `kindle_email` lives): that table is the main app's, and the digest
+app only *reads* it (shared kernel). Writing new integration columns into it would make two bounded
+contexts co-own a table, turning a one-directional dependency into a mutual one. Second-order rule
+that falls out: **per-user credentials are never env vars here** — a future integration is a column in
+that table, not a new deployment secret.
+
+**Quote sections skip the write stage entirely** and render from a template (blockquote → attribution
+→ your note). Everywhere else in this pipeline the model is a transformer over fetched text, which is
+a *gain*; here it can only subtract — paraphrase downgrades a quote, a connective sentence is the
+padding the constitution already bans, and one mis-copied word puts words in a real author's mouth
+(the same failure `REFLECTION_CONSTITUTION` exists to prevent for `prompt` sections, except here it is
+avoidable outright). Consequence accepted with eyes open: `voice` and `instructions` do not reach
+these sections. Choosing *which* quotes appear is a selection/ranking problem, not a writing one, and
+it stays logged as a gap rather than being smuggled in by letting a model rewrite the quotes.
+
+Related smaller call: we never call Readwise's `/review/complete/`. Marking a daily review done is a
+write into the reader's own account, and a preview would silently burn the review they were about to
+read in the app.
+
+### 2026-08-01 — Morning Digest ships as a separate app at digest.pensive.me, sharing auth
+
+New product surface: a daily digest compiled from web search / feeds / your own books, delivered to
+Kindle. The design stance is the load-bearing part: a digest is **compiled from grounded sources**,
+not **generated from a seed** — the inverse of the DNA pipeline. Retrieval is deterministic and the
+LLM is a transformer over fetched text, never a source of facts. Enforced structurally by splitting
+GATHER (no writing) from WRITE (no retrieval), so the model cannot reach for a memorized "fact".
+That means it shares no method and no tables with books/pages/book_nodes.
+
+"Separate app" was decomposed into five axes rather than taken as one switch. Separated: product
+surface, codebase (`apps/digest` in this monorepo), runtime (Next on Vercel — the Node ecosystem is
+where the article-extraction leverage is), and data (own tables). **Not** separated: identity and the
+email/Kindle rails. Rebuilding those would re-pay for the OTP flow, a Mailgun domain that users have
+already added to Amazon's approved-sender list, and the tested EPUB builder — roughly a week of
+infrastructure for no product gain. In DDD terms: separate bounded context, **shared kernel**, not
+separate ways.
+
+Rejected: a full spin-out (separate repo + Supabase project). It only pays off if digest users never
+touch Pensive, and it costs the Kindle rails immediately. Revisit if the digest grows its own funnel.
+
+Consequence worth remembering: the SPA keeps **sole ownership of session refresh** for the shared
+`.pensive.me` cookie. Supabase rotates refresh tokens and `navigator.locks` is per-origin, so two
+subdomains refreshing the same cookie would eventually log each other out. Digest therefore reads the
+cookie with `autoRefreshToken: false` and bounces to `app.pensive.me/auth?returnTo=…` when it's
+stale — which is why the SPA's `returnTo` now accepts host-allow-listed absolute URLs. Same rule
+`apps/marketing` already follows. Design: `doc_1785565352472.md`.
+
 ### 2026-07-29 — Version RPCs grant admins, not "anyone who can edit"
 `create_book_version` / `publish_version` were the last holdouts still hand-rolling
 `owner_id = auth.uid()` while `check_book_access`, `user_can_edit_book` and the books/book_access RLS

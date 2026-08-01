@@ -1,6 +1,6 @@
 # STATE — what exists, and what status it's in
 
-> Snapshot date: **2026-07-25**. Update when something ships, parks, or dies.
+> Snapshot date: **2026-08-01**. Update when something ships, parks, or dies.
 > Deep detail lives in `docs/` and `apps/web/src/features/dna/FEATURE.md`; this is the map.
 
 ## The product at a glance
@@ -73,6 +73,22 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 | Publish → marketing revalidation (DB trigger → pg_net) | blocked | REVALIDATE_SECRET env not yet set |
 | Sequel canon (book-2 constrained by book-1 packet) | shipped | O5 groundwork |
 | Legacy-book → DNA migration | gap | 45 books have real pages + foundations/spine but 0 `book_nodes`; `migrateBookToDna` (their only path) deleted 2026-07-09 after losing its UI trigger in the 2026-07-03 studio consolidation — deliberate tradeoff, see DECISIONS.md. No current path onto the DNA tree for them. |
+
+### Morning Digest (`apps/digest`, digest.pensive.me)
+
+A second product surface, opened 2026-08-01. Separate bounded context, shared kernel (auth, the
+`.pensive.me` cookie, the approved Mailgun sender, `ai_calls`). Compiled-from-sources, the inverse
+stance to the DNA pipeline. See `apps/digest/README.md`; owner checklist in `apps/digest/SETUP.md`.
+
+| Project | Status | Notes |
+|---|---|---|
+| Pipeline (gather → filter → write → verify → assemble → render → deliver) | shipped | Proven end-to-end to a real Kindle 2026-08-01 (issue #4 via the scheduler path, ~74s) |
+| Post corpus (`digest_posts`, every post pulled) | shipped | Visibility · body reuse · the substrate ranking will need |
+| Readwise source kind | shipped | Per-user token in `digest_user_settings`; quotes bypass the LLM entirely |
+| Six new source kinds (`ranked`/`inbox`/`unread`/`sitewatch`/`video`/`quiz`) | shipped (code) | 2026-08-01. hn/arxiv/lobsters verified live; **`inbox` inert until `MAILGUN_SIGNING_KEY` + a Mailgun inbound route exist** (SETUP.md §A/§B). Uncommitted, migration already pushed |
+| `Closer` contract + per-section cadence | shipped | Second contract for sections that read the issue instead of retrieving; `daily/weekdays/weekly` per section |
+| pg_cron `digest-tick` schedule | **not scheduled** | Nothing arrives at 6am on its own yet — README §Scheduling, needs the deployed origin + Vault secret |
+| EPUB delivery | gap | v0 sends HTML (Amazon converts it). Builder is browser-only; lifting it into `packages/shared` is the follow-up |
 
 ### Infrastructure & ops
 

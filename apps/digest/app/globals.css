@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-paper text-ink font-serif antialiased;
+  }
+}
+
+@layer components {
+  /* `prose-digest` marks rendered issue markdown. The Kindle build carries its own inline <style> (Amazon's
+     converter drops most CSS), so this is the web reader's half of the same look. */
+  .prose-digest blockquote {
+    @apply my-2 border-l-2 border-rule pl-4 italic;
+  }
+}

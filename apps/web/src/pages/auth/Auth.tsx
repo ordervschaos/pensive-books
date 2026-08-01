@@ -9,11 +9,36 @@ import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
+// returnTo may be a same-app path ("/books") OR an absolute URL on a sibling Pensive origin
+// (digest.pensive.me bounces here for sign-in because the SPA owns session refresh for the shared
+// .pensive.me cookie). Absolute URLs are allow-listed by host — an unguarded returnTo is a textbook
+// open-redirect (attacker mails ?returnTo=https://evil.example and borrows our login page's trust).
+function isAllowedExternalReturn(value: string): boolean {
+  try {
+    const url = new URL(value, window.location.origin);
+    if (url.origin === window.location.origin) return false; // same-origin → let the router handle it
+    if (url.protocol !== "https:") return false;
+    return url.hostname === "pensive.me" || url.hostname.endsWith(".pensive.me");
+  } catch {
+    return false;
+  }
+}
+
 export default function Auth() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const returnTo = location.state?.returnTo || searchParams.get("returnTo") || "/books";
+
+  // One exit for all three redirect sites below: cross-origin needs a full navigation (the router
+  // cannot leave this origin), same-origin stays a client-side navigate.
+  const goReturnTo = (to: string) => {
+    if (isAllowedExternalReturn(to)) {
+      window.location.replace(to);
+      return;
+    }
+    navigate(to, { replace: true });
+  };
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [showOtpInput, setShowOtpInput] = useState(false);
@@ -27,7 +52,7 @@ export default function Auth() {
         
         if (session) {
           console.log("User is authenticated, redirecting to:", returnTo);
-          navigate(returnTo, { replace: true });
+          goReturnTo(returnTo);
         }
       } catch (error) {
         console.error("Error checking auth state:", error);
@@ -67,7 +92,7 @@ export default function Auth() {
         const redirectTo = storedReturnTo || returnTo;
         localStorage.removeItem("returnTo");
 
-        navigate(redirectTo, { replace: true });
+        goReturnTo(redirectTo);
       } catch (error) {
         console.error("Error handling callback:", error);
         toast({
@@ -87,7 +112,7 @@ export default function Auth() {
       
       if (event === 'SIGNED_IN' && session) {
         console.log("User signed in, redirecting to:", returnTo);
-        navigate(returnTo, { replace: true });
+        goReturnTo(returnTo);
       }
     });
 
