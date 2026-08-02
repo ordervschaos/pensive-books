@@ -2,6 +2,7 @@ import type { Adapter, Item, RankedSection, RunCtx } from "../types";
 import { articleText, attachImages, fetchJson, fetchText, UA } from "../fetch";
 import { attr, parseFeed } from "../feedparse";
 import { urlHash } from "../canonical";
+import { truncateAtBoundary } from "../entities";
 
 // ranked — sources that ship their OWN ranking signal.
 //
@@ -214,7 +215,7 @@ async function github(s: RankedSection, signal?: AbortSignal): Promise<Candidate
           .map(
             (r): Candidate => ({
               title: `${repo} ${r.name || r.tag_name}`,
-              text: (r.body ?? "").slice(0, 6000),
+              text: truncateAtBoundary(r.body ?? "", 6000),
               url: r.html_url,
               source: repo,
               published_at: r.published_at,

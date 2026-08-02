@@ -2,6 +2,7 @@ import type { Adapter, Item, RunCtx, VideoSection } from "../types";
 import { articleText, attachImages, fetchText, stripHtml } from "../fetch";
 import { attr, feedTitle, parseFeed } from "../feedparse";
 import { urlHash } from "../canonical";
+import { truncateAtBoundary } from "../entities";
 
 // video — YouTube channels and podcasts, read instead of watched.
 //
@@ -172,7 +173,7 @@ export const videoAdapter: Adapter = async (section, ctx: RunCtx) => {
       const body = text.trim().length >= TRANSCRIPT_FLOOR ? text : stripHtml(e.summary) || text;
       return {
         title: e.title,
-        text: body.slice(0, 12_000),
+        text: truncateAtBoundary(body, 12_000),
         url: e.url,
         source: e.source,
         published_at: e.published_at,

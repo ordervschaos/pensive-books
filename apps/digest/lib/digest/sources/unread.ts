@@ -1,5 +1,6 @@
 import type { Adapter, Item, RunCtx, UnreadSection } from "../types";
 import { createServiceClient } from "@/lib/supabase/server";
+import { truncateAtBoundary } from "../entities";
 
 // unread — the corpus's own leftovers.
 //
@@ -60,7 +61,7 @@ export const unreadAdapter: Adapter = async (section, ctx: RunCtx) => {
     .map(
       (r): Item => ({
         title: r.title ?? "Untitled",
-        text: r.body!.slice(0, 12_000),
+        text: truncateAtBoundary(r.body!, 12_000),
         url: r.url!,
         source: r.source ?? undefined,
         image_url: r.image_url ?? undefined,

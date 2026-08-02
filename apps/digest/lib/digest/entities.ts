@@ -53,6 +53,47 @@ export function stripReaderPreamble(raw: string): { text: string; publishedAt?: 
   return { text, publishedAt: published };
 }
 
+/**
+ * Every extractor caps a body at some length. Doing that with a bare `slice()` cuts mid-word — one real
+ * issue ended an article on "…never to prostitute my press to the purposes of cor" — and, worse, says
+ * nothing about it: the reader cannot tell a piece that stopped from a piece that ended.
+ *
+ * So cut on a PARAGRAPH boundary (falling back to a sentence, then a word) and leave a mark. The mark is
+ * part of the stored text on purpose. `digest_posts.body` is a cache that outlives the run that filled it —
+ * a truncation flag held only on the in-memory `Item` would be lost the moment a later issue reused the
+ * cached body, which is exactly when the reader would still be looking at a half-article.
+ */
+/**
+ * A Unicode private-use codepoint, not a readable token, because the sentinel has to be a character that
+ * CANNOT occur in prose. The first attempt used `[…]` and collided immediately: that is the standard
+ * editorial mark for elided text, and a Carl Jung quotation in a real issue contained one. A body ending in
+ * a genuine elision would have been silently relabelled "Read the rest at …" — a fabricated claim about
+ * where the article went, which is the one class of error this pipeline exists to avoid. Private-use
+ * codepoints are reserved for exactly this: an in-band marker with no in-band meaning.
+ */
+export const TRUNCATED_MARK = "\uE000";
+
+export function truncateAtBoundary(text: string, max: number): string {
+  if (text.length <= max) return text;
+
+  const head = text.slice(0, max);
+  const cut =
+    lastIndexBefore(head, /\n\s*\n/g) ??
+    lastIndexBefore(head, /[.!?]["'”’)]?\s/g) ??
+    head.lastIndexOf(" ");
+
+  return `${head.slice(0, cut > 0 ? cut : head.length).trimEnd()}\n\n${TRUNCATED_MARK}`;
+}
+
+// `lastIndexOf` takes no regex, and scanning backwards by hand is worse than one forward pass. Returns the
+// END of the last match, not its start, so that cutting there keeps the boundary itself — otherwise a
+// sentence-boundary cut lands before the full stop and drops it ("One sentence here" instead of "…here.").
+function lastIndexBefore(s: string, re: RegExp): number | null {
+  let at: number | null = null;
+  for (const m of s.matchAll(re)) at = m.index + m[0].length;
+  return at;
+}
+
 // A page's reader-extraction doesn't always start where the article does — nav menus, logo/social-share
 // image stacks, and (for the inbox source) a mail client's own forward header all land in the same text
 // field the article body does. Excerpting from character 0, as the non-AI raw list originally did, surfaces

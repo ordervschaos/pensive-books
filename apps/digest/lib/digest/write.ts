@@ -1,6 +1,6 @@
 import type { Item, RenderedSection, RunCtx, Section } from "./types";
 import { aiEnabled, callModel } from "./llm";
-import { cleanBody } from "./entities";
+import { cleanBody, TRUNCATED_MARK } from "./entities";
 
 // The WRITE stage. One LLM call per section, and it sees ONLY the text the gather stage handed it.
 //
@@ -84,6 +84,10 @@ function renderQuotes(items: Item[]): string {
 // (`<h4>`), one below the article's own `##`. Relative depth inside the article is preserved.
 const ARTICLE_SUBHEAD_LEVEL = 3;
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 // Last-resort byline when a feed declares no source name. A bare domain is honest and recognisable, which is
 // the same bar the writing constitution sets for citations.
 function hostOf(url?: string): string {
@@ -130,7 +134,13 @@ function renderRawList(items: Item[]): string {
         isArchival(i.published_at) && "From the archives",
       ].filter(Boolean);
       const byline = `[${meta.join(" · ")}](${i.url})`;
-      const body = demoteHeadings(cleanBody(i.text));
+      // A body that stopped at the extractor's cap says so, and says where the rest is. `truncateAtBoundary`
+      // left the mark in the stored text (see its note on why a flag would not survive the body cache); this
+      // is the one place that knows how to turn it into something a reader can use.
+      const body = demoteHeadings(cleanBody(i.text)).replace(
+        new RegExp(`\\n*${escapeRegExp(TRUNCATED_MARK)}\\s*$`),
+        `\n\n[Read the rest at ${i.source || hostOf(i.url)} →](${i.url})`,
+      );
       return [head, byline, body].filter(Boolean).join("\n\n");
     })
     .join("\n\n---\n\n");

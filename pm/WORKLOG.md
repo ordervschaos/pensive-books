@@ -17,6 +17,32 @@
 
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-08-02 — Truncation that admits itself, and a sentinel that collided with a Jung quote `[ship]`
+- **What:** Item 6 (`doc_1785656805078.md` §12). `fetch.ts` + four source adapters each capped bodies with a
+  bare `slice()` — cutting mid-word ("…the purposes of cor") and saying nothing, so the reader cannot tell a
+  piece that STOPPED from one that ENDED. `truncateAtBoundary(text, max)` now cuts on a paragraph break →
+  sentence end → word, and leaves a mark; all five cap sites route through it, and `renderRawList` turns the
+  mark into `[Read the rest at {source} →](url)`.
+  **Why the mark is in the stored text:** `digest_posts.body` is a cache that outlives its run, so a
+  `truncated` flag on the in-memory Item would be lost exactly when a later issue reuses a cached half
+  article.
+  **The bug the harness caught:** the sentinel was first `[…]` — which is the standard editorial mark for
+  elided text, and a Carl Jung quotation *in this issue* contains one. A body ending in a genuine elision
+  would have been silently relabelled "Read the rest at …", **a fabricated claim about where the article
+  went** — the one class of error this pipeline exists to prevent. Now `U+E000`, a Unicode private-use
+  codepoint. General rule worth keeping: **an in-band sentinel must come from a namespace the content cannot
+  use**; picking a "sufficiently unlikely" readable token trades a loud impossible failure for a rare silent
+  one.
+  **Verified:** 5 boundary assertions (short untouched · paragraph · full stop kept · closing quote kept ·
+  genuine `[…]` not mistaken for the mark) + mark survives `cleanBody`; end-to-end on issue 15 the real
+  ellipsis is preserved, 0 false "Read the rest" links, 0 sentinels on the page. `tsc` + `next build` green.
+  **Known remaining:** one `[![Image 6](h` is baked into a STORED body the old `slice()` already halved — new
+  fetches won't produce it, that row clears on re-fetch. It is the concrete argument for §5's `trim_version`.
+- **Files/commits:** `lib/digest/entities.ts`, `lib/digest/fetch.ts`, `lib/digest/sources/{inbox,unread,video,ranked}.ts`,
+  `lib/digest/write.ts`, `doc_1785656805078.md` §12. Branch `digest-reader-render` (items 1–5 = `fcfb174`).
+- **PM impact:** STATE row updated — only item 7 (the LLM trim pass) is left from the reader review. Owner
+  ruled 2026-08-02: the trim pass is **not** gated on `ai_enabled` (hygiene ≠ voice).
+
 
 ## 2026-08-02 — Agent docked beside the tabs, and un-gated `[decision]`
 - **What:** Two owner calls, both in `pm/DECISIONS.md`.
@@ -39,7 +65,7 @@
   records `source='digest'` / `operation='turn'`, so turns-per-user-per-day needs no new table.
 - **Files/commits:** `apps/digest/app/digests/[id]/{layout.tsx,AgentRail.tsx}`, `lib/digest/llm.ts`,
   `lib/digest/agent/loop.ts`, `scripts/smoke-agent.ts`, `README.md`, `pm/DECISIONS.md`;
-  `app/digests/[id]/agent/` deleted. Uncommitted.
+  `app/digests/[id]/agent/` deleted. **`9cecd84`**.
 - **PM impact:** two DECISIONS entries; STATE's Digest agent row updated.
 
 ## 2026-08-02 — Digest agent context policy: a long chat costs what a short one costs `[ship]`

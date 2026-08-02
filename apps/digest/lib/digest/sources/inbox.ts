@@ -1,6 +1,7 @@
 import type { Adapter, InboxSection, Item, RunCtx } from "../types";
 import { createServiceClient } from "@/lib/supabase/server";
 import { stripHtml } from "../fetch";
+import { truncateAtBoundary } from "../entities";
 
 // inbox — newsletters delivered to this digest's own address.
 //
@@ -54,7 +55,7 @@ export const inboxAdapter: Adapter = async (section, ctx: RunCtx) => {
       (r): Item => ({
         title: r.subject ?? "(no subject)",
         // Mail IS the article — no extraction step, which is why this is the cheapest source in the app.
-        text: (r.body_text || stripHtml(r.body_html ?? "")).slice(0, 12_000),
+        text: truncateAtBoundary(r.body_text || stripHtml(r.body_html ?? ""), 12_000),
         url: `https://digest.pensive.me/inbox/${r.id}`,
         source: r.sender_name || r.sender || "inbox",
         published_at: r.received_at,

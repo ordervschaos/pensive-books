@@ -1,5 +1,5 @@
 import type { Item } from "./types";
-import { stripReaderPreamble } from "./entities";
+import { stripReaderPreamble, truncateAtBoundary } from "./entities";
 
 // Network primitives shared by every source adapter: fetch with a timeout, pull an article body, discover a
 // lead image. Extracted out of adapters.ts once there were more adapters than one file should hold — the
@@ -80,7 +80,7 @@ export async function articleText(
   try {
     const md = await fetchText(`https://r.jina.ai/${url}`, signal);
     const { text, publishedAt } = stripReaderPreamble(md);
-    return { text: text.slice(0, 12_000), publishedAt };
+    return { text: truncateAtBoundary(text, 12_000), publishedAt };
   } catch {
     return { text: "" }; // fall back to whatever summary the caller already has, rather than dropping the item
   }
