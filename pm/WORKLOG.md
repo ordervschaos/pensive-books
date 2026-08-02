@@ -19,6 +19,98 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-02 — Live streaming preview page, one Suspense boundary per section `[ship]`
+- **What:** The `/api/digests/[id]/preview` route (still there, for curl/`?ignoreSeen=1` dev workflows) can
+  only ever return one atomic blob — no Suspense possible on a route handler, per the earlier design
+  discussion. Built the real thing: `/digests/[id]/preview` page. Split `compile()`'s per-section
+  gather+write into a standalone `buildSection()` (no behavior change to the real pipeline — `compile()`
+  just calls it in its existing `Promise.all` now) and added `previewStream()` + `previewClosersAndIntro()`
+  in `build.ts`: the former kicks off every source section's build immediately and returns one promise per
+  section without awaiting any of them; the latter awaits all of them then runs intro+closers (which
+  structurally can't start earlier — they read what the sections produced). The page wraps each section
+  promise in its own `<Suspense>`, so a fast section renders while a slow one (a `search` section, when AI
+  is on) is still in flight; intro/closers share ONE kicked-off `previewClosersAndIntro` promise across two
+  boundaries so the work runs once, not twice, even though both await it.
+  Visual fidelity: extracted the mailed issue's `<style>` block into `issueStyles(scope)` in `render.ts` —
+  bare selectors for the standalone email doc, scoped under `.issue-render` for this page — one CSS
+  definition instead of two that drift. Content renders through the same `markdownToHtml` either way, so
+  this is not a separate preview design, it's the actual render.
+  Added as a 6th tab ("Preview") in the digest layout, same nesting as Sections/Inbox/Posts/Settings.
+  Verified via a standalone script exercising `previewStream`/`previewClosersAndIntro` directly (no browser
+  available — chrome-devtools-mcp had a stale profile lock from earlier this session): 6 source sections
+  resolved correctly (one legitimately dropped, `NOTHING_TODAY`-style), full section content (1.7k–38.6k
+  chars each, matching the last live send), no errors.
+- **Files/commits:** `apps/digest/lib/digest/{build,render}.ts`, new
+  `apps/digest/app/digests/[id]/preview/page.tsx`, `apps/digest/app/digests/[id]/layout.tsx`. Uncommitted.
+- **PM impact:** none — a dev/QA surface improvement, not a reader-facing capability.
+
+## 2026-08-02 — Raw list renders full bodies, not a one-paragraph teaser `[ship]`
+- **What:** Owner noticed the Marginalian item didn't read like "a newsletter" — `firstParagraph` (previous
+  two entries) always returned exactly one paragraph, so a 2,000-word essay and a one-line Daily Stoic quote
+  rendered identically. Asked to render everything in full. Replaced `firstParagraph` with `cleanBody` in
+  `lib/digest/entities.ts`: same chrome-skipping bar (forward header / link-heavy / too-short) to find where
+  the real content STARTS, but once past that point every remaining block is kept (only link-heavy blocks —
+  e.g. a footer/unsubscribe block — get dropped throughout, not just at the top; a short mid-article line is
+  fine once we're past the opening bar, unlike before). `renderRawList` now joins items on `\n\n---\n\n`
+  (matching the separator `writeSection`'s own AI-path material-building already uses) since items are full
+  articles now, not one-line teasers — a bare blank line wasn't enough to tell where one item ends and the
+  next begins.
+  Verified before sending: today's 5 sections are 1.7k–38.6k chars each (was ~280 chars/item), Marginalian
+  item present and substantial. Live-verified: force-resent issue 6, `status: sent`, 16 items.
+- **Files/commits:** `apps/digest/lib/digest/{entities,write}.ts`. Uncommitted.
+- **PM impact:** none — same non-AI fallback path as the last three entries, further tuned per live
+  feedback on the actual send.
+
+## 2026-08-02 — Digest agent: design only, no code `[wip]`
+- **What:** Answered the owner's two questions about a digest-building agent that mirrors the UI.
+  Three proposals: (1) mirror is *mechanical* — tool JSON Schemas compile from `sectionSchema.ts`, and
+  `actions.ts` splits into FormData-adapter + one `applyCommand()` port so forms and tools share a write
+  path; (2) objectives are *derived* — a pure `digestReadiness()` (modelled on the DNA side's
+  `currentObjective()`) injected as an anchor under a three-state policy, so one agent serves both a
+  concrete ask and "walk me through it", with `preview` as a free generate↔verify loop; (3) context —
+  state is re-hydrated from the DB every turn and stripped from history, only *intent* survives folding,
+  tool results elide to receipts after one turn, plus a version-stamped staleness fence. Also a negative
+  finding: do **not** port `book_agent_runs`/self-chaining/pg_cron — that's a workaround for Supabase's
+  ~150s worker ceiling, and Vercel Fluid Compute gives 300s + streaming in one request.
+  Proposed a 6-rung build order where rungs 1–3 are useful with no agent at all. Nothing built; owner
+  hasn't picked a rung.
+- **Files/commits:** `doc_1785651033920.md` (new, untracked). No code touched.
+- **PM impact:** none yet — not ratified. If the owner picks a rung it becomes a DECISIONS entry
+  (direct-write-for-config diverges from the DNA proposal-channel rule) plus a ROADMAP item.
+
+## 2026-08-02 — Raw-list excerpts uncapped `[ship]`
+- **What:** Owner noticed a quote cut mid-sentence in the resent digest — the 280-char cap on
+  `firstParagraph`'s excerpt (previous entry) was a teaser length, not a data bug. Asked to remove it.
+  `firstParagraph(raw, maxLen = Infinity)` — the cap is now opt-in per caller rather than baked in;
+  `renderRawList` calls it with no second arg. Still only the FIRST real paragraph (nav/forward-header/
+  link-heavy skipping unchanged), just not truncated within it. Live-verified: force-resent issue 6,
+  `status: sent`, 16 items, excerpts now run to a complete thought instead of an ellipsis mid-clause.
+- **Files/commits:** `apps/digest/lib/digest/{entities,write}.ts`. Uncommitted.
+- **PM impact:** none — a formatting tweak on the same non-AI fallback path.
+
+## 2026-08-02 — Raw-list excerpts were surfacing nav chrome and forward headers `[ship]`
+- **What:** Owner caught it from the resent digest: "Stoicism" section excerpts showed site nav
+  (`Home About * donating=loving`) and broken markdown (`!Image 1`, bare `>`/`_`), and the inbox item
+  ("brain pickings") showed the Gmail forward header instead of the newsletter's actual opening. Root
+  cause: `renderRawList`'s excerpt was `text.slice(0, 280)` from character 0 — fine when the extracted text
+  starts with the article, wrong whenever it starts with nav/logo-image chrome (themarginalian.org,
+  modernstoicism.com) or a mail client's own forward header. The AI writer never showed this because a model
+  reads past chrome on its own; a plain excerpt can't.
+  Added `firstParagraph()` in `lib/digest/entities.ts`: walks blank-line-separated blocks, skips a Gmail
+  forward-header block outright, skips anything link-heavy (links using >~1 per 300 chars — catches
+  nav/footer lists even when they're grammatical sentences, e.g. a "view in browser / unsubscribe" blurb),
+  skips anything under 100 chars once markdown-stripped (headings/blockquote markers/images/links resolved
+  to plain text), and returns the first block that clears all three bars — falling back to a plain-stripped
+  slice of everything if nothing does. Wired into `renderRawList` in place of the raw slice.
+  Verified against the actual flagged rows (Modern Stoicism, Marginalian, Daily Stoic, James Clear, the
+  inbox forward) before resending — all now surface real opening prose. One known residual: Marginalian's
+  recurring donation-appeal paragraph occasionally still wins over the article's true opening (coherent
+  English, just not the piece) — flagged to the owner, not special-cased, since it's one publisher's
+  boilerplate rather than a general pattern. Live-verified: force-resent issue 6 again, `status: sent`,
+  16 items, real content in every section including the inbox one.
+- **Files/commits:** `apps/digest/lib/digest/{entities,write}.ts`. Uncommitted.
+- **PM impact:** none — correctness fix to the non-AI fallback shipped 2026-08-01, not a new capability.
+
 ## 2026-08-01 — Cached post bodies were feeding the r.jina.ai preamble to everything `[ship]`
 - **What:** Owner caught it from the new raw-list preview (previous entry): sections showed "Title: X URL
   Source: Y Published Time: Z Markdown Content:" instead of actual article text. Root cause: `articleText()`

@@ -5,7 +5,7 @@ import { renderIssueHtml } from "./render";
 import { sendToKindle } from "./deliver";
 import { urlHash } from "./canonical";
 import { close } from "./closers";
-import { isCloser } from "./types";
+import { isCloser, runsToday } from "./types";
 import { stripReaderPreamble } from "./entities";
 import type { Digest, Item, IssueContent, RenderedSection, RunCtx, Section } from "./types";
 
@@ -27,6 +27,32 @@ export interface Compiled {
   delivered: Item[];
   /** EVERYTHING gathered this run, used or not — the corpus row set. Each tagged with its section. */
   gathered: Array<Item & { section_id: string }>;
+}
+
+type SectionBuild = { rendered: RenderedSection | null; items: Item[]; section_id: string };
+
+// ① GATHER + ③ WRITE for one section. Pulled out of `compile()` so the live streaming preview
+// (`previewStream` below) can kick off every section's build independently and let a Suspense boundary
+// await each one on its own, instead of the whole page blocking on `Promise.all` like the mailed issue does.
+function buildSection(
+  section: Section,
+  ctx: RunCtx,
+  seen: (hash: string) => boolean,
+  issueId: number | null,
+): Promise<SectionBuild> {
+  return (async () => {
+    const items = await gather(section, ctx);
+    // ② FILTER, part two: drop anything already delivered, then cap. Ranking happens before the cut.
+    const fresh = items.filter((i) => !i.url || !seen(urlHash(i.url))).slice(0, section.max_items ?? 6);
+    try {
+      return { rendered: await writeSection(section, fresh, ctx, issueId), items: fresh, section_id: section.id };
+    } catch (e) {
+      console.error(`write ${section.id} failed:`, e);
+      // A failed section is dropped from the issue — but its posts are still kept, which is precisely
+      // the kind of thing the corpus is for.
+      return { rendered: null, items: fresh, section_id: section.id };
+    }
+  })();
 }
 
 async function compile(
@@ -56,19 +82,7 @@ async function compile(
   // ① GATHER + ③ WRITE, mapped per section. Sections are independent, so this is one fetch round plus one
   // LLM round — not the serial sum. That is what keeps a 6-section issue inside a normal request budget.
   const built = await Promise.all(
-    sections.map(async (section: Section): Promise<{ rendered: RenderedSection | null; items: Item[]; section_id: string }> => {
-      const items = await gather(section, ctx);
-      // ② FILTER, part two: drop anything already delivered, then cap. Ranking happens before the cut.
-      const fresh = items.filter((i) => !i.url || !seen.has(urlHash(i.url))).slice(0, section.max_items ?? 6);
-      try {
-        return { rendered: await writeSection(section, fresh, ctx, issueId), items: fresh, section_id: section.id };
-      } catch (e) {
-        console.error(`write ${section.id} failed:`, e);
-        // A failed section is dropped from the issue — but its posts are still kept, which is precisely
-        // the kind of thing the corpus is for.
-        return { rendered: null, items: fresh, section_id: section.id };
-      }
-    }),
+    sections.map((section: Section) => buildSection(section, ctx, (h) => seen.has(h), issueId)),
   );
 
   const gathered = built.flatMap((b) => b.items.map((i) => ({ ...i, section_id: b.section_id })));
@@ -92,21 +106,6 @@ async function compile(
     delivered: built.flatMap((b) => (b.rendered ? b.items : [])),
     gathered,
   };
-}
-
-// CADENCE. The digest has one delivery clock; a section may have its own, because half the useful kinds are
-// weekly by nature — a resurfacer, a leftovers pass, a beat that publishes twice a month. Forcing those onto
-// a daily rhythm is how a reader learns to expect empty sections.
-//
-// Evaluated against the LOCAL issue date (the digest's timezone already produced that string), so "Sunday"
-// means the reader's Sunday. Noon-UTC parsing avoids the date shifting under the parser itself.
-function runsToday(section: Section, issueDate: string): boolean {
-  const cadence = section.cadence ?? "daily";
-  if (cadence === "daily") return true;
-
-  const day = new Date(`${issueDate}T12:00:00Z`).getUTCDay(); // 0 = Sunday
-  if (cadence === "weekdays") return day >= 1 && day <= 5;
-  return day === (section.weekday ?? 0);
 }
 
 // One read serves both jobs: which posts were already DELIVERED (the dedupe set) and which bodies we
@@ -355,4 +354,78 @@ export async function previewIssue(
     sections: compiled.content.sections.length,
     items: compiled.delivered.length,
   };
+}
+
+// Everything a live, Suspense-streamed preview page needs: the digest row, and one promise PER SOURCE
+// SECTION, already kicked off (not awaited) so a fast section (a feed, a readwise pull) can render while a
+// slow one (a `search` section, when AI is on) is still in flight — the mailed issue and the curl-friendly
+// `previewIssue` above both wait on `Promise.all` because nothing is watching them render; a page is.
+export interface PreviewStream {
+  digest: Digest;
+  issueDate: string;
+  sourceSections: Array<{ section: Section; promise: Promise<RenderedSection | null> }>;
+  closerSections: Section[];
+  ctx: RunCtx;
+}
+
+export async function previewStream(
+  digestId: number,
+  opts: { ignoreSeen?: boolean } = {},
+): Promise<PreviewStream | { error: string }> {
+  const db = createServiceClient();
+
+  const { data: digestRow } = await db
+    .from("digests")
+    .select("id, owner_id, name, timezone, deliver_at, active, voice, web_search_enabled, ai_enabled, sections, delivery")
+    .eq("id", digestId)
+    .maybeSingle();
+  if (!digestRow) return { error: "digest not found" };
+
+  const digest = digestRow as Digest;
+  const issueDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: digest.timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  const { seen, bodies } = await loadCorpus(db, digest.id);
+  const effectiveSeen = opts.ignoreSeen ? () => false : (h: string) => seen.has(h);
+  const ctx: RunCtx = { digest, issueDate, seen: effectiveSeen, cachedBody: (h) => bodies.get(h) };
+
+  const due = (digest.sections ?? [])
+    .filter((s: Section) => s.enabled !== false)
+    .filter((s: Section) => runsToday(s, issueDate));
+
+  return {
+    digest,
+    issueDate,
+    sourceSections: due
+      .filter((s: Section) => !isCloser(s.kind))
+      .map((section: Section) => ({
+        section,
+        promise: buildSection(section, ctx, effectiveSeen, null).then((b) => b.rendered),
+      })),
+    closerSections: due.filter((s: Section) => isCloser(s.kind)),
+    ctx,
+  };
+}
+
+// The intro and any closers (a quiz) both read what the source sections produced, so — unlike a source
+// section — neither can start until every `sourceSections` promise above has settled. This is its own
+// Suspense boundary on the page: it streams in once the slowest source section finishes, independent of
+// how each individual section boundary is doing.
+export async function previewClosersAndIntro(
+  stream: PreviewStream,
+): Promise<{ intro: string; closed: RenderedSection[] }> {
+  const rendered = (await Promise.all(stream.sourceSections.map((s) => s.promise))).filter(
+    (s): s is RenderedSection => !!s,
+  );
+  const [intro, closed] = await Promise.all([
+    writeIntro(rendered, stream.ctx, null),
+    Promise.all(stream.closerSections.map((s) => close(s, rendered, stream.ctx, null))).then((cs) =>
+      cs.filter((c): c is RenderedSection => !!c),
+    ),
+  ]);
+  return { intro, closed };
 }

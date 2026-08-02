@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Digest, Section } from "@/lib/digest/types";
+import { loadReadiness } from "@/lib/digest/readiness";
 import { removeSection } from "../actions";
 import { AddSectionForm } from "./AddSectionForm";
 import { InboxAddress } from "./InboxAddress";
+import { ReadinessPanel } from "./Readiness";
 
 export const dynamic = "force-dynamic";
 
@@ -16,29 +18,26 @@ export default async function SectionsPage({ params }: { params: { id: string } 
   const supabase = createClient();
   const { data } = await supabase
     .from("digests")
-    .select("id, sections, web_search_enabled, ai_enabled, inbox_token")
+    .select("id, sections, active, web_search_enabled, ai_enabled, inbox_token, delivery")
     .eq("id", Number(params.id))
     .maybeSingle();
   if (!data) notFound();
 
-  const digest = data as Pick<Digest, "id" | "sections" | "web_search_enabled" | "ai_enabled" | "inbox_token">;
+  const digest = data as Pick<
+    Digest,
+    "id" | "sections" | "active" | "web_search_enabled" | "ai_enabled" | "inbox_token" | "delivery"
+  >;
   const hasInbox = (digest.sections ?? []).some((s: Section) => s.kind === "inbox");
 
-  // Readwise is an ACCOUNT-level connection, so its state is read separately and only to warn: a section
-  // configured against a disconnected vault is silently skipped at 6am, and that should be visible here
-  // rather than discovered from an issue that's missing a section. (RLS scopes this to the current user;
-  // the token itself is never selected.)
-  const { data: rw } = await supabase
-    .from("digest_user_settings")
-    .select("readwise_enabled, readwise_verified_at")
-    .maybeSingle();
-  const readwiseReady = Boolean(
-    (rw as { readwise_enabled?: boolean; readwise_verified_at?: string | null } | null)?.readwise_enabled &&
-      (rw as { readwise_verified_at?: string | null } | null)?.readwise_verified_at,
-  );
+  // Everything that would silently vanish at 6am — a section needing AI while AI is off, a Readwise section
+  // with no token, a feed serving 2019 — comes from ONE derivation rather than from warnings scattered
+  // through this JSX. See lib/digest/readiness.ts.
+  const ready = await loadReadiness(supabase, digest);
 
   return (
     <section className="space-y-3">
+      <ReadinessPanel readiness={ready} />
+
       {(digest.sections ?? []).length === 0 && (
         <p className="text-sm text-muted">No sources yet — add one below.</p>
       )}
@@ -52,23 +51,6 @@ export default async function SectionsPage({ params }: { params: { id: string } 
               <p className="text-sm text-muted">{sectionDetail(s)}</p>
               {s.cadence && s.cadence !== "daily" && (
                 <p className="font-mono text-xs text-muted">runs {cadenceLabel(s)}</p>
-              )}
-              {s.kind === "search" && (!digest.ai_enabled || !digest.web_search_enabled) && (
-                <p className="text-sm text-muted">
-                  ⚠ Skipped — {!digest.ai_enabled ? "AI writing" : "live web search"} is off for this digest.
-                </p>
-              )}
-              {s.kind === "prompt" && !digest.ai_enabled && (
-                <p className="text-sm text-muted">⚠ Skipped — AI writing is off for this digest.</p>
-              )}
-              {s.kind === "readwise" && !readwiseReady && (
-                <p className="text-sm text-muted">
-                  ⚠ Skipped — Readwise isn&apos;t connected.{" "}
-                  <a href="/settings" className="underline">
-                    Connect it
-                  </a>
-                  .
-                </p>
               )}
               {s.instructions && <p className="text-sm text-muted">{s.instructions}</p>}
             </div>

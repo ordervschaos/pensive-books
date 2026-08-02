@@ -1,5 +1,6 @@
 import type { Item, RenderedSection, RunCtx, Section } from "./types";
 import { aiEnabled, callModel } from "./llm";
+import { cleanBody } from "./entities";
 
 // The WRITE stage. One LLM call per section, and it sees ONLY the text the gather stage handed it.
 //
@@ -68,16 +69,16 @@ function renderQuotes(items: Item[]): string {
 
 // Non-AI fallback for every section kind except `readwise` (already a template above) and `prompt` (a
 // reflection has no retrieval to fall back on — it simply doesn't run without a model). One entry per item:
-// linked title, source, and the opening of the extracted text. No synthesis, no transitions — exactly the
-// material the writer itself would have been handed, just not written.
+// linked title, source, and the extracted text in full (chrome stripped). No synthesis, no transitions —
+// exactly the material the writer itself would have been handed, just not written.
 function renderRawList(items: Item[]): string {
   return items
     .map((i) => {
       const head = [`**[${i.title}](${i.url})**`, i.source && `— ${i.source}`].filter(Boolean).join(" ");
-      const excerpt = i.text.replace(/\s+/g, " ").trim().slice(0, 280);
-      return excerpt ? `${head}\n${excerpt}…` : head;
+      const body = cleanBody(i.text);
+      return body ? `${head}\n\n${body}` : head;
     })
-    .join("\n\n");
+    .join("\n\n---\n\n");
 }
 
 export async function writeSection(

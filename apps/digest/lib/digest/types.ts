@@ -173,6 +173,27 @@ export function isCloser(kind: SectionKind): boolean {
   return CLOSER_KINDS.includes(kind);
 }
 
+/**
+ * CADENCE. The digest has one delivery clock; a section may have its own, because half the useful kinds are
+ * weekly by nature — a resurfacer, a leftovers pass, a beat that publishes twice a month. Forcing those onto
+ * a daily rhythm is how a reader learns to expect empty sections.
+ *
+ * Evaluated against the LOCAL issue date (the digest's timezone already produced that string), so "Sunday"
+ * means the reader's Sunday. Noon-UTC parsing avoids the date shifting under the parser itself.
+ *
+ * Lives here rather than in `build.ts` because it is a property of a Section, and `readiness.ts` has to ask
+ * the same question — "was this section even due?" — to tell a genuinely dead section apart from a weekly
+ * one that simply wasn't up. Two copies of this rule would disagree the first time either changed.
+ */
+export function runsToday(section: Section, issueDate: string): boolean {
+  const cadence = section.cadence ?? "daily";
+  if (cadence === "daily") return true;
+
+  const day = new Date(`${issueDate}T12:00:00Z`).getUTCDay(); // 0 = Sunday
+  if (cadence === "weekdays") return day >= 1 && day <= 5;
+  return day === (section.weekday ?? 0);
+}
+
 /** A retrieved unit of grounding. `text` is the ONLY thing the writer may draw facts from. */
 export interface Item {
   title: string;

@@ -40,6 +40,7 @@ export default async function DigestLayout({
           { label: "Issues", href: `${base}/issues` },
           { label: "Inbox", href: `${base}/inbox` },
           { label: "Posts", href: `${base}/posts` },
+          { label: "Preview", href: `${base}/preview` },
           { label: "Settings", href: `${base}/settings` },
         ]}
       />
