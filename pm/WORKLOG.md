@@ -18,6 +18,166 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-02 — Premise grader: the trajectory family finally has numbers `[wip]`
+- **What:** Step 4 of `doc_1785672823780.md` §7 — `scripts/eval-premise.mts` (`pnpm dna:grade`), three
+  grader families. **A · deterministic** (gate reached, sub-steps, logline shape checks,
+  must_mention/must_avoid). **B · trajectory** — the family nothing in the repo covered: turns, step
+  histogram, reads/turn, cache-read ratio, tokens, providers, errors, latency, straight off `ai_calls` +
+  `book_agent_runs`. **C · judges** — the DEPLOYED `read-logline`/`read-premise`, called through the app's
+  own `buildBriefFitInput`/`buildLoglineFitInput` so the judge sees exactly the UI's payload.
+  `--refs` grades the reference answers (calibration); `--no-judges` gives A+B for free.
+- **First real numbers** (book 1278, the 57-turn full build — grader works on any book, not just premise
+  runs): `reads/turn 3.53 · applied 69 · discarded 5 · 8 errors · 339 ai calls · 6891s model time ·
+  12.5M input tokens`. **Cache-read is 9.5M of 22.0M prefill = 43%.** Now #1's bar is "cache-read ≫
+  input"; 43% is close to the inverse. Flagging as a standalone cost finding — measured, not yet diagnosed.
+- **Files:** new `scripts/eval-premise.mts` · `pnpm dna:grade` · `.gitignore` for `.agent-eval-*.json` ·
+  `scripts/harness/author.ts` hardened · `scripts/eval-premise-tasks.json` patterns rewritten.
+- **Harness bug caught live (worth remembering):** the scripted author's `/resolve/` matched inside
+  **"unresolved"**, so a question about the sister's drowning got answered with the story's ENDING. A
+  confidently WRONG author answer contaminates a run far worse than a fallback — the agent acts on bad
+  information and the result is unattributable to the agent version. All patterns are now word-boundary
+  anchored, and Author records `repeats` (agent re-asking what it was told) and `ambiguous` (overlapping
+  rules) so this class stays visible.
+- **Decision recorded in the fixture:** the author stays **regex-based, not LLM-backed**. An LLM author
+  would never false-match, but it is a SECOND stochastic actor whose variance lands on top of the agent's
+  in an A/B. Deterministic = both arms get byte-identical author behaviour, so differences are
+  attributable to the agent. Revisit only if false matches persist after the anchoring fix.
+- **Open finding (unconfirmed):** run 3 burned 8 conversational turns without staging ANY change — never
+  reached seed or premise. Partly caused by the false-match answers above; run 4 (clean patterns) is the
+  retest. If it still fails to converge, the interview stage talks without committing, which would be a
+  product finding, not a harness one.
+- **PM impact:** none yet — `wip`. Step 5 (`--refs` calibration) not yet run, so no verdict from these
+  graders should be trusted. No A/B (steps 6–7). Feeds Now #1, whose two bars are now measurable.
+
+## 2026-08-02 — Headless premise-rung eval harness: apply driver + scripted author `[wip]`
+- **What:** Steps 1–3 of `doc_1785672823780.md` §7. The agent's build loop can now be driven from Node with
+  **no twin of write logic** — the driver imports the REAL `applyAgentProposal` / `applyNodeOps` /
+  `generateExpansionOps`; only the supabase client is swapped, via a tsconfig `paths` override
+  (`scripts/harness/tsconfig.json`). It authenticates as a REAL user (magic-link mint), so RLS is
+  exercised — this CLOSES the service-role fidelity gap flagged in the earlier entry.
+  Halt is the product's own gate, `stageComplete(nodes).premise`, not a bespoke rule.
+- **Files:** new `scripts/harness/{env,supabaseClientNode,thread,author,tsconfig}` ·
+  new `scripts/agent-build-run.mts` · new `scripts/eval-premise-tasks.json` (3 fixtures + references:
+  rich / deliberately-thin / anti-inflation) · `scripts/agent-build-dryrun.mts` refactored onto the shared
+  helpers · `pnpm dna:run` · root devDeps `tsx`/`@types/node`/`@supabase/supabase-js` ·
+  `.gitignore` for `scripts/.agent-run-*.json`.
+  Two small app edits so the modules load outside Vite: `localFn.ts` + `agentThread.ts` now read
+  `import.meta.env` through the object (Vite still inlines it; it's simply undefined under Node).
+- **Bugs the live runs caught (all invisible to typecheck):** (1) a hand-rolled `select` in the harness
+  dropped `book_id`, so every `saveNode` would have written a null-book row — fixed by delegating to the
+  app's own `loadTree`; the very twin-drift this harness exists to prevent, one level down. (2) `String(e)`
+  on a PostgREST rejection prints `[object Object]` and hid (1) — added `errText()`. (3) progress read
+  `SubStep.done`, which does not exist (it's `.status`), so a FINISHED book reported an empty premise.
+- **Finding — the agent interviews in PROSE, not via `ask_author`.** So `auto:true`'s "don't ask" is routed
+  around entirely: the agent asks anyway, `pending` stays null, the thread idles, and auto mode cannot
+  notice. In a browser a human just replies; headless it is a silent stall. Consequences: the scripted
+  author now answers prose too (bounded by `--max-chat`), and the driver **defaults to author-present**
+  because auto mode means "author AWAY" — evaluating an interview with nobody to interview would score
+  every variant identically. `--auto` still available to test the away path deliberately.
+- **PM impact:** none yet — `wip`. Graders (step 4) and `--refs` calibration (step 5) not built; no eval
+  numbers exist. Feeds Now #1. The auto-mode prose-question hole is a **product** finding worth raising at
+  the next `/pm` separately from the harness.
+
+## 2026-08-02 — Design: empty nodes replace nil ghosts (multi-entry tree) `[chore]`
+- **What:** Spec for the owner's redesign — materialize placeholder `book_nodes` rows (`content: {}`)
+  instead of deriving read-only ghost rows, so any rung can be filled at any time and a story can start
+  from any door (character / world / situation / voice / theme / plot). Design content, four findings.
+  (1) The blocker is one rule in `dnaSkeleton.ts` — *"a rung ghosts ONLY while it is entirely empty"* — which
+  is all-or-nothing per rung and assumes a plot-first, top-down author. (2) The owner's emptiness definition
+  needs two amendments: own content counts (`empty(n) = ownEmpty(n) && children.every(empty)`), and a third
+  state **STUB** (empty node, filled descendant) is required — it *is* the multi-entry signal that a parent
+  is owed, and collapsing it to a boolean deletes the feature. (3) Template text must live on
+  `authoring.scaffold`, never `content`, or a node is filled at birth and the fold reads garbage.
+  (4) **Ascent already exists** — the six doors are `dnaDecompose` (today prose-only) generalized to
+  "rung K → rung K−1"; the engine becomes constraint propagation over a partially-filled tree, not a pipeline.
+  Cost named honestly: dense absence **fails open**, so 7 read paths (render, expand prompts, lints,
+  obligation ledger, health, versions, staleness) must filter — paid once via a `liveNodes()` chokepoint,
+  same discipline as `stopRun.ts` / `validateOps`. Two rules fall out: materialize only as deep as the
+  template knows the shape (**stop at BEAT**), and the materializer is **one-shot, not a reconciler**.
+- **Files/commits:** `doc_1785673597000.md`, `learning_1785673597000_empty-nodes-redesign.md`. No code changed.
+- **PM impact:** none — **spec awaiting owner go-ahead.** Phasing in §7: P0 `fill` fold + P1 `liveNodes`
+  routing are both zero-behavior-change and must land before P2 materialization. Open question blocking P2
+  (§9): is deleting an empty slot an authorial statement that should suppress `slot_unmapped` (needs a
+  tombstone, awkward to retrofit)? Touches M1's build surface, not Now #1 directly.
+
+## 2026-08-02 — Design: A/B-ing the agent at the premise rung `[chore]`
+- **What:** Spec for comparing two agent versions on a short feedback loop (owner's call: stop at premise,
+  no prose). Three findings drive it. (1) **The ladder already exists as code** — `stageSubsteps("premise")`
+  is exactly vision → logline → premise, and `stageComplete(nodes).premise` is the halt predicate (better
+  than the prose-layer halt shipped earlier today, since it's the product's own gate). (2) **Fixtures need a
+  scripted author** — the premise rung opens with an interview, and auto mode's `AUTO_ANSWER` stub would
+  measure the agent *inventing* an author rather than *interviewing* one. (3) **Variance is the trap** —
+  one run per version is two samples of noise; budget N trials × M fixtures.
+  Mechanics: add `context_variant` to `book_agent_runs` and branch in the deployed fn so both variants ship
+  in ONE deploy and trials can be **interleaved** — sequential deploy-A-then-B is time-confounded by
+  provider drift. Local prompt mirrors rejected (the standing eval-bridge drift decision).
+  Measurement = 4 families: deterministic gate/schema/regex · **trajectory** (turns-to-gate, tool histogram,
+  read round-trips, cost — the family with no coverage today) · absolute rubric (`read-logline`,
+  `read-premise`, `audit_vision`, all already deployed) · **pairwise preference** (new; discriminates far
+  better than 1–5 scores on creative output — position MUST be randomized).
+  `scripts/eval-logline.mjs` is the template to copy: it already has code graders + deployed judge + trials
+  + `--refs` calibration + real-JWT auth, and lacks only the multi-turn loop.
+- **Files/commits:** `doc_1785672823780.md`. No code changed.
+- **PM impact:** none — **spec awaiting owner go-ahead.** Build order in §7; steps 1–5 (apply half of the
+  driver, scripted author, fixtures, metrics collector, `--refs` calibration) are the regression harness and
+  are worth building even if no A/B is ever run — only 6–7 are A/B-specific. Feeds Now #1.
+
+## 2026-08-02 — Auto-accept decision extracted; headless dry-run driver `[ship]`
+- **What:** Groundwork for item #3 (trajectory-eval harness). The autonomous build loop is **split-brain** —
+  the edge fn proposes one change and idles, a watcher applies it and resumes — and that watcher was
+  React-only, so an automated build needed a browser tab. Rather than port `applyAgentProposal` to Node (a
+  *third* twin of write logic), extracted only the ~40-line decision: `nextAutoAction()` in a new pure
+  `lib/autoAccept.ts`, every import `import type` so esbuild/tsx erases them and Node loads it with no alias
+  resolution and no build step. `useAutoAccept` now owns only the acting half; behaviour unchanged.
+  New `AutoAction` is a discriminated union, and `halt` is deliberately distinct from `none` so a harness
+  that stops at the prose ceiling reports *why* instead of reading as "build complete."
+  Driver is **read-only by construction** (GET verbs only) — decides and prints, never applies.
+  Prose is out of scope per owner: `haltLayers: ["prose-render"]` stops at the structural ceiling
+  (acts → beats → scenes → sketch); sketch rides the `expansion` layer so it survives the halt.
+- **Files/commits:** new `apps/web/src/features/dna/lib/autoAccept.ts` + `autoAccept.test.ts` (11 tests),
+  `hooks/useAutoAccept.ts` (rewired), new `scripts/agent-build-dryrun.mts`, `package.json`
+  (`pnpm dna:dryrun <bookId> [--queue] [--watch]`, tsx promoted to root devDep). Uncommitted.
+- **Verified:** `tsc -p tsconfig.app.json` clean; 963 DNA tests pass; driver run against 3 live books —
+  book 1278 (`status=running`, auto armed, 4 acts/29 beats/30 scenes/30 sketched/0 prose) correctly
+  declines because the edge fn owns the row, matching the browser watcher.
+- **PM impact:** none yet — advances Now #1 but does not close it (this is the *observer* half; the apply
+  pathway is unbuilt). Ranked list it belongs to is still **awaiting ratification** — see the 2026-08-02
+  benchmark entry. Known fidelity gap to state at ratification: headless uses the service role (**bypasses
+  RLS**) and polls instead of Realtime, so it tests the agent's trajectory, not the client integration.
+
+## 2026-08-02 — Wired verify-layer reads into the DNA agent's tool belt `[ship]`
+- **What:** Executed item #1 of the prior benchmark's ranked fix list — the sensing asymmetry. Added
+  `read_shape`/`read_facts`/`read_confusion` as three new read-only tools in the book-agent, ported
+  inline from the standalone `read-shape`/`read-facts`/`read-confusion` edge functions (reusing shared
+  `_shared/novel-dna.ts` helpers: `buildShapeReadInput`, `ledgerBefore`, `entityRegistryBlock`,
+  `chapters`). No write-back to `book_nodes` — same read-only invariant as `check_against_contract`/
+  `audit_vision`. `read_confusion`'s "reader recap" uses a raw-prose-tail fallback (no server-side
+  digest access) instead of the client's digest-based recap.
+- **Files/commits:** `supabase/functions/book-agent/tools.ts` (+3 tool schemas),
+  `supabase/functions/book-agent/exec-tools.ts` (+3 handlers), `doc_1785669400000.md` (writeup).
+  `deno check` clean; deployed via `supabase functions deploy book-agent`. Not yet exercised against a
+  live agent thread.
+- **PM impact:** none — this is inside the ranked proposal from the prior entry, not a new Now item;
+  items #2–5 (phase-scope tools, scripted trajectory eval, subagent reads, cross-run learning) remain open.
+
+## 2026-08-02 — DNA agent benchmarked against 2026 agent-building standards `[chore]`
+- **What:** Researched current agent-building practice (Anthropic context-engineering, harness-engineering
+  catalogue, agent-eval literature) and scored the DNA agent against 12 dimensions. Verdict: **substrate
+  ahead of standard, feedback loop behind it.** Ahead — DNA tree as external state (the note IS the
+  product), `propose_*` staging as capability removal not permission checking, `transcript.ts` context
+  hygiene (compaction + cache breakpoints + state-recency pinning + loop detection), 14 tools, durable
+  self-chaining loop. Behind — (a) no trajectory evals, (b) the **sensing asymmetry**: `read-confusion`
+  /`read-facts`/`read-shape`/`read-meters`/structure-miner are all built but UI-only, so the app can
+  compute more about book quality than the agent can perceive; (c) no cross-run learning; (d) tool space
+  never narrowed by journey rung.
+- **Files/commits:** `doc_1785668685869.md` (benchmark + scorecard + ranked fix list),
+  `learning_1785668685869_agent_standards_benchmark.md`. No code changed.
+- **PM impact:** none yet — **ranked proposal awaiting author ratification** (AI proposes, author owns).
+  Proposed order: 1) wire the reads into the agent tool belt, 2) phase-scope tools by journey rung,
+  3) make PM Now #1 a scripted trajectory-eval harness rather than a hand-run ritual, 4) subagent the
+  expensive reads, 5) cross-run learning (**blocked on 3**). Surface at next `/pm`; items 1–2 are cheap
+  and independent, and 3 is a re-framing of the existing Now #1 rather than a new project.
+
 ## 2026-08-02 — Agent rail moves out of the reading column `[ship]`
 - **What:** Owner screenshot: the docked rail was squeezing the page — digest title wrapped onto two lines,
   "Run now" overlapped, Settings pushed onto a second tab row. Cause was structural, not cosmetic: the rail

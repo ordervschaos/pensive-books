@@ -106,6 +106,21 @@ const THREAD_DNA_TOOLS = [
     input_schema: { type: "object", properties: { id: { type: "string", description: "The scene node's id." }, check: { type: "string", enum: ["plan", "mandate", "both"], description: "Which contract to check: 'plan' (the scene's own DNA plan), 'mandate' (the brief), or 'both' (default)." } }, required: ["id"] },
   },
   {
+    name: "read_shape",
+    description: "Judge whether the book's ACTS deliver the movements the premise promised — a paid structural read over the plan (premise.shape.movements vs each act's goal/turning-point/beats), no prose. Returns a per-movement fit score (0=absent…5=fully delivered) with which act(s) carry it and the weakest link. Whole-book, no input needed. Run it after the beat sheet lands, or when the author asks whether the shape/structure is working. It's a read: batch it with other reads.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "read_facts",
+    description: "Check ONE scene's prose against the continuity canon established by every scene before it — extracts the durable facts this scene's prose asserts (key→value) and flags anything it CONTRADICTS (was → now). Pass the scene's node id; it must already have prose. Use this before/after editing a scene you suspect breaks continuity, or when the author asks 'does this still track?'. It's a read: batch it with other reads.",
+    input_schema: { type: "object", properties: { id: { type: "string", description: "The scene node's id." } }, required: ["id"] },
+  },
+  {
+    name: "read_confusion",
+    description: "Cold-read the book's prose so far as a first-time reader would — flags moments a reader who knows only what's been shown couldn't follow (who/where/when/why/an unexplained reference). Whole-book (chapters with prose so far, budget-limited — a very long book returns a partial read; run again to continue). Run it after a run of scenes has prose, or when the author asks if the opening/a stretch reads clearly. It's a read: batch it with other reads.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
     name: "read_node",
     description: "Read one DNA node's FULL content by id — its complete fields (a beat's whole summary, a character's wound/lie/idiolect, a scene's prose content.prose.text), the schema for its kind, and a one-line summary of its children. The tree you're given is a DIGEST (handle/gist + causal spine); use this to pull a node's full detail before judging or rewriting it.",
     input_schema: { type: "object", properties: { id: { type: "string", description: "The node's id from the tree." } }, required: ["id"] },

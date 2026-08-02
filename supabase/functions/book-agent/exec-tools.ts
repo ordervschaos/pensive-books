@@ -5,9 +5,10 @@ import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { type Brief, type BriefVision, VISION_SECTIONS } from "../_shared/brief.ts";
 import { getRoleModels } from "../_shared/model-config.ts";
 import { AGENT_SKILLS } from "../_shared/agent-skills.ts";
-import { type SceneContent } from "../_shared/novel-dna.ts";
+import { type DnaNode, type SceneContent, buildShapeReadInput, chapters, entityRegistryBlock, ledgerBefore } from "../_shared/novel-dna.ts";
 import { judgeProse } from "../_shared/mandate-gate.ts";
 import { callLLM, textFromLLM } from "../_shared/llm.ts";
+import { extractJsonBlock } from "../_shared/json.ts";
 import { renderResearch, researchCraft } from "../_shared/research.ts";
 import { VISION_RUBRIC } from "../_shared/vision-craft.ts";
 import { nodeHandle, schemaFor, SCHEMA_BY_KIND, type AgentStep } from "./shared.ts";
@@ -216,6 +217,172 @@ async function execTool(
       };
     } catch (e) {
       return { result: { type: "tool_result", tool_use_id: t.id, content: `Contract check failed: ${String((e as Error)?.message ?? e)}`, is_error: true } };
+    }
+  }
+  // The verify-layer reads (doc_1785668685869.md #1 — "wire the reads into the tool belt"): the same
+  // judges that already run from MetersPane/LedgerPane, ported in-agent so the agent can read its own
+  // work instead of only acting on it. Read-only, same shape as check_against_contract/audit_vision —
+  // no write-back to book_nodes (the UI panels own writing observed_* fields).
+  if (t.name === "read_shape") {
+    const { data: rows } = await service.from("book_nodes").select("id, parent_id, kind, position, content").eq("book_id", bookId);
+    const nodes = (rows ?? []) as DnaNode[];
+    const input = buildShapeReadInput(nodes);
+    if (!input) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: "Not enough structure yet to read shape — need a premise with movements and at least one act with beats.", is_error: true } };
+    }
+    const movementMenu = input.movements.map((m, i) => `${i}. ${m}`).join("\n");
+    const actMenu = input.acts.map((a) => {
+      const beats = a.beats.map((b) => `    · [beat=${b.beatId}] ${b.summary ?? ""}`).join("\n");
+      return `[act=${a.actId}]${a.title ? ` "${a.title}"` : ""}` +
+        `${a.goal ? `\n    goal: ${a.goal}` : ""}${a.turningPoint ? `\n    turning point: ${a.turningPoint}` : ""}` +
+        `${beats ? `\n${beats}` : ""}`;
+    }).join("\n\n");
+    const { agent: model } = await getRoleModels();
+    const meta = { fn: "book-agent-read-shape", bookId, operation: "read-shape", taskTable: "book_agent_runs", taskId: null, userId: null };
+    try {
+      const resp = await callLLM({
+        model, max_tokens: 1500, output_config: { effort: "medium" },
+        system: [{
+          type: "text",
+          text: "You are a structural editor. The premise promises the story moves through these MOVEMENTS, in order. The acts below are the story's actual plan at the next zoom. For each movement, judge which act(s) carry it (actIds, in reading order, possibly empty when no act carries it) and how faithfully their content delivers that movement (fit 0=absent … 5=fully delivered). Judge the PLAN TEXT on the page, not what a good version would say. `worst` = the single act or beat most responsible for a low score. Be calibrated: do not flatter the outline.",
+          cache_control: { type: "ephemeral" },
+        }],
+        messages: [{
+          role: "user",
+          content: `MOVEMENTS (the promise, in order — reference each by its number):\n${movementMenu}\n\n${input.endingFeel ? `ENDING FEEL (context only): ${input.endingFeel}\n\n` : ""}ACTS (the plan; each act's goal, turning point, and beat summaries):\n${actMenu}\n\nOutput ONLY this JSON (no prose, no fences):\n{ "fits": [ { "movement": <a movement number above>, "actIds": ["<act= id>", ...], "fit": <0..5>, "worst": "<an act= or beat= id>", "note": "<one line, ≤200 chars>" } ] }`,
+        }],
+      }, meta, { signal: AbortSignal.timeout(120_000) });
+      const parsed = JSON.parse(extractJsonBlock(textFromLLM(resp).trim())) as { fits?: { movement: number; actIds: string[]; fit: number; worst?: string; note?: string }[] };
+      const fits = Array.isArray(parsed.fits) ? parsed.fits : [];
+      const lines = fits.map((f) =>
+        `movement ${f.movement} “${input.movements[f.movement] ?? "?"}”: fit ${f.fit}/5${f.actIds?.length ? ` (carried by ${f.actIds.join(", ")})` : " (no act carries it)"}${f.worst ? ` — weakest: ${f.worst}` : ""}${f.note ? ` — ${f.note}` : ""}`
+      );
+      return {
+        step: { t: "read", label: "Read the shape fit — do the acts deliver the premise's promised movements?" },
+        result: { type: "tool_result", tool_use_id: t.id, content: lines.join("\n") || "(the judge returned nothing — inspect by hand)" },
+      };
+    } catch (e) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: `Shape read failed: ${String((e as Error)?.message ?? e)}`, is_error: true } };
+    }
+  }
+  if (t.name === "read_facts") {
+    const id = String((t.input as { id?: string })?.id ?? "");
+    const { data: rows } = await service.from("book_nodes").select("id, parent_id, kind, position, content").eq("book_id", bookId);
+    const nodes = (rows ?? []) as DnaNode[];
+    const scene = nodes.find((n) => n.id === id);
+    if (!scene || scene.kind !== "scene") {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: `No scene with id ${id} in this book.`, is_error: true } };
+    }
+    const proseText = ((scene.content as SceneContent).prose?.text ?? "").trim();
+    if (!proseText) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: `Scene ${id} has no prose yet — render or write it before checking continuity.`, is_error: true } };
+    }
+    const canon = ledgerBefore(nodes, id).map((f) => `- ${f.key}: ${f.value}`).join("\n") || "(nothing established yet — this is the opening)";
+    const registry = entityRegistryBlock(nodes);
+    const registryIds = new Set(registry.match(/n_[a-z0-9]+/gi) ?? []);
+    const registryBlock = registry
+      ? `ENTITY REGISTRY — the canonical cast/places/rules, with ids. When a fact is ABOUT one of these, set "entity" to its id and reuse a consistent key. Resolve names, titles, epithets, and pronouns to registry entries; do NOT mint a parallel entry for a new way of referring to a known entity:\n${registry}\n\n`
+      : "";
+    const { agent: model } = await getRoleModels();
+    const meta = { fn: "book-agent-read-facts", bookId, nodeId: id, operation: "read-facts", taskTable: "book_agent_runs", taskId: null, userId: null };
+    try {
+      const resp = await callLLM({
+        model, max_tokens: 1500, output_config: { effort: "medium" },
+        system: [{
+          type: "text",
+          text: "You maintain a story's continuity ledger. Given the CANON established so far (key→value facts) and the NEW scene's prose, do two things: (1) EXTRACT the durable, trackable facts this scene asserts or changes — concise snake_case key + a short value (identities, roles, relationships, possessions, locations, physical/world facts). Reuse an existing canon key when the scene UPDATES it (that supersedes the old value); omit facts already in the canon and unchanged. Skip transient mood. (2) FLAG contradictions: any fact in the prose that conflicts with a canon value (was → now). A deliberate, narrated change is NOT a contradiction — only an unintended conflict is.",
+          cache_control: { type: "ephemeral" },
+        }],
+        messages: [{
+          role: "user",
+          content: `${registryBlock}CANON (story so far):\n${canon}\n\nNEW SCENE — prose:\n${proseText.length > 8000 ? `${proseText.slice(0, 6000)}\n[…]\n${proseText.slice(-2000)}` : proseText}\n\nOutput ONLY this JSON (no prose, no fences):\n{ "facts": [ { "key": "<snake_case>", "value": "<short>", "note": "<optional>", "entity": "<a registry id when the fact is about one, else omit>" } ], "contradictions": [ { "key": "<canon key>", "was": "<canon value>", "now": "<what the prose says>", "note": "<optional>" } ] }`,
+        }],
+      }, meta, { signal: AbortSignal.timeout(90_000) });
+      const parsed = JSON.parse(extractJsonBlock(textFromLLM(resp).trim())) as {
+        facts?: { key: string; value: string; note?: string; entity?: string }[];
+        contradictions?: { key: string; was: string; now: string; note?: string }[];
+      };
+      const facts = (Array.isArray(parsed.facts) ? parsed.facts : []).filter((f) => f?.key && f?.value);
+      const contradictions = (Array.isArray(parsed.contradictions) ? parsed.contradictions : []).filter((c) => c?.key && c?.was && c?.now);
+      const factLines = facts.map((f) => `+ ${f.key}: ${f.value}${f.entity && registryIds.has(f.entity) ? ` (${f.entity})` : ""}`);
+      const flagLines = contradictions.map((c) => `⚠ ${c.key}: was "${c.was}", now "${c.now}"${c.note ? ` — ${c.note}` : ""}`);
+      return {
+        step: { t: "read", label: `Checked continuity for “${nodeHandle(scene.content as Record<string, unknown>)}”.` },
+        result: {
+          type: "tool_result", tool_use_id: t.id,
+          content: [
+            contradictions.length ? `CONTRADICTIONS:\n${flagLines.join("\n")}` : "No contradictions found.",
+            facts.length ? `NEW/UPDATED FACTS:\n${factLines.join("\n")}` : "No new facts asserted.",
+          ].join("\n\n"),
+        },
+      };
+    } catch (e) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: `Continuity check failed: ${String((e as Error)?.message ?? e)}`, is_error: true } };
+    }
+  }
+  if (t.name === "read_confusion") {
+    const { data: rows } = await service.from("book_nodes").select("id, parent_id, kind, position, content").eq("book_id", bookId);
+    const nodes = (rows ?? []) as DnaNode[];
+    const byNodeId = new Map(nodes.map((n) => [n.id, n]));
+    const hasProse = (id: string) => !!((byNodeId.get(id)?.content as SceneContent | undefined)?.prose?.text ?? "").trim();
+    const eligible = chapters(nodes).filter((ch) => ch.sceneIds.some(hasProse));
+    const MAX_PROSE_CHARS = 6000, MAX_PRIOR_CHARS = 3000, MAX_TOTAL_CHARS = 80_000, MAX_FLAGS_PER_SCENE = 5;
+    const blocks: string[] = [];
+    const sceneIds = new Set<string>();
+    let total = 0, priorTail = "", chaptersRead = 0;
+    // No client-built digest recap is available server-side, so the "what you know so far" prior context
+    // is the tail of the raw prose already read — the same fallback confusionRead.ts uses when a scene has
+    // no prose_digest yet.
+    for (const ch of eligible) {
+      const scenes = ch.sceneIds.map((id) => byNodeId.get(id)).filter((n): n is DnaNode => !!n && hasProse(n.id));
+      const block =
+        `=== CHAPTER ${ch.index + 1} ===\n` +
+        `WHAT YOU KNOW SO FAR: ${priorTail.trim() || "(nothing — the book opens here)"}\n\n` +
+        scenes.map((s) => `[scene=${s.id}]\n${((s.content as SceneContent).prose!.text as string).slice(0, MAX_PROSE_CHARS)}`).join("\n\n");
+      if (blocks.length && total + block.length > MAX_TOTAL_CHARS) break;
+      blocks.push(block); total += block.length; chaptersRead++;
+      for (const s of scenes) sceneIds.add(s.id);
+      priorTail = (priorTail + " " + scenes.map((s) => (s.content as SceneContent).prose!.text as string).join(" ")).slice(-MAX_PRIOR_CHARS);
+    }
+    const truncated = chaptersRead < eligible.length;
+    if (!sceneIds.size) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: "No scenes with prose yet — nothing to cold-read.", is_error: true } };
+    }
+    const { agent: model } = await getRoleModels();
+    const meta = { fn: "book-agent-read-confusion", bookId, operation: "read-confusion", taskTable: "book_agent_runs", taskId: null, userId: null };
+    try {
+      const resp = await callLLM({
+        model, max_tokens: 2500, output_config: { effort: "medium" },
+        system: [{
+          type: "text",
+          text: "You are a first-time reader with NO access to the author's notes, outline, or character sheets. You know ONLY the PRIOR CONTEXT recap and what you read here, in order. For each scene, flag only GENUINE confusion — a moment where a reader who knows only this much loses the thread: who someone is (who), where the scene takes place (where), when it happens or how much time has passed (when), why a character acts or why events follow (why), or a callback to something never shown (reference). Each note is ONE concrete line quoting the confusing bit. Deliberate mystery the text clearly frames as a question to be answered later is NOT confusion. Skip scenes that read fine — most should.",
+          cache_control: { type: "ephemeral" },
+        }],
+        messages: [{
+          role: "user",
+          content: `THE BOOK SO FAR, chapter by chapter (each with what you, the reader, know going in):\n\n${blocks.join("\n\n")}\n\nOutput ONLY this JSON (no prose, no fences):\n{ "flags": [ { "sceneId": "<a scene= id above>", "kind": "who|where|when|why|reference", "note": "<one line quoting the confusing bit>" } ] }`,
+        }],
+      }, meta, { signal: AbortSignal.timeout(120_000) });
+      const parsed = JSON.parse(extractJsonBlock(textFromLLM(resp).trim())) as { flags?: { sceneId: string; kind: string; note: string }[] };
+      const perScene = new Map<string, number>();
+      const flags = (Array.isArray(parsed.flags) ? parsed.flags : [])
+        .filter((f) => f?.sceneId && sceneIds.has(f.sceneId) && f?.note)
+        .filter((f) => {
+          const n = (perScene.get(f.sceneId) ?? 0) + 1;
+          perScene.set(f.sceneId, n);
+          return n <= MAX_FLAGS_PER_SCENE;
+        });
+      const lines = flags.map((f) => `[${f.sceneId}] ${f.kind}: ${f.note}`);
+      return {
+        step: { t: "read", label: `Cold-read ${chaptersRead} chapter${chaptersRead === 1 ? "" : "s"} for reader confusion.` },
+        result: {
+          type: "tool_result", tool_use_id: t.id,
+          content: (lines.length ? lines.join("\n") : "No confusion found — the read chapters follow clearly.") +
+            (truncated ? `\n\n(read ${chaptersRead} of ${eligible.length} chapters — book too long for one pass, run again to continue)` : ""),
+        },
+      };
+    } catch (e) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: `Cold read failed: ${String((e as Error)?.message ?? e)}`, is_error: true } };
     }
   }
   // The fulfillment leg of the vision contract (docs/vision-to-structure.md D5/D8): an LLM judge that
