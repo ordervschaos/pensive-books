@@ -31,11 +31,21 @@ const AUTHOR = argVal("--author", "llm")!;
 const MAX_CHAT = argVal("--max-chat", "12")!;
 const MAX_STEPS = argVal("--max-steps", "30")!;
 const NO_JUDGES = args.includes("--no-judges");
+// The A/B arm(s). `--variant X` runs one arm; `--variants control,X` runs BOTH and INTERLEAVES them
+// (A,B,A,B per trial) — which is the entire reason the seam is a column rather than two deploys. Running
+// arm A's trials and then arm B's is sequential in time again, so provider drift lands unevenly on the two
+// halves. "control" is the literal spelling for "no variant" (production behaviour).
+const VARIANT = argVal("--variant");
 // A/B arms (book-agent/variants.ts). Comma-separated; an EMPTY entry means production (no variant).
 //   --variants ,no_converge   → two arms: production and the no_converge control
 // Arms are interleaved rather than run back-to-back: running all of A then all of B is time-confounded —
 // provider load and model updates drift between the halves and cannot be separated from the change.
-const ARMS = (argVal("--variants") ?? "").split(",").map((v) => v.trim());
+const ARMS = (argVal("--variants") ?? VARIANT ?? "").split(",")
+  .map((v) => v.trim())
+  // "control" and "" both mean production (no variant). Accepting only "" would make `--variants
+  // control,X` pass "control" through as a real arm name, which then fails the arm-verification check for
+  // the wrong reason — a false alarm is as bad as a missed one.
+  .map((v) => (v.toLowerCase() === "control" || v.toLowerCase() === "prod" ? "" : v));
 
 const suite = JSON.parse(readFileSync(join(here, "eval-premise-tasks.json"), "utf8")) as { tasks: { id: string }[] };
 const TASKS = (argVal("--tasks") ?? "").split(",").filter(Boolean);
@@ -77,6 +87,7 @@ interface Trial {
   turns: number | null; aiCalls: number | null; reads: number | null;
   cacheReadRatio: number | null; errors: number | null; wallClockMs: number | null;
   pushes: number | null; fallbacks: number | null; nudges: number | null;
+  variantRequested?: string | null; variantVerified?: boolean | null;
   failure?: string;
 }
 
@@ -98,12 +109,13 @@ async function runOne(taskId: string, trial: number, variant: string): Promise<T
   const withRun: Trial = {
     ...base, bookId: r.bookId, stopReason: r.stopReason, wallClockMs: r.wallClockMs, turns: r.turns,
     pushes: r.author?.pushes ?? null, fallbacks: r.author?.fallbackUses ?? null, nudges: r.author?.nudges ?? null,
+    variantRequested: r.variantRequested ?? null, variantVerified: r.variantVerified ?? null,
   };
 
   log(`${taskId} trial ${trial} — book ${r.bookId} · ${r.stopReason} · grading…`);
   const gradeArgs = ["--tsconfig", TSCFG, join(here, "eval-premise.mts"), "--book", String(r.bookId), "--task", taskId];
   if (NO_JUDGES) gradeArgs.push("--no-judges");
-  const grade = await sh(TSX, gradeArgs, `${taskId}#${trial}·grade`);
+  const grade = await sh(TSX, gradeArgs, `${taskId}#${trial}${variant ? `·${variant}` : ""}·grade`);
   const evalPath = join(here, `.agent-eval-${r.bookId}.json`);
   let g: Record<string, never> | null = null;
   try { g = JSON.parse(readFileSync(evalPath, "utf8")); } catch { /* fall through */ }
@@ -204,7 +216,14 @@ const perTask = taskIds.map((taskId) => {
   };
 });
 
-const report = { label: LABEL, author: AUTHOR, trials: TRIALS, taskIds, arms: ARMS, perVariant, elapsedMs: Date.now() - started, perTask, results };
+// Derive the arm check from the RUNS, not from the --variant flag. Gating on VARIANT meant the check
+// switched itself off whenever --variants was used — i.e. precisely when a real A/B was running, which is
+// the only time it matters. A guard that is absent when it counts is worse than no guard.
+const variantRuns = results.filter((r) => !r.failure && r.variantRequested);
+const unverified = variantRuns.filter((r) => r.variantVerified === false);
+const armVerified = variantRuns.length === 0
+  || (unverified.length === 0 && variantRuns.some((r) => r.variantVerified === true));
+const report = { label: LABEL, author: AUTHOR, trials: TRIALS, taskIds, arms: ARMS, armVerified, variant: ARMS.filter(Boolean).join(",") || null, perVariant, elapsedMs: Date.now() - started, perTask, results };
 const out = join(here, `.agent-suite-${LABEL}.json`);
 writeFileSync(out, JSON.stringify(report, null, 2));
 
@@ -231,4 +250,13 @@ if (ARMS.length > 1) {
 console.log(`\nmean ±sd across trials. With ${TRIALS} trials the sd is indicative only — it says how noisy,`);
 console.log(`not whether a difference is real. A gap smaller than the sd is not a result.`);
 for (const r of results.filter((x) => x.failure)) console.log(`  ✗ ${r.taskId} trial ${r.trial}: ${r.failure}`);
+if (variantRuns.length && !armVerified) {
+  console.log(`\n🛑 ARM NOT VERIFIED — the variant was set on the thread row but did NOT reach the model`);
+  console.log(`   (${unverified.length}/${variantRuns.length} variant runs). Check that book-agent is deployed`);
+  console.log(`   AND that shared.ts's ROW_COLS selects context_variant — omitting it makes advance.ts read`);
+  console.log(`   undefined and silently run the control prompt. These results are NOT a valid A/B: both arms`);
+  console.log(`   ran the same prompt, which is indistinguishable from "the change had no effect".`);
+} else if (variantRuns.length) {
+  console.log(`\narm(s) verified present in the model's system prompt (${variantRuns.length} variant run(s)).`);
+}
 console.log(`\nwrote ${out}`);

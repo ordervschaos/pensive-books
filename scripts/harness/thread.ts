@@ -79,6 +79,26 @@ export function premiseProgress(nodes: DnaNode[], brief: unknown) {
   };
 }
 
+/**
+ * Did the variant actually reach the MODEL, or was it only set on the row?
+ *
+ * This exists because it already happened: arms were stamped on `book_agent_runs.context_variant` while the
+ * deployed function predated `variants.ts`, so both arms ran byte-identical prompts and the comparison was
+ * void — silently, because a no-op variant looks exactly like "the change made no difference". A harness
+ * must never report an A/B it cannot prove was actually A/B'd.
+ *
+ * Checks the last book-agent system prompt for the variant's name, which every suffix is required to
+ * contain (locked by `variants.test.ts`). Returns null when there is nothing to check yet.
+ */
+export async function variantReachedModel(bookId: number, variant: string): Promise<boolean | null> {
+  const { data, error } = await supabase
+    .from("ai_calls").select("system").eq("book_id", bookId).eq("fn", "book-agent")
+    .order("id", { ascending: false }).limit(1);
+  if (error || !data?.length) return null;
+  const system = String((data[0] as { system?: string }).system ?? "");
+  return system.includes(variant);
+}
+
 /** Poll until the edge fn hands the row back (or the deadline passes). */
 export async function waitForQuiescent(bookId: number, opts: { timeoutMs?: number; pollMs?: number } = {}) {
   const timeoutMs = opts.timeoutMs ?? 5 * 60_000;

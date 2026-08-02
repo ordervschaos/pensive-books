@@ -25,3 +25,21 @@ Deno.test("a known variant contributes a non-empty suffix", () => {
     assertNotEquals(v.what.trim(), "", `${name} must document what it tests`);
   }
 });
+
+Deno.test("every suffix names its own key, so a run can be PROVEN to be on its arm", () => {
+  // The harness verifies an arm actually reached the model by looking for the variant's name in the
+  // logged system prompt (scripts/harness/thread.ts `variantReachedModel`). That check is only sound if
+  // every suffix contains its own key — otherwise a true arm reads as unverified.
+  //
+  // This is not hypothetical: arms were once stamped on book_agent_runs.context_variant while the DEPLOYED
+  // function still predated variants.ts, so both arms ran identical prompts and the comparison was void.
+  // A silent no-op is indistinguishable from "the change had no effect", which is the most expensive way
+  // for an experiment to be wrong.
+  for (const [name, v] of Object.entries(VARIANTS)) {
+    assertNotEquals(
+      v.suffix.includes(name),
+      false,
+      `${name}'s suffix must contain the literal string "${name}" so a run on this arm is verifiable`,
+    );
+  }
+});

@@ -28,7 +28,7 @@ import { chooseNodeProposal } from "@/features/dna/lib/dnaProposals";
 import { Author, type ScriptedAuthor } from "./harness/author.ts";
 import { LlmAuthor, factsFrom } from "./harness/llmAuthor.ts";
 import { OWNER, rest } from "./harness/env.ts";
-import { describe, errText, ladder, loadBrief, loadNodes, loadThread, premiseProgress, waitForQuiescent } from "./harness/thread.ts";
+import { describe, errText, ladder, loadBrief, loadNodes, loadThread, premiseProgress, variantReachedModel, waitForQuiescent } from "./harness/thread.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -110,17 +110,29 @@ async function main() {
   let row = await loadThread(bookId);
   if (!row) {
     if (DRY) { log("no thread yet — dry run has nothing to observe"); return; }
+    // Pre-create the thread row so it carries the variant BEFORE the first turn runs. sendAgentMessage
+    // would otherwise create the row and chain immediately, and setting the arm afterwards would race —
+    // turn 1 would run on the control prompt while the report claimed the variant. index.ts's
+    // existing-thread branch appends the message without touching context_variant, so this sticks.
+    if (VARIANT) {
+      await rest("book_agent_runs", {
+        method: "POST",
+        body: JSON.stringify({ book_id: bookId, created_by: OWNER, kind: "thread", status: "idle", context_variant: VARIANT, transcript: [], steps: [] }),
+      });
+      log(`pre-created thread on arm '${VARIANT}'`);
+    }
     const opening = task?.opening ?? "Let's build this book. Start at the beginning and work to a finished premise.";
     log(`starting thread — "${opening}" (auto=${AUTO})`);
     await sendAgentMessage(bookId, opening, undefined, undefined, AUTO);
     row = await waitForQuiescent(bookId);
-    // Stamp the arm AFTER the thread exists — advance.ts reads it fresh each turn, so the very first turn
-    // of a brand-new thread runs unstamped. Acceptable for the interview rung (turn 1 is the greeting), but
-    // it is a real caveat for any variant meant to change the opening move.
-    if (VARIANT) {
-      await rest(`book_agent_runs?id=eq.${row!.id}`, { method: "PATCH", body: JSON.stringify({ context_variant: VARIANT }) });
-      log(`variant arm: ${VARIANT}`);
-    }
+  }
+
+  // Stamp the arm on an EXISTING thread (the --book path, or a pre-create that raced). Idempotent: on the
+  // pre-created path this just re-writes the same value. Kept outside the branch above so `--book <id>
+  // --variant X` works too, which it did not when this only ran for brand-new threads.
+  if (VARIANT && row && (row as { context_variant?: string | null }).context_variant !== VARIANT) {
+    await rest(`book_agent_runs?id=eq.${row.id}`, { method: "PATCH", body: JSON.stringify({ context_variant: VARIANT }) });
+    log(`stamped existing thread onto arm '${VARIANT}'`);
   }
 
   const claimed = new Set<string>();
@@ -196,7 +208,17 @@ async function main() {
   progress = premiseProgress(nodes, await loadBrief(bookId));
   const finalRow = await loadThread(bookId);
   const result = {
-    bookId, taskId: task?.id ?? null, dry: DRY, auto: AUTO, authorKind: AUTHOR_KIND, variant: VARIANT,
+    bookId, taskId: task?.id ?? null, dry: DRY, auto: AUTO, author: AUTHOR_KIND,
+    // Read BACK from the row rather than echoing the flag: if the arm failed to stick, the report must say
+    // so, not repeat what was requested. A mislabelled arm silently invalidates the whole comparison.
+    author: AUTHOR_KIND,
+    // Read the arm BACK from the row rather than echoing the flag. If it failed to stick, the report must
+    // say so — a mislabelled arm silently invalidates the entire comparison, which is the one error this
+    // whole seam exists to prevent.
+    variantRequested: VARIANT,
+    variantApplied: (finalRow as { context_variant?: string | null } | null)?.context_variant ?? null,
+    // Proof the arm reached the MODEL, not just the row. null = nothing to check.
+    variantVerified: VARIANT ? await variantReachedModel(bookId, VARIANT) : null,
     stopReason, steps: step, chatReplies, wallClockMs: Date.now() - startedAt,
     turns: finalRow?.turns ?? null,
     premise: { complete: progress.complete, substeps: progress.substeps },

@@ -18,6 +18,142 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-02 — Harness: every network entry point now retries the transport `[wip]`
+- **What:** A `UND_ERR_CONNECT_TIMEOUT` in `rest()` (harness/env.ts) killed the `no_converge` arm of the
+  running A/B *before it created its scratch book* — 12 seconds in. Added the same transport retry (3×,
+  backoff) already present elsewhere. Transport only: a non-2xx is still returned to the caller, since HTTP
+  status is the server's considered answer, not a glitch.
+- **The pattern worth naming — this was the THIRD transient-network kill today, on the third code path:**
+  supabase-js client `fetch` (fixed after an `ECONNRESET` killed a 15-min run) · `harnessLlm` (fixed while
+  consolidating the LLM client) · `rest()` (unguarded until now). Each time the failing path was fixed
+  rather than all of them audited, so the next transient error simply found the next unguarded door. The
+  invariant should have been stated once — *every network entry point in the harness retries the
+  transport* — and applied everywhere. It now holds for all three.
+- **Consequence for the in-flight A/B:** `converge-ab` will finish UNBALANCED (prod ×2, no_converge ×1).
+  The loss was purely transport, not a real failure of that arm, so the run will be repeated for a clean
+  2-vs-2 rather than reading a verdict off a 2-vs-1 split.
+- **Files:** `scripts/harness/env.ts`.
+- **PM impact:** none — `wip`, no A/B results yet.
+
+## 2026-08-02 — Empty-nodes P1 done: exec-tools classified; P1 read-path sweep complete `[wip]`
+- **What:** Finished the P1 sweep by classifying every remaining `book_nodes` read against the three-class
+  taxonomy (readers omit / sequences mark / workers collapse). The work here was as much *deciding what NOT
+  to touch* as changing code:
+  • **Class 1, routed through `liveNodes`:** `read_shape` (an unwritten act shouldn't count against a shape
+  it was never given a chance to deliver), `read_facts` (canon ledger + entity registry must not carry blank
+  rows), `read_confusion` (`chapters()` over a dense tree would mint empty chapters), `audit_vision`.
+  • **Class 3, deliberately NOT filtered:** `read_node` — it is how the agent inspects a slot it is about to
+  fill, so a placeholder must still resolve. Only the child-list *label* changed, so a blank child reads as
+  `(empty — nothing written here yet)` rather than a nameless bullet.
+  • **Deliberately untouched, with reasons:** `search_nodes` is naturally safe (substring grep over content —
+  an empty node cannot match), and all of `proposals.ts` is *write/target resolution*, where filtering would
+  actively break the ability to fill a slot by id.
+- **Files/commits:** `book-agent/exec-tools.ts` (4 read passes + the read_node label). Uncommitted.
+  *(Concurrent session owns `scripts/*`, `book-agent/{advance,shared,variants.test}.ts` — not this work.)*
+- **Verified:** full web suite 1337 pass; `tsc -p tsconfig.app.json` clean; `deno check` error counts match
+  the pre-existing baselines exactly (dna-expand 2, book-agent 9 — both stash-verified as `HEAD` parity;
+  the two new `_shared` modules are 0).
+- **P1 status:** the read-path sweep is **complete for the paths that matter** — generation prompts, agent
+  digest, agent tools, verify, and the renderer. Remaining and explicitly deferred: the standalone `read-*`
+  edge fns (same class-1 shape, mechanical) and the client-side lint/ledger surfaces, which are no-ops until
+  P2 makes a tree dense.
+- **PM impact:** none. Still `wip`, no Now-slot movement. **Nothing deployed** — deliberately: the routing is
+  a no-op in production until the P2 materializer exists, and the design is still awaiting owner
+  ratification. Next decision point is P2 (materializer + `authoring.scaffold`), which is the first
+  user-visible change and the first one worth deploying.
+
+## 2026-08-02 — A/B seam was dead in TWO places; fixed, verified, first real A/B running `[ship]`
+- **What:** Deployed `book-agent` (v89→v91) as asked and reran the A/B. The deploy alone did **not** fix it —
+  there were two independent faults stacked, and the second was the real one.
+- **Fault 1 (known):** deployed v89 (15:37 UTC) predated `variants.ts` (16:51 UTC), so the function had no
+  seam at all. Deploying fixed that — and the probe *still* reported `variantVerified: false`.
+- **Fault 2 (the real one): `ROW_COLS` in `shared.ts` never selected `context_variant`.** So `advance.ts`
+  read `undefined`, `variantSuffix(undefined)` returned `""`, and **every arm silently ran the control
+  prompt regardless of what was deployed.** Fixed by adding the column to `ROW_COLS`, declaring
+  `context_variant` on `RunRow`, and removing `advance.ts`'s defensive cast so a future omission is a TYPE
+  ERROR rather than a silent empty string. Redeployed → probe now `variantVerified: TRUE`.
+- **Why this vindicates the guard built earlier today:** fixing only Fault 1 would have produced a clean,
+  believable "no difference between arms" — and the natural conclusion would have been *the convergence
+  trigger doesn't matter*. It was `variantVerified: false` after a **successful** deploy that sent me
+  looking at `ROW_COLS`. A silently no-op variant is indistinguishable from a null result.
+- **A hole in my own guard, found while wiring the real run:** the check gated on the `--variant` flag,
+  which is undefined when `--variants` is used — so it disabled itself **exactly when a real A/B ran**,
+  the only time it matters. Now derived from the RUNS (`variantRequested`/`variantVerified`), not the flag.
+- **Interleaving:** `dna:suite --variants control,no_converge` alternates arms per trial (A,B,A,B) in ONE
+  invocation. Running arm A's trials then arm B's is sequential-in-time again, which is the confound the
+  column existed to remove. Reconciled with a parallel implementation of the same feature that landed
+  concurrently (kept theirs — better downstream aggregation — and taught it to accept `control`/`prod` as
+  spellings for production, since passing "control" through as a literal arm name tripped the verification
+  guard with a false alarm).
+- **Files:** `supabase/functions/book-agent/shared.ts`, `advance.ts`, `variants.test.ts` (4th test: every
+  suffix must contain its own key, which is what makes the verification sound); `scripts/eval-suite.mts`,
+  `scripts/agent-build-run.mts`, `scripts/harness/thread.ts`, `scripts/eval-pairwise.mts`.
+- **Deploy note:** shipping `book-agent` also shipped the other session's uncommitted `context.ts`
+  empty-subtree collapse + new `_shared/dna-context.ts` + `novel-dna.ts`/`verify.ts`. Flagged before
+  deploying; owner said deploy. Gated on `deno check` first — the only non-`EdgeRuntime` error was a
+  pre-existing `nodeId`/`AgentStep` mismatch on already-deployed committed code.
+- **Running now:** `converge-ab` — thin-brief × 2 trials × 2 arms, interleaved, ~60 min. No results yet.
+- **PM impact:** the seam is now proven live end-to-end; results pending. STATE row for the eval harness
+  already exists under Verify layer.
+
+## 2026-08-02 — A/B seam wired end-to-end; caught arms that never reached the model `[wip]`
+- **⚠️ FINDING FOR THE OTHER SESSION — the `no_converge` A/B so far is VOID.** Books 1354 and 1356 carry
+  `context_variant='no_converge'` on the thread row, but the deployed `book-agent` is **version 89, deployed
+  15:37 UTC**, while `variants.ts` was committed **16:51 UTC**. The deploy predates the seam, so the function
+  never read the column: **both arms ran byte-identical prompts.** Verified directly — the latest
+  `ai_calls.system` for book 1356 does not contain the suffix. Redeploy `book-agent` and re-run.
+  I did **not** deploy: `supabase/functions/book-agent/context.ts` has that session's uncommitted WIP, and
+  deploying would ship it.
+- **Why this was worth building a guard for:** a variant that silently no-ops is *indistinguishable from
+  "the change had no effect"* — the most expensive way for an experiment to be wrong, because it reads as a
+  result. So the harness now **proves** the arm rather than trusting it:
+  `variantReachedModel()` (harness/thread.ts) checks the logged system prompt for the variant name; the
+  driver records `variantVerified`; the suite prints a loud `🛑 ARM NOT VERIFIED` and sets
+  `armVerified:false`; and **`dna:pairwise` refuses to run** against such a suite rather than manufacturing
+  a winner between two identical prompts.
+  Made that check *sound* with a 4th test in `variants.test.ts`: every suffix must contain its own key,
+  otherwise a genuine arm would read as unverified. 4/4 pass.
+- **Driver `--variant`:** pre-creates the thread row carrying the arm so **turn 1 already runs on it**. The
+  prior approach stamped the row after `sendAgentMessage`, which races the chained first turn — its own
+  comment conceded turn 1 would run unstamped. Also moved the idempotent stamp outside the new-thread
+  branch so `--book <id> --variant X` works, which it previously did not. The report reads the arm BACK
+  from the row instead of echoing the flag, since a mislabelled arm invalidates everything.
+- **Suite `--variant` passthrough** + `armVerified` in the report.
+- **Files:** `scripts/agent-build-run.mts`, `scripts/harness/thread.ts`, `scripts/eval-suite.mts`,
+  `scripts/eval-pairwise.mts`, `supabase/functions/book-agent/variants.test.ts`.
+- **PM impact:** none — `wip`. The seam is ready but no valid A/B has run yet; the first one needs a
+  `book-agent` redeploy first. Migration `20260802190000_agent_context_variant.sql` is already live in the DB.
+
+## 2026-08-02 — Empty-nodes P1 cont.: agent digest, verify, renderer; a THIRD consumer class `[wip]`
+- **What:** Continued routing read paths for the dense-tree work. The headline is a **design correction**:
+  the doc assumed two consumer classes (registries omit / sequences mark). Wiring `book-agent` surfaced a
+  **third**, and blanket-`liveNodes` would have broken the agent outright — **placeholders are the agent's
+  work queue**; it fills a slot by targeting that slot's id, so hiding them removes its ability to act.
+  Final taxonomy (folded into `doc_1785673597000.md` §5a):
+  **(1) Readers** — prompts/render/digest/lints/ledger/verify → *omit* via `liveNodes`.
+  **(2) Sequences** — the arc, sibling beats → *keep + mark* (`— NOT YET WRITTEN`).
+  **(3) Workers** — the agent digest, the tree editor → *keep + collapse*.
+  Class 3 shipped as `treeDigestLines()`: `state === "empty"` already means the whole subtree is empty, so
+  keep the topmost empty node, drop its descendants, fold consecutive empty siblings into one line with all
+  ids intact (`[b2, b3, b4] L2 beat 2–4 ×3: EMPTY — …`). **Numbering trap caught + tested:** beat/scene
+  numbers stay computed over the FULL list — "beat 7" must mean the same node to agent, tree UI and render,
+  and numbering off the collapsed list would silently renumber the book.
+  Also routed: `verify.ts` (a placeholder scene is not a later payoff site) and **`novelDnaRender`** — the
+  sharpest consequence of absence-as-value, since a placeholder beat would reconcile into a *blank page in
+  the reader*.
+- **Files/commits:** `supabase/functions/_shared/dna-context.ts` (+`treeDigestLines`),
+  `book-agent/context.ts` (collapse + `byIdRow` hoisted out of a TDZ bug), `book-agent/verify.ts`,
+  `apps/web/src/features/dna/lib/novelDnaRender.ts`, `dnaContext.golden.test.ts` (+5 tests, 12 total).
+  Uncommitted. *(Concurrent session also has `scripts/agent-build-run.mts`, `scripts/harness/thread.ts`,
+  `book-agent/variants.test.ts` dirty — not part of this work.)*
+- **Verified:** full web suite 1337 pass; `tsc -p tsconfig.app.json` clean; `deno check` on book-agent shows
+  the same 9 pre-existing errors as `HEAD` (8 × `EdgeRuntime` ambient + 1 `AgentStep.nodeId` in advance.ts) —
+  confirmed by stash-compare, none in touched files.
+- **Not done / next:** still unrouted — `book-agent/exec-tools.ts` (~8 raw selects; mostly class 3, needs the
+  same collapse treatment rather than filtering), `proposals.ts` counts, the standalone read fns
+  (`read-*`), lints and the obligation ledger. **No edge fn deployed** — local only.
+- **PM impact:** none. Still `wip`, no Now-slot movement, design still awaiting owner ratification.
+
 ## 2026-08-02 — The journey playbook was never reaching the agent in conversation `[ship]`
 - **The finding.** `context.ts` gated the guided-flow objective on
   `injectObjective = auto || followObjective || !authorAsk.trim()`. In author-present mode all three are

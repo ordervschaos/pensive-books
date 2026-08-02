@@ -39,15 +39,35 @@ if (!PROJECT_ID || !ANON_KEY || !SERVICE_KEY) {
 
 const svc = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` };
 
-/** Service-role REST, for harness bookkeeping only (creating scratch books, reading ai_calls). */
+/**
+ * Service-role REST, for harness bookkeeping only (creating scratch books, reading ai_calls).
+ *
+ * Retries CONNECTION failures — the third place this was needed. A `UND_ERR_CONNECT_TIMEOUT` here killed an
+ * A/B arm before it created its scratch book, unbalancing the comparison; the supabase-js client and the
+ * LLM client already retried, this one did not. Every network entry point in the harness needs it, because
+ * a run costs ~15 minutes and a lost arm costs the whole comparison.
+ *
+ * Transport only — a non-2xx is returned to the caller as before, since HTTP status is semantic.
+ */
 export async function rest<T = unknown>(path: string, opts: RequestInit = {}): Promise<T> {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...opts,
-    headers: { ...svc, "content-type": "application/json", Prefer: "return=representation", ...(opts.headers ?? {}) },
-  });
-  if (!r.ok) throw new Error(`REST ${path}: ${r.status} ${await r.text()}`);
-  const text = await r.text();
-  return (text ? JSON.parse(text) : null) as T;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+        ...opts,
+        headers: { ...svc, "content-type": "application/json", Prefer: "return=representation", ...(opts.headers ?? {}) },
+      });
+      if (!r.ok) throw new Error(`REST ${path}: ${r.status} ${await r.text()}`);
+      const text = await r.text();
+      return (text ? JSON.parse(text) : null) as T;
+    } catch (e) {
+      // Only a transport failure is worth retrying; an HTTP error is the server's considered answer.
+      if (e instanceof Error && e.message.startsWith(`REST ${path}:`)) throw e;
+      lastErr = e;
+      if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
+    }
+  }
+  throw lastErr;
 }
 
 // Mint a REAL user session (admin generate_link → verify) rather than using the service role, so the

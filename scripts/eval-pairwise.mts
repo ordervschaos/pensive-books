@@ -85,6 +85,18 @@ async function judgeOnce(first: string, second: string, brief: string): Promise<
 }
 
 const suiteA = loadSuite(A), suiteB = loadSuite(B);
+
+// Refuse to declare a winner between arms that were never actually different. A suite records
+// `armVerified: false` when its variant was set on the thread row but never reached the model — in that
+// case both sides ran the same prompt and any verdict here is manufactured.
+for (const s of [suiteA, suiteB] as (Suite & { armVerified?: boolean; variant?: string | null })[]) {
+  if (s.variant && s.armVerified === false) {
+    throw new Error(
+      `suite "${s.label}" ran on arm '${s.variant}' but the arm never reached the model — redeploy book-agent and re-run. ` +
+      `Comparing it would report a difference between two identical prompts.`,
+    );
+  }
+}
 const tasks = [...new Set(suiteA.results.map((r) => r.taskId))].filter((t) => !ONLY.length || ONLY.includes(t));
 
 const briefs = JSON.parse(readFileSync(join(here, "eval-premise-tasks.json"), "utf8")) as {

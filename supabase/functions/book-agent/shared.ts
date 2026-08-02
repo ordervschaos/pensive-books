@@ -55,11 +55,15 @@ interface RunRow {
   context_effort: "low" | "high" | null; // null = high (default)
   context_auto: boolean | null; // auto-accept mode: run autonomously, never park on ask_author
   context_follow_objective: boolean | null; // true only when this arc was started by the explicit "Next" nudge — gates the objective-driven skill fallback
+  context_variant: string | null; // eval A/B arm (variants.ts); NULL = production behaviour, unchanged
   turns: number;
   cancel_requested: boolean;
   title: string | null; // short label generated from the chat's first message (history rail); null = not yet named
 }
-const ROW_COLS = "id, book_id, created_by, kind, status, transcript, steps, pending, proposals, context_analysis, context_objective, context_attached_ids, context_effort, context_auto, context_follow_objective, turns, cancel_requested, title";
+// NB context_variant is load-bearing for the A/B seam: advance.ts reads it off THIS row to pick the arm.
+// Omitting it here made variantSuffix() receive undefined, so every arm silently ran the control prompt —
+// invisible, because a no-op variant looks exactly like "the change had no effect".
+const ROW_COLS = "id, book_id, created_by, kind, status, transcript, steps, pending, proposals, context_analysis, context_objective, context_attached_ids, context_effort, context_auto, context_follow_objective, context_variant, turns, cancel_requested, title";
 
 const ALL_NODE_KINDS = ["seed", "premise", "pillar", "act", "beat", "scene", "character", "relationship", "tentpole", "world_fact", "location", "thread", "game", "meter", "voice_profile"];
 
