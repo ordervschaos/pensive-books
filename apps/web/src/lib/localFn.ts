@@ -7,7 +7,11 @@ import { supabase, SUPABASE_PROJECT_ID } from "@/integrations/supabase/client";
 // reads/writes the SAME hosted data (_shared/task.ts's hostedEnv override) — only the LLM host moves.
 // Undefined by default (VITE_LOCAL_FUNCTIONS_URL unset) → every call goes to the deployed function,
 // unchanged from prod behavior.
-const LOCAL_FUNCTIONS_URL = import.meta.env.VITE_LOCAL_FUNCTIONS_URL as string | undefined;
+// Read through the whole `import.meta.env` object rather than the usual `import.meta.env.VITE_X`: Vite
+// still inlines it, and it stays defined under plain Node (where `import.meta.env` doesn't exist), so the
+// headless agent harness can import this module without a shim of its own.
+const LOCAL_FUNCTIONS_URL = (import.meta as { env?: Record<string, string | undefined> }).env
+  ?.VITE_LOCAL_FUNCTIONS_URL;
 
 // The base URL a function named `name` is reachable at — the local override when configured, else the
 // deployed project's gateway. For callers that need the raw Response (e.g. a streamed body), which

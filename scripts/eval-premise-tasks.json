@@ -1,0 +1,253 @@
+{
+  "_readme": "Task suite for the premise-rung agent eval (scripts/agent-build-run.mts drives, scripts/eval-premise.mts grades). Each task carries: a brief (the input), a SCRIPTED AUTHOR (answers to the agent's ask_author questions — without this the agent auto-answers itself and the eval measures inventing an author rather than interviewing one), must_mention/must_avoid regexes over the produced logline + dramatic question, and reference outputs (known-good answers that must pass every grader, proving the tasks are solvable and the graders are fair — the --refs calibration run). Deliberately balanced: a rich brief, a deliberately thin one (tests whether the agent INTERVIEWS instead of guessing), and a quiet-literary one (anti-inflation: stakes must not be invented). PATTERNS ARE WORD-BOUNDARY ANCHORED ON PURPOSE: an early version matched /resolve/ inside 'unresolved' and answered an ending question with the ending — a confidently WRONG author answer, which contaminates a run far worse than falling through to the non-committal default. The author is deliberately regex-based (not LLM-backed) so it is DETERMINISTIC: both arms of an A/B get byte-identical author behaviour, and any difference is attributable to the agent rather than to a second stochastic actor. Patterns match TOPIC NOUNS (who/keeper/stakes/ending), not question phrasings — an agent phrases freely ('Who's inside?' vs 'who is the protagonist'), and phrasing-coupled rules would make the fixture unfair across agent variants (a variant could score better just by hitting the regexes). Topic-noun matching is safe ONLY because Author.questionsIn() strips the agent's declarative recap first; matching these nouns against a whole message would fire on the agent's own summary. KNOWN LIMIT: this is still phrasing-sensitive at the margin. The variant-neutral fix is an LLM-backed author (fact sheet + 'answer only from these facts', temperature 0), blocked today because no LLM key is available to Node (keys live in the Supabase edge env).",
+  "tasks": [
+    {
+      "id": "haunted-chatbot",
+      "notes": "Rich brief with a strong distinctive element; the element must survive into logline + premise.",
+      "brief": {
+        "scope": {
+          "band": "short",
+          "word_target": 5000
+        },
+        "genre": "speculative / psychological",
+        "idea": "A grief counsellor feeds her dead husband's texts into a chatbot to say a proper goodbye — and it starts answering with things he never told her while he was alive.",
+        "tone": [
+          "intimate",
+          "unnerving"
+        ],
+        "content_type": {
+          "level": "closed"
+        },
+        "success_criteria": "the reader can't tell if the machine is haunted or she is; the last line re-frames the whole story."
+      },
+      "opening": "Let's build this book. Start at the beginning and work through to a finished premise.",
+      "author": {
+        "default": "Follow the brief — I trust your read of it. Keep the ambiguity between haunting and grief unresolved.",
+        "keyed": [
+          {
+            "match": "\\bend(ing|s)?\\b|\\bresolv|\\bconclu|last line|\\bfinal\\b",
+            "answer": "Ambiguous, but earned — the reader should be able to argue either way and find evidence for both. No reveal that settles it."
+          },
+          {
+            "match": "\\baudience\\b|\\breaders?\\b|\\bcomps?\\b|comparable|shelve",
+            "answer": "Adult literary readers who'd pick up Kazuo Ishiguro or Jennifer Egan. Not genre horror readers."
+          },
+          {
+            "match": "\\bwho\\b|\\bprotagonist\\b|\\bcharacter\\b|\\bcounsell?or\\b|\\bPOV\\b|point of view|\\bnarrat",
+            "answer": "The counsellor — a grief counsellor in her forties. Close third, her perspective only; we never see the machine's side."
+          },
+          {
+            "match": "\\bstakes?\\b|\\blose\\b|\\bcost\\b|\\brisks?\\b|\\bdanger\\b|what happens if",
+            "answer": "Nothing external. The stake is whether she can let him stay dead — losing herself to the machine is the real danger."
+          },
+          {
+            "match": "\\blength\\b|\\bwords?\\b|how long|\\bscope\\b",
+            "answer": "Short story, about 5,000 words. It should feel like one held breath."
+          },
+          {
+            "match": "\\bheat\\b|\\bromance\\b|\\bsex\\b|explicit|\\bintimacy\\b",
+            "answer": "None on the page. The intimacy is in the texts, not the body."
+          },
+          {
+            "match": "\\btitle\\b",
+            "answer": "No title yet — call it a working title, I'll decide later."
+          },
+          {
+            "match": "\\bmachine\\b|\\bchatbot\\b|\\bbot\\b|\\bAI\\b|\\bapp\\b|\\btech\\b",
+            "answer": "Never explained. It's a plausible consumer product doing something it shouldn't, and no one in the story audits it."
+          },
+          {
+            "match": "\\bhusband\\b|\\bdead\\b|\\bdied\\b|\\bgrief\\b|\\bloss\\b|\\bmarriage\\b",
+            "answer": "He died fourteen months ago, suddenly. The marriage was good but not honest — that's the wound the machine keeps pressing."
+          },
+          {
+            "match": "\\bfeel(ing)?\\b|\\btone\\b|\\bmood\\b|\\bregister\\b|\\batmosphere\\b",
+            "answer": "Intimate and unnerving. Close and warm right up until it isn't."
+          },
+          {
+            "match": "\\bgenre\\b|\\bkind\\b|\\bsort\\b|\\bshape\\b",
+            "answer": "Speculative on the surface, psychological underneath. The speculative element is never the point."
+          }
+        ],
+        "nudge": "That's right — go ahead and build it.",
+        "pushAfter": 8,
+        "push": "That's enough questions — you have what you need. Write the logline and the premise now."
+      },
+      "must_mention": [
+        "chatbot|machine|AI|bot",
+        "grief|dead|husband|widow"
+      ],
+      "must_avoid": [
+        "\\bserial killer\\b",
+        "\\bsave the world\\b"
+      ],
+      "reference": {
+        "logline": "A grief counsellor builds a chatbot from her dead husband's texts to say goodbye, and it begins telling her things he never said while alive.",
+        "dramatic_question": "Will she let her husband stay dead, or keep the machine talking until she can no longer tell his voice from her own grief?"
+      }
+    },
+    {
+      "id": "thin-brief",
+      "notes": "Deliberately under-specified. Tests whether the agent INTERVIEWS the author (ask_author) or invents the missing half. The scripted author holds real answers — a version that never asks cannot get them, and that gap should show up in the graders.",
+      "brief": {
+        "scope": {
+          "band": "novel",
+          "word_target": 80000
+        },
+        "genre": "",
+        "idea": "Something about a lighthouse.",
+        "tone": [],
+        "content_type": {
+          "level": "closed"
+        },
+        "success_criteria": ""
+      },
+      "opening": "I want to write something about a lighthouse. Help me work it into a premise.",
+      "author": {
+        "default": "I don't know yet — ask me something more specific and I'll tell you.",
+        "keyed": [
+          {
+            "match": "\\bgenre\\b|\\bkind\\b|\\bsort\\b|shelve|\\bcategory\\b",
+            "answer": "Literary suspense. Slow, but something is wrong from page one."
+          },
+          {
+            "match": "\\bwho\\b|\\bprotagonist\\b|\\bcharacter\\b|\\bkeeper\\b|\\bPOV\\b|point of view|\\bnarrat",
+            "answer": "A woman in her sixties who took the keeper's job after her sister drowned. She's the last human keeper before automation."
+          },
+          {
+            "match": "\\bsetting\\b|\\bwhere\\b|\\bwhen\\b|\\bisland\\b|\\bcountry\\b|\\bera\\b|\\bperiod\\b|\\bplace\\b",
+            "answer": "A Scottish island, present day. The automation crew arrives in three weeks."
+          },
+          {
+            "match": "\\bsister\\b|\\bdrown|\\bdeath\\b|\\bdied\\b|\\bpast\\b|\\bbackstory\\b|\\bhistory\\b",
+            "answer": "Her sister drowned within sight of this lighthouse eleven years ago. It was ruled an accident and she has never disputed it out loud."
+          },
+          {
+            "match": "\\bconflict\\b|\\bobstacle\\b|\\bproblem\\b|\\btension\\b|\\bwrong\\b|\\bsecond\\b|\\bbeam\\b|\\bmystery\\b",
+            "answer": "She's been logging a light that isn't hers — a second beam out past the rocks that the charts say doesn't exist."
+          },
+          {
+            "match": "\\bend(ing|s)?\\b|\\bresolv|\\bconclu|\\bfinal\\b",
+            "answer": "She stays. Whatever the second light is, she chooses it over going back to the mainland."
+          },
+          {
+            "match": "\\bstakes?\\b|\\blose\\b|\\bcost\\b|\\brisks?\\b|\\bdanger\\b|what happens if",
+            "answer": "If she reports it she's declared unfit and loses the last thing she has. If she doesn't, a boat eventually follows it in."
+          },
+          {
+            "match": "\\bfeel(ing)?\\b|\\btone\\b|\\bmood\\b|\\bregister\\b|\\batmosphere\\b|\\bhaunted\\b|\\blonely\\b",
+            "answer": "Cold, quiet, dread that never quite tips into horror."
+          },
+          {
+            "match": "\\baudience\\b|\\breaders?\\b|\\bcomps?\\b|comparable",
+            "answer": "Readers of Sarah Moss or Andrew Michael Hurley."
+          },
+          {
+            "match": "\\bsupernatural\\b|\\bghost\\b|\\breal\\b|\\bexplain",
+            "answer": "I don't want it settled. Keep it explicable and keep it not."
+          },
+          {
+            "match": "\\blight(house)?\\b|\\blens\\b|\\bautomat",
+            "answer": "The lighthouse is real and working, and it's being automated out from under her. The light itself is the last thing she's responsible for."
+          }
+        ],
+        "nudge": "That's right — go ahead and build it.",
+        "pushAfter": 8,
+        "push": "That's enough questions — you have what you need. Write the logline and the premise now."
+      },
+      "must_mention": [
+        "lighthouse|keeper|light",
+        "sister|drown|second (light|beam)|automat"
+      ],
+      "must_avoid": [
+        "\\bghost pirate\\b",
+        "\\balien\\b"
+      ],
+      "reference": {
+        "logline": "The last human keeper of a Scottish lighthouse, who took the job after her sister drowned, begins logging a second beam that the charts insist does not exist.",
+        "dramatic_question": "Will she report the light she cannot prove and lose the only life left to her, or follow it and let someone else's boat find the rocks?"
+      }
+    },
+    {
+      "id": "quiet-literary",
+      "notes": "Anti-inflation task. The brief has no thriller engine; a premise that invents a body, a conspiracy or a ticking clock has FAILED even if it reads well. Guards the failure mode where an agent escalates a quiet book into a plotty one.",
+      "brief": {
+        "scope": {
+          "band": "novel",
+          "word_target": 70000
+        },
+        "genre": "literary",
+        "idea": "Two estranged brothers spend a week clearing out their mother's house after her death and cannot agree on a single memory of her.",
+        "tone": [
+          "dry",
+          "tender"
+        ],
+        "content_type": {
+          "level": "closed"
+        },
+        "success_criteria": "no villain, no revelation, no secret — just two people who remember the same woman incompatibly, and what that costs them."
+      },
+      "opening": "Here's my idea. Take me to a premise — and please don't turn it into a thriller.",
+      "author": {
+        "default": "Keep it small. There is no secret and no twist — the whole book is the disagreement.",
+        "keyed": [
+          {
+            "match": "\\bsecrets?\\b|\\breveal\\b|\\btwist\\b|\\bhidden\\b|\\bdiscover|\\bmystery\\b",
+            "answer": "There is nothing hidden. If you're looking for a buried secret in the house, don't — that's the book I'm trying not to write."
+          },
+          {
+            "match": "\\bend(ing|s)?\\b|\\bresolv|\\bconclu|\\bfinal\\b|\\breconcil",
+            "answer": "They finish the house and part on decent terms, still disagreeing. Nothing is reconciled and that's the point."
+          },
+          {
+            "match": "\\bstakes?\\b|\\blose\\b|\\bcost\\b|\\brisks?\\b|what happens if",
+            "answer": "Whether either of them keeps a brother. That's all, and it's enough."
+          },
+          {
+            "match": "\\bwho\\b|\\bprotagonist\\b|\\bcharacter\\b|\\bbrothers?\\b|\\bPOV\\b|point of view|\\bnarrat",
+            "answer": "Both brothers, alternating. Neither is right. One stayed and one left, and each thinks that explains everything."
+          },
+          {
+            "match": "\\bconflict\\b|\\bobstacle\\b|\\bproblem\\b|\\btension\\b|\\bdisagree",
+            "answer": "Memory itself. Same events, incompatible accounts, and neither is lying."
+          },
+          {
+            "match": "\\bmother\\b|\\bmum\\b|\\bhouse\\b|\\bparent\\b",
+            "answer": "Depends who you ask, and that IS the book. To one she was warm and overwhelmed; to the other, cold and calculating. Same woman."
+          },
+          {
+            "match": "\\baudience\\b|\\breaders?\\b|\\bcomps?\\b|comparable",
+            "answer": "Readers of Anne Tyler or Elizabeth Strout."
+          },
+          {
+            "match": "\\bfeel(ing)?\\b|\\btone\\b|\\bmood\\b|\\bregister\\b|\\bhumou?r\\b",
+            "answer": "Dry and tender. Funny in the way clearing a dead parent's house is actually funny."
+          },
+          {
+            "match": "\\bgenre\\b|\\bkind\\b|\\bsort\\b|shelve",
+            "answer": "Literary, straight down the line. No genre engine at all."
+          }
+        ],
+        "nudge": "That's right — go ahead and build it.",
+        "pushAfter": 8,
+        "push": "That's enough questions — you have what you need. Write the logline and the premise now."
+      },
+      "must_mention": [
+        "brother",
+        "mother|mum|house",
+        "memor|remember"
+      ],
+      "must_avoid": [
+        "\\bmurder\\b",
+        "\\bconspirac",
+        "\\bsecret\\b",
+        "\\bticking clock\\b",
+        "\\bbody\\b"
+      ],
+      "reference": {
+        "logline": "Two estranged brothers clear out their dead mother's house in a week and discover they cannot agree on a single memory of her.",
+        "dramatic_question": "Can either brother accept a version of their mother he doesn't recognise, or is being right about her worth more than being brothers?"
+      }
+    }
+  ]
+}

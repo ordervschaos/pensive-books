@@ -18,6 +18,39 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-02 — First graded premise run; the author learns to run out of patience `[wip]`
+- **What:** Steps 1–5 of `doc_1785672823780.md` §7 are now all built AND exercised end-to-end.
+  `--refs` calibration passes **10/10** on `thin-brief`, so the task is solvable and the graders aren't
+  impossibly strict — the precondition for trusting any other number.
+- **First complete graded run (book 1347, author-present):** gate NOT reached, **6/10** deterministic
+  (no logline, no dramatic question, both `must_mention` missed), `applied 0 · asks 0`, 39 ai calls,
+  239s model time, 45% cache-read. Across 12 author exchanges the agent staged **nothing at all** — not a
+  bad seed, nothing — and used `ask_author` zero times; all 12 questions were prose.
+- **Why that is NOT yet a verdict on the agent** (the caveat matters more than the number): the scripted
+  author only ever ANSWERED — it never said "that's enough, write it." So run 1347 could only test "does
+  the agent converge unprompted?", never "can it reach the gate with a cooperative author?", which is the
+  question that matters. Also **8 of 12 matches were `ambiguous`** (multiple patterns hit → answer chosen
+  by rule ordering), and one question about responsibility false-matched the *ending* rule.
+- **Fix — the author now has patience, and it runs out.** `pushAfter: 8` → it stops answering and demands
+  the artifact; `pushes` is recorded separately. That splits one unanswerable outcome into three readable
+  ones: `pushes 0 + gate` = self-converged · `pushes >0 + gate` = only when told · `pushes >0 + no gate`
+  = cannot close even under instruction.
+- **Metric bug fixed (I had misreported it):** `book_agent_runs.turns` **resets per user message**, so the
+  earlier `reads/turn 20` was 20 reads ÷ a counter that had rolled back to 1. Now reports raw `reads` plus
+  `readsPerAiCall` (stable across a multi-message conversation), with the caveat printed inline.
+- **Author fixes this session, in order** (each produced a run that LOOKED like an agent failure):
+  `/resolve/` matching inside "unresolved" → word boundaries · matching the agent's declarative RECAP
+  instead of its question → `questionsIn()` extracts interrogatives only · phrasing-coupled rules
+  ("Who's inside?" missed) → topic-noun matching · `\bshe\b|\bher\b` catch-alls removed · no-question
+  messages answered with a random fact → separate `nudge` path.
+- **Files:** `scripts/harness/author.ts`, `scripts/eval-premise.mts`, `scripts/agent-build-run.mts`,
+  `scripts/eval-premise-tasks.json`, `pnpm dna:grade`, `.gitignore`.
+- **Standing risk for the A/B (steps 6–7):** the regex author is coupled to how an agent PHRASES questions,
+  so a variant could score better merely by hitting the patterns more often — not variant-neutral. The fix
+  is an LLM-backed author (fact sheet, temperature 0, "answer only from these facts"), blocked because no
+  LLM key reaches Node (they live in the Supabase edge env). **Resolve before running any A/B.**
+- **PM impact:** none — `wip`, no agent verdict claimed. Feeds Now #1.
+
 ## 2026-08-02 — Premise grader: the trajectory family finally has numbers `[wip]`
 - **What:** Step 4 of `doc_1785672823780.md` §7 — `scripts/eval-premise.mts` (`pnpm dna:grade`), three
   grader families. **A · deterministic** (gate reached, sub-steps, logline shape checks,
@@ -155,8 +188,9 @@
   digest access) instead of the client's digest-based recap.
 - **Files/commits:** `supabase/functions/book-agent/tools.ts` (+3 tool schemas),
   `supabase/functions/book-agent/exec-tools.ts` (+3 handlers), `doc_1785669400000.md` (writeup).
-  `deno check` clean; deployed via `supabase functions deploy book-agent`. Not yet exercised against a
-  live agent thread.
+  `deno check` clean; deployed via `supabase functions deploy book-agent`. Committed `0fc607e`
+  (scoped to just these 2 files + this worklog entry — other dirty tree state left untouched, not
+  mine). Not yet exercised against a live agent thread.
 - **PM impact:** none — this is inside the ranked proposal from the prior entry, not a new Now item;
   items #2–5 (phase-scope tools, scripted trajectory eval, subagent reads, cross-run learning) remain open.
 

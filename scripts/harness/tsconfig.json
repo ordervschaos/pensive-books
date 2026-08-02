@@ -1,0 +1,18 @@
+{
+  "//": "tsx config for the headless agent harness. The `@/*` paths let a Node script import the real DNA lib graph from apps/web; the single explicit override ahead of it swaps the browser supabase client (createBrowserClient + cookies + window diagnostics) for a Node one. Order matters — the specific mapping must precede the wildcard.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "baseUrl": "..",
+    "paths": {
+      "@/integrations/supabase/client": ["./harness/supabaseClientNode.ts"],
+      "@/*": ["../apps/web/src/*"]
+    }
+  }
+}

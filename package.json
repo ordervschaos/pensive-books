@@ -11,6 +11,11 @@
   "engines": {
     "node": ">=22.0.0"
   },
+  "devDependencies": {
+    "@supabase/supabase-js": "^2.105.4",
+    "@types/node": "^22.19.19",
+    "tsx": "^4.20.6"
+  },
   "scripts": {
     "dev": "corepack pnpm --filter @pensive/web dev",
     "dev:web": "corepack pnpm --filter @pensive/web dev",
@@ -33,6 +38,9 @@
     "functions:logs": "supabase functions logs",
     "functions:list": "supabase functions list",
     "functions:check": "bash scripts/check-edge-functions.sh",
-    "bridge:restart": "bash scripts/restart-local-bridge.sh"
+    "bridge:restart": "bash scripts/restart-local-bridge.sh",
+    "dna:dryrun": "tsx --tsconfig scripts/harness/tsconfig.json scripts/agent-build-dryrun.mts",
+    "dna:run": "tsx --tsconfig scripts/harness/tsconfig.json scripts/agent-build-run.mts",
+    "dna:grade": "tsx --tsconfig scripts/harness/tsconfig.json scripts/eval-premise.mts"
   }
 }

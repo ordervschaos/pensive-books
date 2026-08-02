@@ -10,7 +10,17 @@ overrides:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      '@supabase/supabase-js':
+        specifier: ^2.105.4
+        version: 2.105.4
+      '@types/node':
+        specifier: ^22.19.19
+        version: 22.19.19
+      tsx:
+        specifier: ^4.20.6
+        version: 4.22.0
 
   apps/digest:
     dependencies:

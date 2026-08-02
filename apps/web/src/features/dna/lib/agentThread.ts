@@ -83,7 +83,11 @@ export const AGENT_THREAD_SELECT =
 // (`supabase functions serve`) instead of the deployed one — for exercising the claude-local bridge (see
 // _shared/task.ts's hostedEnv: the local function itself is set up to read/write the SAME hosted book
 // data, only its LLM calls move to claude-local). Undefined by default → unchanged behavior.
-const LOCAL_URL = import.meta.env.VITE_LOCAL_BOOK_AGENT_URL as string | undefined;
+// Read through the whole `import.meta.env` object rather than `import.meta.env.VITE_X`: Vite still
+// inlines it, and it stays defined under plain Node (where `import.meta.env` doesn't exist), so the
+// headless agent harness can import this module unchanged. Same treatment as lib/localFn.ts.
+const LOCAL_URL = (import.meta as { env?: Record<string, string | undefined> }).env
+  ?.VITE_LOCAL_BOOK_AGENT_URL;
 
 async function invoke(body: Record<string, unknown>): Promise<void> {
   if (LOCAL_URL) {

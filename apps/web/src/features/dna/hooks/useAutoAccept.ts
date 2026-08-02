@@ -11,12 +11,10 @@
 // snapshot can't re-apply an `add` and duplicate nodes, and a poison item can't hot-loop). The autonomous
 // instruction is bounded by the run's MAX_TURNS server-side (continueAgent doesn't reset the turn budget).
 import { useEffect, useRef } from "react";
-import { applyAgentProposal, answerAgent, continueAgent, discardAgentProposal, type AgentProposal, type AgentThreadRow } from "@/features/dna/lib/agentThread";
+import { applyAgentProposal, answerAgent, continueAgent, discardAgentProposal, type AgentThreadRow } from "@/features/dna/lib/agentThread";
+import { AUTO_ANSWER, nextAutoAction } from "@/features/dna/lib/autoAccept";
 import { chooseNodeProposal } from "@/features/dna/lib/dnaProposals";
 import type { DnaNode } from "@/features/dna/lib/novelDna";
-
-const AUTO_ANSWER =
-  "I'm away — auto-accept mode is on, so I can't answer. Make the strongest creative call yourself and keep going.";
 
 export function useAutoAccept({ enabled, bookId, row, nodes, refetch, onApplyingChange, abortRef }: {
   enabled: boolean;
@@ -35,32 +33,24 @@ export function useAutoAccept({ enabled, bookId, row, nodes, refetch, onApplying
 
   useEffect(() => {
     if (!enabled || !row || busy.current) return;
-    if (row.status === "running") return; // the edge fn is driving — keep hands off
 
-    const proposals = (Array.isArray(row.proposals) ? row.proposals : []).filter((p) => !skip.current.has(p.id)) as AgentProposal[];
-    // A node carrying staged options the agent left behind (e.g. propose_options before auto was armed).
-    // Key options by the staged set's first id (fresh on every (re)generation) so a later regenerate on the
-    // SAME node isn't permanently skipped by its node id.
-    const optKey = (n: DnaNode) => `opt:${n.id}:${n.proposals![0].id}`;
-    const optionNode = nodes.find((n) => Array.isArray(n.proposals) && n.proposals.length > 0 && !skip.current.has(optKey(n)));
+    // What to do next lives in lib/autoAccept.ts — shared verbatim with the headless build harness, so the
+    // two drivers can never drift on the decision. This hook owns only the ACTING half (writes + React state).
+    const action = nextAutoAction(row, nodes, skip.current);
+    if (action.kind === "none" || action.kind === "halt") return;
 
-    let key: string;
+    const key = action.key;
     let run: () => Promise<unknown>;
-    if (row.status === "awaiting_input" && row.pending) {
-      // A parked question: unblock it. (In true auto mode the agent never asks; this catches a run that was
-      // already parked when auto was armed, or a model that ignored the no-ask instruction.)
-      key = `ask:${row.id}:${row.pending.question}`;
-      if (skip.current.has(key)) return;
+    if (action.kind === "answer") {
       run = () => answerAgent(row.id, AUTO_ANSWER);
-    } else if (row.status === "idle" && proposals.length) {
+    } else if (action.kind === "apply") {
       // A staged proposal (the agent's own edit OR an engine generation routed through the thread): apply it
       // LIVE, then ALWAYS resume the run so the agent's next turn sees the updated tree. Crucially, resume
       // even if the apply fails — otherwise a single un-appliable proposal leaves the run idle-stuck forever
       // (the watchdog only revives 'running'). A hard failure → discard it (a discarded card) so the agent
       // isn't re-confronted with the same bad change, then continue.
-      const p = proposals[0];
-      const all = (row.proposals ?? []) as AgentProposal[];
-      key = p.id;
+      const p = action.proposal;
+      const all = action.all;
       run = async () => {
         // A render/engine apply streams in the browser and can hang indefinitely on a dead worker.
         // An un-settled apply never releases `busy`, which kills the watcher for the life of the
@@ -78,18 +68,14 @@ export function useAutoAccept({ enabled, bookId, row, nodes, refetch, onApplying
           await continueAgent(row.id).catch(() => {});
         }
       };
-    } else if (row.status === "idle" && optionNode) {
+    } else {
       // Staged options the author would pick among: commit the first, then resume the run (the edge case
       // where the agent staged options in autonomous mode).
-      const props = optionNode.proposals!;
-      const pick = props[0];
-      key = optKey(optionNode);
+      const { node: optionNode, proposalId } = action;
       run = async () => {
-        try { await chooseNodeProposal(optionNode, pick.id, nodes); } catch { /* leave for the human */ }
+        try { await chooseNodeProposal(optionNode, proposalId, nodes); } catch { /* leave for the human */ }
         finally { await continueAgent(row.id).catch(() => {}); }
       };
-    } else {
-      return; // nothing to auto-accept
     }
 
     // Claim this item up front (exactly-once): a stale row can re-present an already-applied proposal before

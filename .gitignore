@@ -42,6 +42,8 @@ scripts/.dna-*.json
 scripts/.dna-*.md
 scripts/.dna-*.out
 scripts/.eval-*
+scripts/.agent-run-*.json
+scripts/.agent-eval-*.json
 
 # PM worklog Stop-hook sentinel (local state, not shared)
 .claude/.pm-wrap-state
