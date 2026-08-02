@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import { supabase } from "@/integrations/supabase/client";
 import { buildBriefFitInput, buildLoglineFitInput, type DnaNode } from "@/features/dna/lib/novelDna";
 import { errText, ladder, loadBrief, loadNodes, loadThread, premiseProgress } from "./harness/thread.ts";
+import { schemaViolations } from "./harness/schemaCheck.ts";
 import { rest } from "./harness/env.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -162,6 +163,9 @@ const logline = REFS ? task!.reference!.logline ?? "" : producedLogline;
 const question = REFS ? task!.reference!.dramatic_question ?? "" : producedQuestion;
 
 const det = deterministic(logline, question, nodes, brief);
+// Schema conformance is deterministic, free, and reported SEPARATELY from the judges — a violation shows up
+// in judge scores as "the writing got worse", which sends you hunting the wrong thing.
+const violations = schemaViolations(nodes);
 const traj = await trajectory(BOOK);
 
 let judges: Record<string, unknown> = {};
@@ -184,7 +188,7 @@ if (!NO_JUDGES) {
   }
 }
 
-const report = { bookId: BOOK, taskId: task?.id ?? null, mode: REFS ? "refs" : "run", ladder: ladder(nodes), logline, dramatic_question: question, deterministic: det, trajectory: traj, judges };
+const report = { bookId: BOOK, taskId: task?.id ?? null, mode: REFS ? "refs" : "run", ladder: ladder(nodes), logline, dramatic_question: question, deterministic: det, schemaViolations: violations, trajectory: traj, judges };
 
 console.log(`\n── premise eval · book ${BOOK}${task ? ` · task ${task.id}` : ""}${REFS ? " · REFERENCE ANSWERS" : ""} ──`);
 console.log(`logline:  ${logline || "(none)"}`);
@@ -192,6 +196,12 @@ console.log(`question: ${question || "(none)"}`);
 const gateLabel = REFS ? "gate n/a (grading reference text)" : det.gate ? "gate REACHED" : "gate not reached";
 console.log(`\nA · deterministic — ${gateLabel}, ${det.checks.filter((c) => c.pass).length}/${det.checks.length} checks`);
 for (const c of det.checks) console.log(`   ${c.pass ? "✓" : "✗"} ${c.check}${c.detail ? ` (${c.detail})` : ""}`);
+if (violations.length) {
+  console.log(`\n⚠ SCHEMA VIOLATIONS (${violations.length}) — judge scores below are UNRELIABLE where these bite:`);
+  for (const v of violations.slice(0, 8)) console.log(`   ${v.kind}.${v.path} [${v.rule}] ${v.message}`);
+} else {
+  console.log(`\nschema: conforms`);
+}
 console.log(`\nB · trajectory${REFS ? " (the book's own run — not attributable to the reference text)" : ""} — ${traj.turns} turns · ${traj.aiCalls} ai calls · ${traj.errors} errors`);
 console.log(`   reads ${traj.reads} (${traj.readsPerAiCall ?? "n/a"}/ai-call · ${traj.readsPerTurn ?? "n/a"}/turn, turns reset per user msg) · asks ${traj.asks} · applied ${traj.applied} · discarded ${traj.discarded}`);
 console.log(`   tokens in ${traj.inputTokens} / out ${traj.outputTokens} · cache-read ${traj.cacheReadTokens} (${pct(traj.cacheReadTokens, traj.inputTokens + traj.cacheReadTokens)} of prefill)`);

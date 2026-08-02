@@ -87,6 +87,7 @@ interface Trial {
   turns: number | null; aiCalls: number | null; reads: number | null;
   cacheReadRatio: number | null; errors: number | null; wallClockMs: number | null;
   pushes: number | null; fallbacks: number | null; nudges: number | null;
+  schemaViolations?: number;
   variantRequested?: string | null; variantVerified?: boolean | null;
   failure?: string;
 }
@@ -122,6 +123,7 @@ async function runOne(taskId: string, trial: number, variant: string): Promise<T
   try { g = JSON.parse(readFileSync(evalPath, "utf8")); } catch { /* fall through */ }
   if (!g) return { ...withRun, failure: `grader produced no report (exit ${grade.code}): ${grade.out.trim().slice(-300)}` };
 
+  const violations = (g as never as { schemaViolations?: unknown[] }).schemaViolations ?? [];
   const det = (g as never as { deterministic: { gate: boolean | null; checks: { pass: boolean }[] } }).deterministic;
   const traj = (g as never as { trajectory: Record<string, number | null> }).trajectory;
   const judges = (g as never as { judges: Record<string, { mean?: number } | string> }).judges ?? {};
@@ -138,6 +140,7 @@ async function runOne(taskId: string, trial: number, variant: string): Promise<T
     reads: traj?.reads ?? null,
     cacheReadRatio: traj?.cacheReadRatio ?? null,
     errors: traj?.errors ?? null,
+    schemaViolations: violations.length,
   };
 }
 
@@ -260,6 +263,12 @@ if (ARMS.length > 1) {
   }
   console.log(`\nLower \`pushes\` = the agent converged on its own rather than being told to.`);
   console.log(`Read the ±sd before the means: if the spread overlaps, the arms are not distinguishable at this n.`);
+}
+const dirty = results.filter((r) => (r.schemaViolations ?? 0) > 0);
+if (dirty.length) {
+  console.log(`\n⚠ ${dirty.length}/${results.filter((r) => !r.failure).length} run(s) produced SCHEMA-VIOLATING content.`);
+  console.log(`   Judge scores across those runs measure a broken field, not the writing — fix the schema`);
+  console.log(`   fault before reading any verdict. (See each run's .agent-eval-<book>.json schemaViolations.)`);
 }
 console.log(`\nmean ±sd across trials. With ${TRIALS} trials the sd is indicative only — it says how noisy,`);
 console.log(`not whether a difference is real. A gap smaller than the sd is not a result.`);
