@@ -18,6 +18,160 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-02 — The convergence A/B was VOID; the suite now proves its arms `[ship]`
+- **Ran the 3×2 interleaved suite; the result was a confident null that turned out to be broken.** Printed
+  table: production `pushes 2.00±0.00` (n=3) vs `no_converge 2.00±1.41` (n=2) — identical means, which reads
+  as "the convergence wording does nothing." **It is not a null result, it is a void experiment.**
+- **The check that caught it.** Probed the logged system prompt per book: 1354 and 1356 ran at **9,944 chars
+  (production)**; only 1358/1363 carried the 10,250-char variant. The rows were all stamped
+  `context_variant='no_converge'` correctly — so two of three control trials silently executed the
+  PRODUCTION arm and were averaged in as the control. After dropping those plus one crashed trial, ~1 valid
+  trial per arm survives. **No conclusion about the convergence change; my earlier single-run 3→2 does not
+  replicate and should not be cited.**
+- **Root cause — I got it half right.** I diagnosed "the deploy lagged the stamp." A parallel session found
+  the second, independent fault (`30e8432`): **`ROW_COLS` never selected `context_variant`**, so
+  `advance.ts` read `undefined` and `variantSuffix()` returned `""` for every arm regardless of what was
+  deployed. Both faults had to be fixed; either alone would have kept the seam dead.
+- **The fix is structural, not remembered (`1710542`).** The suite now reads `variantVerified`
+  (`harness/thread.ts variantReachedModel` greps the logged system prompt for the arm's own name — which
+  `variants.test.ts` requires every suffix to contain), **excludes** unverified trials from the per-arm
+  aggregate, and prints a VOID count + redeploy warning instead of quietly averaging them.
+- **Why this class keeps biting — third instance today.** (1) the convergence wording never reached the
+  model (`injectObjective`); (2) the variant suffix never reached the model (deploy + `ROW_COLS`); (3) these
+  void trials. **A change can be present in the code, correct in the database, and still never reach the
+  model — and the symptom is indistinguishable from "the change had no effect."** Measuring the REQUEST, not
+  the behaviour, is the only thing that separates them.
+- **Also found:** `--label` collides across concurrent suite runs — a parallel session's
+  `--label converge-ab` **overwrote my report file** (`scripts/.agent-suite-converge-ab.json` now holds
+  their `trials: 2` run, books 1362/1363; mine survives only as printed log output). No run identity in the
+  filename. Small fix, not yet made.
+- **PM impact:** none re-ranked. Two open items for the owner: **(a) re-run the suite** now that both faults
+  are fixed — ~90 min, and it is the only thing that will settle whether the convergence wording matters;
+  **(b) the `--label` collision.** Both are proposals, not decisions.
+
+## 2026-08-02 — Empty-nodes P2: the tree can go DENSE (seeder + tombstones + placeholder UI) `[ship]`
+- **What:** The first user-visible half of the dense-tree redesign, and the first thing here worth deploying.
+  Owner resolved the blocking question (`doc_1785673597000.md` §9.2): **deleting an empty slot is an
+  authorial statement and suppresses the lint.**
+  • **`authoring.scaffold {title,hint,slot}`** — the template's plane. A slot minted as "The Hook" carries its
+  label here, NEVER in `content`, or it would read as filled at birth and the fill fold would be wrong on its
+  very first row. Locked by a test over every minted node.
+  • **Tombstones = `pillar.authoring.waived_slots[]`.** On the authoring plane for the same reason: a waiver
+  is a fact about authorship, not about the story — in `content` it would make a pillar read as *filled* the
+  moment somebody declined a slot. `structureLints` skips `slot_missing` for waived keys (both twins);
+  `seedSkeleton` never re-mints them; the delete confirm spells out the consequence, since "delete" and
+  "decline permanently" are different promises.
+  • **`seedSkeleton()`** — dnaSkeleton promoted from renderer to SEEDER, as the design called for. One-shot,
+  never a reconciler (a reconciler would silently undo a deletion and the author would fight the tool);
+  idempotent on `scaffold.slot` / kind+position; stops at BEAT (the template knows acts and slotted beats,
+  not how many scenes a beat needs); stands down entirely once the author has cast anyone by hand.
+  • **UI:** `ScaffoldButton` (author-initiated, derived live from the tree so it self-hides when done),
+  scaffold labels rendered in ghost styling on real rows, slot badges resolving from `scaffold.slot`.
+  The old `GhostRows` preview needs no change and **auto-retires**: every ghost predicate is "…while no real
+  node of this kind exists", which seeding makes false. Preview before, real rows after.
+- **Files/commits:** `novelDna.ts` + `_shared/novel-dna.ts` (`Scaffold`, `waived_slots`, waiver-aware
+  `slot_missing`), `dnaSkeleton.ts` (+seeder/`waiveSlot`/`waivedSlots`), NEW
+  `dnaSkeleton.test.ts` (13 tests), NEW `components/tree/ScaffoldButton.tsx`, `nodeDisplay.ts`
+  (`scaffoldLabel` + slot-badge fallback), `TreeRow.tsx`, `DnaTreePage.tsx` (delete→waive, ordered so a
+  failed waiver aborts before the delete). Uncommitted.
+- **Verified:** 1354 tests pass (13 new); `tsc -p tsconfig.app.json` clean; `deno check` at baseline
+  (dna-expand 2, book-agent 9, `_shared` 0). `saveNodes` confirmed an upsert, so the seeder inserts.
+- **PM impact:** P0–P2 of the redesign are now complete and coherent: the fold, the read-path routing, the
+  hunger channel, and the materializer that finally makes them do something. **Still not deployed** — the
+  edge twins changed (`waived_slots` lint), so a deploy is now genuinely meaningful rather than a no-op;
+  worth doing once the owner has exercised the scaffold on a live book. Remaining: P3 (generalize
+  `dnaDecompose` → ascent, the six doors) and P4 (entry buttons).
+
+## 2026-08-02 — ⚠️ REGRESSION: premise `shape.movements` now written as OBJECTS, not strings `[ship]`
+- **What the harness caught, within one run of it appearing.** `read-premise` scores collapsed from
+  **4.86 → 2.29/2.71**, with exactly four axes dropping to **1**: escalation, internal_trajectory,
+  forced_choice, question_shape_lock — every axis that reads the movements. `logline_fixity` stayed 5.
+- **Not a quality regression and not a judge bug — a DATA SHAPE change.**
+  `shape.movements` used to be `["She arrives at the tower…"]`; it is now
+  `[{description: "She performs her final weeks…"}]`. `dna-schema.json` declares `movements[]` and
+  `novelDna.ts` types it `movements?: string[]`, so the objects are **schema-violating**. The judge isn't
+  wrong; it simply cannot read them.
+- **Dated precisely:** book 1348 (~13:00) strings · 1356 (~16:00, pre-deploy) strings · **deploy 16:57** ·
+  1362 + 1363 (~17:20) OBJECTS. Both arms affected, so it is NOT the A/B variant.
+  Strongly suspected cause: the `book-agent` deploy, which shipped the other session's uncommitted
+  `context.ts` / `_shared/dna-context.ts` / `novel-dna.ts` (owner authorised the deploy after I flagged the
+  WIP). `dna-expand` was NOT redeployed, and in these runs the premise came from the agent's own
+  `propose_options`, so the agent's prompt is the likely surface. **For that session to diagnose — I have
+  not touched their files.**
+- **Blast radius beyond the eval:** 7 consumers read `movements` (`read-premise`, `read-synopsis`,
+  `book-agent/tools+exec-tools`, `dna-decompose`, `dna-chat`, `dna-expand`, `vision-craft`). And nothing
+  caught it: `validateContent`/`sanitizeContent` evidently do not check ARRAY ELEMENT types, so a
+  `string[]` field silently accepted objects. Closing that gap would make this class impossible.
+- **A/B status — NO VERDICT, and now moot until this is fixed.** Both trial-1 runs died on transport
+  (pre-retry-fix), leaving **n=1 per arm**: prod `pushes 3`, no_converge `pushes 1`. Directionally opposite
+  to the hypothesis, but one sample each with sd=0 is not evidence of anything, and both arms carry the
+  corrupted movements. Rerun after the regression is resolved.
+- **PM impact:** worth surfacing at the next `/pm` as a live data-integrity bug, independent of the eval work.
+
+## 2026-08-02 — First interleaved A/B ran; truncation guard caught itself `[wip]`
+- **What:** `converge-ab` (thin-brief × 2 trials × 2 arms, interleaved) completed its runs. Both arms
+  reached `premise-complete`, so the headline is NOT "prod converges and no_converge doesn't" — the
+  difference, if any, is in HOW MANY author turns it took. Table pending the final grade.
+- **The truncation guard fired on a real case, and it mattered.** `[harnessLlm] TRUNCATED at
+  max_tokens=400` — the simulated author's reply was cut mid-sentence, and the AGENT NOTICED it:
+  *"The message looks like it cut off mid-sentence, but the instruction is clear…"*. So a harness artefact
+  entered the transcript and the agent had to reason around it — contaminating the very run being measured.
+  Raised the author cap 400→900. Without the `finish_reason:"length"` warning added earlier this would have
+  been invisible: a truncated author reply reads as a terse author, not as a bug.
+- **Run detail worth keeping (book 1363, no_converge):** 9 questions · 1 fallback · **3 nudge** · 1 push.
+  Three nudges means the agent spent three turns narrating rather than asking — the metric added earlier
+  today is doing its job of separating "agent didn't ask" from "fixture didn't cover it".
+- **Still unbalanced:** prod ×2, no_converge ×1 (the lost arm was the connect-timeout, since fixed). A
+  balanced 2-vs-2 rerun is needed before any verdict.
+- **Files:** `scripts/harness/llmAuthor.ts`.
+- **PM impact:** none — `wip`. No A/B verdict claimed.
+
+## 2026-08-02 — Emptiness is HUNGER: the second channel `[decision]` + `[wip]`
+- **What:** Owner correction to the dense-tree design, and the code for it. The P0/P1 rules were all
+  *suppression*, which is wrong in spirit — **the empty structure represents hunger**; we want those slots
+  filled, and a design that only hides them tells every consumer the book is finished.
+  **The resolution is placement, not visibility.** The danger was never that a model SEES emptiness — it's
+  that it MISREADS emptiness as a settled fact. Inline among content, `- [?] {}` asserts "this character has
+  no want" (a claim, and a poisonous exemplar); in its own named channel the same fact is an invitation. So
+  the rule became **two channels**: omit empties from the CONTENT blocks, then state the hunger ONCE, in its
+  own voice. Evidence this was the right generalization: the `— NOT YET WRITTEN` act marking shipped earlier
+  today was already an ad-hoc hunger channel, invented for one block because dropping empty acts made a book
+  look finished at Act 2.
+  **Who gets it — only consumers that can ACT on it:** tree editor (hunger *is* the UI) · agent (per-node,
+  collapsed) · generation prompts (aggregated counts) · **never** the renderer ("Chapter 4: yet to be
+  filled") · **never** a lint (hunger is not a defect; that belongs in `fillRatio()`).
+  Shipped `hungerBlock()` — counts by kind in ladder order, no ids on purpose (a generator handed specific
+  empty ids starts filling slots it wasn't asked for; what it needs is "the book does not end here").
+- **Files/commits:** `_shared/dna-context.ts` (+`hungerBlock`), `book-agent/context.ts` (`<unwritten>` in
+  bookState), `dna-expand/index.ts` (coda in the shared `ctx`), `dnaContext.golden.test.ts` (+4, 16 total).
+  Doc §5a-bis added to `doc_1785673597000.md`. Uncommitted.
+- **Verified:** full web suite 1341 pass; `tsc` clean; `deno check` at baseline (dna-expand 2, book-agent 9,
+  dna-context 0).
+- **PM impact:** the `[decision]` half is the two-channel rule — recorded here and in the design doc; not
+  promoted to DECISIONS.md because the parent design is still unratified. Still nothing deployed.
+
+## 2026-08-02 — Read the DNA agent against the 2026 agent-eval metric framework `[chore]`
+- **What:** Analysis only, no code. Mapped `book-agent` + `scripts/eval-*` onto the standard agent-eval
+  taxonomy (task completion / step efficiency / tool + argument correctness / plan quality + adherence /
+  component-level / tracing). Ahead of the field in three places: task completion is a *deterministic
+  product gate* (`stageComplete`) not a judge; pairwise judging cancels position bias by running both
+  orders; the A/B seam is a `context_variant` column so arms interleave instead of being time-confounded
+  by two deploys. Absent: tool/argument correctness, plan adherence over the DNA ladder, and any
+  component-level split (a weak book can't be attributed to the agent vs `dna-expand`).
+- **The finding that isn't on anyone's list:** four LLM judges live *inside* the control loop
+  (`read_facts` / `read_shape` / `read_confusion` / plan-gate, plus the forced `maybeInjectRenderVerify`
+  injection) and **none has been calibrated**. Measured judge noise is ±0.25 on an offline judge, where it
+  only mis-scores; in-loop it mis-steers the agent. The §v1 payoff-scoping fix was one instance of exactly
+  this (false FAILs → alarm fatigue) of a systemic problem with no instrument. Ranked #1 to build, and it
+  reuses the existing `--refs` calibration shape.
+- **Also:** `eval-harness-status.md` §6 is stale — the LLM-author blocker is resolved (`harness/llm.ts`
+  reads `DEEPSEEK_API_KEY`; `eval-suite.mts` defaults `--author llm`), and §8 items 1–4 are shipped.
+- **Files/commits:** `doc_1785691033000.md` (uncommitted). No product change. Note: the in-flight
+  `_shared/dna-context.ts` extraction + `dnaContext.golden.test.ts` remain uncommitted WIP from earlier
+  work, not touched here.
+- **PM impact:** none — analysis, not a ship. Feeds Now #1's evidence gate when the judge meta-eval is
+  actually built.
+
 ## 2026-08-02 — Harness: every network entry point now retries the transport `[wip]`
 - **What:** A `UND_ERR_CONNECT_TIMEOUT` in `rest()` (harness/env.ts) killed the `no_converge` arm of the
   running A/B *before it created its scratch book* — 12 seconds in. Added the same transport retry (3×,
