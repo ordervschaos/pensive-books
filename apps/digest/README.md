@@ -509,9 +509,47 @@ model's prose, which is a different kind of claim. That's the RSC form of the ho
 watching the steps arrive is most of what makes a rail feel alive. It needs no new runtime — Node streams
 with no config and `runAgentTurn` already produces steps in order.
 
-**History is not trimmed yet.** Every turn sends the whole conversation, so a long chat grows without bound.
-The table is right to keep everything; deciding how much to *send* is a per-turn question that belongs in the
-agent, and is the next piece of work.
+### What it sends, as distinct from what it keeps
+
+`lib/digest/agent/context.ts`. The transcript grows forever; the prompt must not. The whole policy rests on
+one distinction:
+
+| | example | lives in | fate |
+|---|---|---|---|
+| **State** | "there are four sections; the second is a feed on three urls" | the **database** | re-read into `<digest_state>` every turn, never carried in history |
+| **Intent** | "no hype"; "said no to a search section, too expensive" | the **conversation** | folded, and kept forever |
+
+Replaying state as conversation isn't just wasteful, it's **wrong** — the reader may have deleted that
+section in another tab two minutes later. So it never enters the sent history at all, and most of what
+accumulates can go.
+
+Three mechanisms, in order of what they save:
+
+- **The fold.** Exchanges outside a 3-exchange window collapse into rolling notes. The summariser is not
+  asked to *summarise* — it is asked to **extract one category and discard another**, which a small model
+  does reliably where "summarise this" is an invitation to keep a bit of everything. Rejections carry their
+  reason, because a rejection without one gets re-proposed next week. It runs only when the window overflows
+  by `FOLD_AFTER`, so it is amortised over many turns, and it is best-effort: a failed fold means the next
+  turn sends slightly more, which beats losing the reader's answer to a summariser that timed out.
+- **Tool-result elision.** Outside the window, tool calls and their results are dropped **together** — never
+  separately, since a result without its call is a malformed conversation providers reject. Inside it,
+  results are truncated. This is where the tokens actually are: one `read_posts` outweighs everything the
+  reader has typed all week. Safe only because every elided payload has a tool that fetches it back —
+  elision without retrieval is amnesia, not compaction.
+- **The staleness fence.** One line, emitted only when *somebody else* moved the configuration mid-
+  conversation. Compared against the version the previous turn **finished** on, which is what excludes the
+  agent's own writes: a warning it can't act on is noise that teaches it to ignore warnings.
+
+Measured by `scripts/smoke-context.ts`, with no model and no spend:
+
+```
+turn   5: sent 1953 chars
+turn  40: sent 2067 chars   (whole transcript would be 83565 — 2%)
+turn 120: sent 1887 chars
+```
+
+The displayed conversation is unaffected: the rail renders `messages` in full, and only the model sees the
+trimmed view.
 
 **Open question for the owner:** the agent is currently behind the same `aiEnabled(digest)` gate as the 6am
 pipeline, so a digest with AI writing off cannot use it. That may be backwards — an AI-off digest still

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { runAgentTurn, type DigestForAgent } from "@/lib/digest/agent/loop";
-import type { Turn } from "@/lib/digest/llm";
+import { NEW_CHAT, runAgentTurn, type ChatContext, type DigestForAgent } from "@/lib/digest/agent/loop";
 
 // One agent turn. POST { message, chatId? } → the reply, what it did, and where the conversation lives.
 //
@@ -37,17 +36,31 @@ export async function POST(request: Request, { params }: { params: { id: string 
     .maybeSingle();
   if (!digest) return NextResponse.json({ error: "No such digest" }, { status: 404 });
 
-  // Load the conversation so far. Scoped by digest as well as by id, so a chat id from another digest
-  // cannot be used to graft one conversation onto another.
-  let history: Turn[] = [];
+  // Load the conversation so far, WITH its fold and fence bookkeeping — the transcript alone would make the
+  // agent re-send everything it has already summarised. Scoped by digest as well as by id, so a chat id from
+  // another digest cannot be used to graft one conversation onto another.
+  let chat: ChatContext = NEW_CHAT;
   if (chatId) {
-    const { data: chat } = await supabase
+    const { data } = await supabase
       .from("digest_agent_chats")
-      .select("messages")
+      .select("messages, fold, folded_through, last_version")
       .eq("id", chatId)
       .eq("digest_id", digestId)
       .maybeSingle();
-    history = ((chat as { messages: Turn[] } | null)?.messages ?? []) as Turn[];
+    const row = data as {
+      messages: ChatContext["messages"];
+      fold: string | null;
+      folded_through: number;
+      last_version: number | null;
+    } | null;
+    if (row) {
+      chat = {
+        messages: row.messages ?? [],
+        fold: row.fold,
+        foldedThrough: row.folded_through ?? 0,
+        lastVersion: row.last_version,
+      };
+    }
   }
 
   let turn;
@@ -55,7 +68,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     turn = await runAgentTurn({
       supabase,
       digest: digest as DigestForAgent,
-      history,
+      chat,
       message,
       signal: request.signal,
     });
@@ -65,22 +78,26 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
 
-  const row = {
-    digest_id: digestId,
-    owner_id: user.id,
-    title: message.trim().slice(0, 80),
-    messages: turn.messages,
+  const state = {
+    messages: turn.chat.messages,
+    fold: turn.chat.fold,
+    folded_through: turn.chat.foldedThrough,
+    last_version: turn.chat.lastVersion,
     updated_at: new Date().toISOString(),
   };
   const saved = chatId
     ? await supabase
         .from("digest_agent_chats")
-        .update({ messages: row.messages, updated_at: row.updated_at })
+        .update(state)
         .eq("id", chatId)
         .eq("digest_id", digestId)
         .select("id")
         .maybeSingle()
-    : await supabase.from("digest_agent_chats").insert(row).select("id").maybeSingle();
+    : await supabase
+        .from("digest_agent_chats")
+        .insert({ ...state, digest_id: digestId, owner_id: user.id, title: message.trim().slice(0, 80) })
+        .select("id")
+        .maybeSingle();
 
   return NextResponse.json({
     text: turn.text,

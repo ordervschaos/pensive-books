@@ -12,7 +12,7 @@
  * Service role, because a script has no session — so this bypasses RLS. The real caller passes a
  * request-scoped client and the agent is confined to one digest by `ToolCtx` either way.
  */
-import { runAgentTurn, type DigestForAgent } from "../lib/digest/agent/loop";
+import { NEW_CHAT, runAgentTurn, type DigestForAgent } from "../lib/digest/agent/loop";
 import { createServiceClient } from "../lib/supabase/server";
 
 const digestId = Number(process.argv[2] ?? 1);
@@ -36,7 +36,7 @@ async function main() {
   const turn = await runAgentTurn({
     supabase: supabase as never,
     digest: { ...(data as DigestForAgent), ai_enabled: forceAi || (data as DigestForAgent).ai_enabled },
-    history: [],
+    chat: NEW_CHAT,
     message,
   });
 

@@ -16,9 +16,76 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 
-
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-02 — Digest agent context policy: a long chat costs what a short one costs `[ship]`
+- **What:** Rung 5, the last of `doc_1785651033920.md`. New `lib/digest/agent/context.ts` + three columns
+  on `digest_agent_chats` (`fold`, `folded_through`, `last_version`; migration `20260803160000`,
+  **pushed**). The transcript is still kept whole — what changed is what gets **sent**, which now rests on
+  one distinction: STATE (config) lives in the DB and is re-read into `<digest_state>` every turn, never
+  carried in history, because replaying it isn't just wasteful but *wrong* once the reader edits in another
+  tab; INTENT (preferences, rejections-with-reasons) lives in the conversation and is folded.
+  Three mechanisms: (1) **the fold** — exchanges outside a 3-exchange window collapse into rolling notes;
+  the summariser is asked to EXTRACT one category and DISCARD another rather than to "summarise", runs only
+  on overflow (amortised), and is best-effort. (2) **tool-result elision** — outside the window calls and
+  results are dropped *together* (a result without its call is malformed and providers reject it); inside
+  it they're truncated. Safe only because every elided payload has a tool that fetches it back. (3) **the
+  staleness fence** — one line, only when somebody *else* moved the config, compared against the version
+  the previous turn *finished* on so the agent's own writes don't trigger it.
+- **Verified:** new `scripts/smoke-context.ts` — no model, no spend, 20 assertions ALL OK. turn 5 → 1953
+  chars, turn 40 → 2067, turn 120 → **1887**; turn 40 sends 2% of its 83,565-char transcript while keeping
+  all 160 messages. Also asserts no orphan tool results / dangling calls at every size — the invariant that
+  would otherwise 400 on every turn. Then a real 7-turn conversation on digest #1: the fold fired once and
+  produced exactly `- Dislikes hype and motivational filler. / - Turned down search section: too
+  expensive.` — and turn 7 ("what did I tell you I dislike?") answered correctly *after* those exchanges
+  had left the verbatim window, which is the whole point. typecheck + build green.
+- **Files/commits:** `apps/digest/lib/digest/agent/context.ts`, `scripts/smoke-context.ts`,
+  `supabase/migrations/20260803160000_digest_agent_chat_context.sql` (all new),
+  `lib/digest/agent/loop.ts`, `app/api/digests/[id]/agent/route.ts`, `scripts/smoke-agent.ts`,
+  `README.md`. Uncommitted.
+- **PM impact:** the 6-rung agent plan is **complete**. Remaining known gaps, none blocking: the turn isn't
+  streamed (needs no new runtime), the rail hasn't been clicked in a browser, and the two owner decisions
+  stand — the agent's entitlement gate (currently the same as the 6am pipeline, argued backwards in the
+  README) and whether the rail belongs beside Sections rather than as its own tab.
+
+## 2026-08-02 — Issue reader: a map, landmarks, and the art section finally shows art `[ship]`
+- **What:** Items 4–5 of the reader review (`doc_1785656805078.md` §11). **`<Contents>`** — a `<details open>`
+  outline above the issue (13 items · 41 min; per-section title · items · minutes; verbatim sections expand
+  to their articles as jump links). **Sticky section headers** that pin while their section is on screen,
+  with the item/minute count on the right, plus rules between sections. **Anchors** via
+  `RenderOpts.anchorPrefix` → every article `h3` gets `id="{sectionId}-{n}"`. **No JavaScript**: `<details>`
+  and `position: sticky` both work natively, so a Server Component ships no bundle for either.
+  **The decision worth keeping:** the outline is computed from `content.sections[].items` and the anchor for
+  item n is `itemAnchor(sectionId, n)` — the same string the renderer stamps on the nth `h3`. Nothing parses
+  the rendered HTML. That's only sound because of an invariant established earlier today, not luck:
+  `renderRawList` emits exactly one `h3` per item in item order and `demoteHeadings` forces an article's own
+  sub-heads to `h4`, so **the Nth `h3` IS `items[N-1]`**. Slug-of-title anchors would have collided on
+  duplicate or punctuation-heavy titles. Only verbatim sections get a second level — an AI section weaves its
+  sources into prose with nothing to jump to, so those stay a reference list at the section foot
+  (`isVerbatimSection` earning its keep a third time). The footer list is now suppressed for verbatim
+  sections, where titles already appear as headings AND in Contents.
+  **Regression caught + feature recovered:** rendering the chrome exposed markdown images leaking as literal
+  text. Two causes, both from §9b no longer flattening markdown — (1) `ANY_IMAGE` stopped at the first `)`
+  and these captions contain "(International)", and it never handled the gallery form extractors emit, an
+  image **wrapped in a link**: `[![alt](img)](href "caption")`; (2) even matched, `imageTag` swallowed all
+  URL-bearing images — right for AI prose (a model-authored image URL is fabrication by construction), wrong
+  for a verbatim body where the image came off the author's page with the words. Split via
+  `RenderOpts.trustImageUrls`, defaulting false. Net effect: **"Art worth looking at" now shows the art** —
+  it had been an all-text section about photography because every photo was dropped by a safety rule meant
+  for a different code path.
+  **Verified:** 13 `h3` anchors = 13 items, 17 TOC links, 4 sticky headers, 4 images rendering, 0 stray
+  underscores, 0 literal `---`; `#f_art-2` lands on the article the TOC named. Rendered the REAL component
+  via `renderToStaticMarkup` + the app's compiled Tailwind, not a hand-copied mock. `tsc` + `next build`
+  green.
+  **Known remaining:** one literal `[![Image 6](h` — a markdown image cut in half by `fetch.ts`'s 12,000-char
+  `slice()`. That's item 6 (paragraph-boundary truncation), deliberately untouched: fix truncation at the
+  source rather than teach the renderer to tolerate broken input. Page is still ~30 screens — chrome makes it
+  navigable, not shorter; that's §1 (missing editorial layer) and §5 (trim pass).
+- **Files/commits:** `components/IssueContentView.tsx` (rewritten), `lib/digest/render.ts`,
+  `lib/digest/entities.ts` (form-widget blocklist entries), `app/digests/[id]/preview/page.tsx`,
+  `doc_1785656805078.md` §11. Uncommitted.
+- **PM impact:** STATE "Issue reader render" row updated — items 1–5 of the review now shipped; remaining are
+  6 (truncation) and 7 (the LLM trim pass, still needing the `ai_enabled` ruling).
 ## 2026-08-02 — Digest agent rail: persistence + UI, rung 4 complete `[ship]`
 - **What:** New `digest_agent_chats` table (migration `20260803150000`, **pushed**) — one ROW per
   conversation, not a growing blob on the digest; the main app already paid for that lesson (slow "New

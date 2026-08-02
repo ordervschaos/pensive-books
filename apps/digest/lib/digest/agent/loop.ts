@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ConflictError } from "../commands";
-import { aiEnabled, callModelStep, type ToolCall, type Turn } from "../llm";
+import { aiEnabled, callModel, callModelStep, type ToolCall, type Turn } from "../llm";
+import { buildContext, foldPrompt, stalenessNote } from "./context";
 import { TOOLS, runTool, type ToolCtx } from "./tools";
 
 // THE LOOP. One turn of the digest agent: the reader says something, the model reads and edits the digest
@@ -25,13 +26,23 @@ export interface AgentStep {
   isError: boolean;
 }
 
+export interface ChatContext {
+  /** Everything ever said in this conversation. Kept in full; only a slice of it is sent. */
+  messages: Turn[];
+  /** Rolling notes covering the exchanges that have scrolled out of the verbatim window. */
+  fold: string | null;
+  foldedThrough: number;
+  /** `digests.sections_version` at the end of the previous turn — the staleness fence. */
+  lastVersion: number | null;
+}
+
 export interface AgentTurn {
   /** What to say back to the reader. */
   text: string;
   /** What it did, in order — the narration the rail renders. */
   steps: AgentStep[];
-  /** The conversation including this turn, to be carried into the next one. */
-  messages: Turn[];
+  /** The conversation including this turn, and the bookkeeping to persist alongside it. */
+  chat: ChatContext;
   stoppedAt: "answer" | "step_limit";
 }
 
@@ -88,8 +99,8 @@ async function digestState(ctx: ToolCtx): Promise<string> {
 export async function runAgentTurn(opts: {
   supabase: SupabaseClient;
   digest: DigestForAgent;
-  /** Everything said so far. Empty for a new conversation. */
-  history: Turn[];
+  /** The conversation so far, plus its fold. A new conversation passes `NEW_CHAT`. */
+  chat: ChatContext;
   message: string;
   signal?: AbortSignal;
 }): Promise<AgentTurn> {
@@ -114,8 +125,15 @@ export async function runAgentTurn(opts: {
     sections: { version: (data as { sections_version: number } | null)?.sections_version ?? 0 },
   };
 
-  const system = `${CONSTITUTION}\n\n${await digestState(ctx)}`;
-  const messages: Turn[] = [...opts.history, { role: "user", content: opts.message }];
+  // The staleness fence, computed BEFORE anything is sent: did somebody else move the configuration while
+  // this conversation was in progress?
+  const startVersion = ctx.sections!.version;
+  const stale = stalenessNote(opts.chat.lastVersion, startVersion);
+
+  const system = [CONSTITUTION, await digestState(ctx), stale].filter(Boolean).join("\n\n");
+
+  // The full transcript is what we KEEP; `buildContext` decides what to SEND.
+  const messages: Turn[] = [...opts.chat.messages, { role: "user", content: opts.message }];
   const steps: AgentStep[] = [];
   const meta = {
     fn: "digest-agent",
@@ -125,14 +143,26 @@ export async function runAgentTurn(opts: {
   };
 
   for (let step = 0; step < MAX_STEPS; step += 1) {
+    // Rebuilt each step, not once per turn: this turn's own tool results are inside the window and must be
+    // present in full for the model to act on them.
+    const context = buildContext({
+      messages,
+      fold: opts.chat.fold,
+      foldedThrough: opts.chat.foldedThrough,
+    });
     const result = await callModelStep(
-      { system, messages, tools: TOOLS, maxTokens: 2000, effort: "low", signal: opts.signal },
+      { system, messages: context.messages, tools: TOOLS, maxTokens: 2000, effort: "low", signal: opts.signal },
       meta,
     );
 
     messages.push({ role: "assistant", content: result.text, toolCalls: result.toolCalls });
     if (!result.toolCalls.length) {
-      return { text: result.text, steps, messages, stoppedAt: "answer" };
+      return {
+        text: result.text,
+        steps,
+        chat: await settle(opts.chat, messages, ctx.sections!.version, meta),
+        stoppedAt: "answer",
+      };
     }
 
     // Tool calls run in order rather than in parallel. They write to one jsonb array through one version
@@ -149,9 +179,54 @@ export async function runAgentTurn(opts: {
       "I stopped after too many steps without reaching an answer. Nothing further was changed — " +
       "tell me what you'd like me to do and I'll take a narrower run at it.",
     steps,
-    messages,
+    chat: await settle(opts.chat, messages, ctx.sections!.version, meta),
     stoppedAt: "step_limit",
   };
+}
+
+/** A conversation that hasn't started. */
+export const NEW_CHAT: ChatContext = { messages: [], fold: null, foldedThrough: 0, lastVersion: null };
+
+/**
+ * Close the turn: record where the configuration ended up, and fold the transcript if it has overflowed.
+ *
+ * The fold is a model call, so it happens here — once every few turns when the window overflows — rather
+ * than on every turn. That is the whole reason for the `FOLD_AFTER` slack: paying to summarise a
+ * conversation that is about to grow again is the expensive way to save money.
+ *
+ * It is best-effort. A failed fold means the next turn sends a little more than it meant to, which is a far
+ * better outcome than losing the reader's answer to a summariser that timed out.
+ */
+async function settle(
+  previous: ChatContext,
+  messages: Turn[],
+  version: number,
+  meta: { fn: string; operation: string; issueId: null; userId: string },
+): Promise<ChatContext> {
+  const settled: ChatContext = { ...previous, messages, lastVersion: version };
+  const { foldThrough, toFold } = buildContext({
+    messages,
+    fold: previous.fold,
+    foldedThrough: previous.foldedThrough,
+  });
+  if (foldThrough === null) return settled;
+
+  try {
+    const { text } = await callModel(
+      {
+        system: "You keep terse notes on what someone wants. You never invent, and you never pad.",
+        prompt: foldPrompt(previous.fold, toFold),
+        maxTokens: 400,
+        effort: "low",
+      },
+      { ...meta, operation: "fold" },
+    );
+    const fold = text.trim();
+    return { ...settled, fold: fold && fold !== "NOTHING" ? fold : previous.fold, foldedThrough: foldThrough };
+  } catch (e) {
+    console.error("fold failed (non-fatal):", e);
+    return settled;
+  }
 }
 
 /**
