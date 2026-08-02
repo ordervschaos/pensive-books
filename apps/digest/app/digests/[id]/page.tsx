@@ -18,14 +18,14 @@ export default async function SectionsPage({ params }: { params: { id: string } 
   const supabase = createClient();
   const { data } = await supabase
     .from("digests")
-    .select("id, sections, active, web_search_enabled, ai_enabled, inbox_token, delivery")
+    .select("id, owner_id, sections, active, web_search_enabled, ai_enabled, inbox_token, delivery")
     .eq("id", Number(params.id))
     .maybeSingle();
   if (!data) notFound();
 
   const digest = data as Pick<
     Digest,
-    "id" | "sections" | "active" | "web_search_enabled" | "ai_enabled" | "inbox_token" | "delivery"
+    "id" | "owner_id" | "sections" | "active" | "web_search_enabled" | "ai_enabled" | "inbox_token" | "delivery"
   >;
   const hasInbox = (digest.sections ?? []).some((s: Section) => s.kind === "inbox");
 

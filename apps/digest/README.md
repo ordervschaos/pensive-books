@@ -250,6 +250,19 @@ Gather cost differs enormously by section kind, which is why `search` is behind 
 | `quiz` | one write call | A **closer**, not a source — see below. |
 | `search` | **Opus 5 + the `web_search` server tool, every run** | Bills whether or not it finds anything. |
 
+### The provider policy: Anthropic is for `web_search`, and nothing else
+
+Everything else runs on DeepSeek. That was already true by convention — `MODEL_GATHER` appears at exactly
+one call site — but convention isn't a mechanism, and the symptom of breaking it is an invoice a month
+later. It is now enforced from the **capability** side: reaching Anthropic requires asking for a *server*
+tool. A server tool (`{ type: "web_search_20260209" }`) runs inside Anthropic's own infrastructure and comes
+back in the same response, which is the one thing no other host can serve and therefore the only honest
+reason to be there. `callModel` throws if a `claude-*` model is called without one.
+
+Ordinary **function tools** are a protocol both providers speak, so they carry no such licence — the agent's
+tool loop runs on DeepSeek. `callModel` (one-shot) refuses them outright because it has nowhere to put a
+tool result; they go through `callModelStep`.
+
 ### Two providers, chosen by model id
 
 Writing runs on **DeepSeek `deepseek-v4-pro`**; gather stays on **Anthropic Opus 5**. `lib/digest/llm.ts` is
@@ -387,10 +400,129 @@ Deliberately **not** commands: `preview`, `run now`, `regenerate`. Those aren't 
 pipeline, they already have routes, and they cost money. This module is the surface where writes are cheap
 and reversible, and that distinction is worth keeping visible.
 
-**Known sharp edge:** sections are stored as one jsonb array, so every section command is a read-modify-write
-of the whole array with no optimistic concurrency. Two writers at once (a form and an agent, say) silently
-clobber each other. Fine while a human is the only writer; it needs a version column or a jsonb-path update
-before a second writer is real.
+### The lost update, and `sections_version`
+
+Sections are one jsonb array, so every section command is `SELECT sections` → modify in JS → `UPDATE
+sections = <whole new array>`. Nothing tied the write back to what the read saw, so a writer that committed
+in between was **silently overwritten** by an array computed from stale data.
+
+With one human in a form the window is milliseconds. A second writer makes it real, because an agent's
+window is long — it reads at the start of a turn, thinks for twenty seconds, then writes:
+
+```
+you:    read v7 ── edit a section ── write ✓
+agent:  read v7 ──────── thinks ──────────── write (array from v7)   ← your edit is gone
+```
+
+So `digests.sections_version` (migration `20260803140000`) is a counter every section write must match and
+then bumps, checked in the same statement:
+
+```ts
+.update({ sections, sections_version: v + 1 })
+.eq("id", digestId)
+.eq("sections_version", v)     // compare-and-swap
+.select("id")                  // ← makes "zero rows" observable; a plain update reports no error
+```
+
+Detection, not locking — the same mechanism as HTTP `ETag`/`If-Match`. Zero rows raises `ConflictError`.
+
+**There are two windows, and only the caller knows about the long one.** The short one is inside
+`applyCommand` (read, modify, write) and is guarded for free by the version just read — which is all a form
+needs and why forms pass nothing. The long one belongs to an agent, so `ToolCtx.sections` holds the version
+the loop read at the start of the turn, and every write is checked against *that*. It is deliberately not a
+tool parameter: a model echoing a version back correctly on every call is not a property worth depending on.
+The holder is updated after each successful write, or the agent's second write conflicts with its own first.
+
+**The response to a conflict is the interesting half.** An agent must not retry — a retry re-applies an
+intent computed against a configuration that no longer exists. It re-reads and reconsiders. That is the same
+staleness fence the context design uses in the prompt, appearing here at the data layer.
+
+Two things this deliberately does not do. It does not cover **scalar settings** (`update_digest` writes only
+the keys it was given, so concurrent patches of different columns cannot clobber). And it does not narrow
+the write to one array element — a `jsonb_set` RPC would let writers touching *different* sections never
+conflict at all, and is the optimization to reach for if conflicts turn out to be common. Normalizing
+sections into their own table is the textbook answer and is off the table on purpose: `sections` as jsonb is
+policy-as-data, which is what makes a new source kind an adapter rather than a migration.
+
+Rough edge worth knowing: two racing *form* submits now surface an error page rather than silently taking
+the last write. Better, but the forms have no conflict UI — the window is milliseconds, so this is logged
+rather than solved.
+
+## The agent
+
+`lib/digest/agent/loop.ts` — one turn: the reader says something, the model reads and edits the digest
+through the belt below, and it ends with something said back. `scripts/smoke-agent.ts` drives a turn with no
+UI at all.
+
+```
+runAgentTurn ─► callModelStep ──► tool calls? ──yes──► runTool (in order) ─┐
+                     ▲                                                     │
+                     └─────────────── tool results ────────────────────────┘
+                                       │no
+                                       └──► text back to the reader
+```
+
+What it is **not**: no self-chaining, no durable run row, no watchdog. The DNA agent in the main app has all
+three because Supabase's worker dies at ~150s and a long turn must survive being cut in half. This is Next
+on Vercel — 300s and streaming on the ordinary Node runtime — so a turn is one request that runs to the end.
+Porting that machinery would import a workaround for a constraint we don't have.
+
+Four decisions worth not undoing:
+
+- **The system prompt is static-then-volatile.** The constitution first (so a cache prefix can hold it),
+  then `<digest_state>` re-read from the database every turn. State that comes from a query cannot be stale,
+  which is what stops a long conversation reasoning from a section that was deleted twenty messages ago.
+- **The constitution is short.** The tool descriptions already carry what each kind is and what each field
+  means, generated from `sectionSchema.ts`. Restating any of it in the prompt would be the second copy.
+- **Tool calls run in sequence, not in parallel.** They write to one jsonb array through one version
+  counter, so a parallel pair would race and the second would lose.
+- **`execute` never throws.** A malformed argument, a refused write, a lost race — each is something the
+  model can respond to sensibly if told plainly, and an unrecoverable turn if not. The conflict case says
+  *re-read and decide*, explicitly not *retry*.
+
+**Open question for the owner:** the agent is currently behind the same `aiEnabled(digest)` gate as the 6am
+pipeline, so a digest with AI writing off cannot use it. That may be backwards — an AI-off digest still
+delivers a perfectly good plain linked list, and the agent is exactly the thing that would help someone set
+one up. The pipeline gate is about *unattended daily* spend; the agent is a *user-initiated* action, closer
+to Preview. Worth deciding deliberately when the entitlement model lands.
+
+## The agent's tool belt
+
+`lib/digest/agent/tools.ts` is the **third consumer of `sectionSchema.ts`**: the form renders from that
+declaration, the parser enforces from it, and here it becomes JSON Schema. `hint` becomes the field's
+`description` — the same sentence that stops a human filling the form wrong is the one that stops the model.
+Add a field to a kind and the form, the parser and the tool all gain it in one edit, which is the only
+version of "everything the user can do, the agent can do" that survives a second month of development.
+
+Six reads, eleven generated `add_<kind>_section` tools, and four writes. All writes land in `applyCommand`;
+nothing here does its own read-modify-write.
+
+Three decisions worth not undoing:
+
+- **The digest id is ambient, never a parameter.** One thread per digest, so `ToolCtx` carries the id and no
+  tool exposes it. That's a security property, not a convenience: there is no argument the model can emit
+  that reaches someone else's digest, and no prompt that can talk it into trying.
+- **`create_digest` is deliberately absent.** The agent works *inside* a digest; creating one stays a form.
+  Admitting it would mean an unscoped tool purely for symmetry, which is how the invariant above dies.
+- **`update_section` merges before writing.** The command replaces the whole section — right for a form,
+  which always submits every field, and a trap for anything else: an agent changing a title would silently
+  drop the urls and then be refused for the missing required field. The merge is the adapter doing protocol
+  translation. `kind` comes from the stored section, so "change the title" can't turn a feed into a search.
+
+Reads return **compact text**, and none of them returns a body or a whole issue unless asked for by id. In a
+tool loop the transcript is dominated by tool results, not by anything anyone typed, and the corpus is a
+query away — so it doesn't need to be resident in context.
+
+`scripts/smoke-tools.ts <digestId>` exercises the whole belt against the real project with no model and no
+chat UI: that every kind has a tool, that required-in-the-schema equals required-in-the-parser, that native
+values (`targets: ["cs.CL"]`) survive to the store, that a `ranked/arxiv` with no targets is refused with the
+form's own sentence, and that a patch leaves omitted fields alone. It adds a scratch section and removes it
+in a `finally`.
+
+> It has already earned its place: it caught `loadReadiness` reporting **"No verified Kindle address"** on a
+> digest that had been delivering for two days. `.maybeSingle()` on an unfiltered `user_data` errors when it
+> sees more than one row, and the error was swallowed into a null — invisible under RLS (one row), wrong
+> under a service-role client. Both account-level reads are now filtered by `owner_id` explicitly.
 
 ## Readiness — "will this work tomorrow at 6am?"
 

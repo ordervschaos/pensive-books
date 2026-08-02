@@ -94,6 +94,25 @@ export interface CallResult {
   sources: Array<{ title: string; url: string }>;
 }
 
+// ---------------------------------------------------------------------------------------------------
+// THE PROVIDER POLICY, in one predicate
+// ---------------------------------------------------------------------------------------------------
+//
+// **Anthropic is for `web_search` and nothing else. Everything else runs on DeepSeek.**
+//
+// That was already true by convention — `MODEL_GATHER` appears at exactly one call site — but convention is
+// not a mechanism. A future call site that copied `model: MODEL_GATHER` while pasting a prompt would sit on
+// Opus forever and nothing would say so; the bill is the only symptom, and it arrives a month later.
+//
+// So the rule is enforced from the *capability* side: reaching Anthropic requires asking for a SERVER tool.
+// A server tool (`{ type: "web_search_20260209" }`) executes inside Anthropic's own infrastructure and comes
+// back in the same response — it is the one thing no other host can serve, and therefore the only honest
+// reason to be there. Ordinary function tools (`{ name, description, input_schema }`) are just a protocol
+// both providers speak, so they carry no such licence.
+function isServerTool(tool: unknown): boolean {
+  return typeof (tool as { type?: unknown } | null)?.type === "string";
+}
+
 const anthropic = new Anthropic();
 
 /**
@@ -105,6 +124,17 @@ const anthropic = new Anthropic();
 export async function callModel(opts: CallOptions, meta: CallMeta): Promise<CallResult> {
   const started = Date.now();
   const model = opts.model ?? MODEL_WRITE;
+
+  // The policy, enforced rather than assumed (see `isServerTool`). Being on Anthropic without asking for a
+  // server tool means someone is paying frontier prices for work DeepSeek does — fail loudly at the call
+  // site instead of quietly on the invoice.
+  if (providerFor(model) === "anthropic" && !(opts.tools ?? []).some(isServerTool)) {
+    throw new Error(
+      `${model} is an Anthropic model, and Anthropic is reserved for server tools (web_search). ` +
+        `This call asks for none, so it belongs on ${MODEL_WRITE} — drop the \`model\` option.`,
+    );
+  }
+
   return providerFor(model) === "deepseek"
     ? callDeepSeek(model, opts, meta, started)
     : callAnthropic(model, opts, meta, started);
@@ -167,7 +197,15 @@ async function callDeepSeek(
 ): Promise<CallResult> {
   const key = process.env.DEEPSEEK_API_KEY;
   if (!key) throw new Error("DEEPSEEK_API_KEY is not set (the write stage runs on DeepSeek)");
-  if (opts.tools?.length) throw new Error(`tools are Anthropic-only; ${model} cannot serve them`);
+  // Server tools are Anthropic infrastructure and vanish silently anywhere else — the exact failure this
+  // pipeline exists to prevent. Function tools are fine on DeepSeek, but not through THIS entry point:
+  // one-shot has nowhere to put a tool result. They go through `callModelStep`.
+  if (opts.tools?.length) {
+    throw new Error(
+      `${model} cannot serve tools through callModel: server tools are Anthropic-only, and function ` +
+        `tools need the loop primitive (callModelStep).`,
+    );
+  }
 
   const headroom = opts.effort ? (REASONING_HEADROOM[opts.effort] ?? 0) : 0;
   const body: Record<string, unknown> = {
@@ -217,6 +255,176 @@ async function callDeepSeek(
   }
 }
 
+// ---------------------------------------------------------------------------------------------------
+// ONE STEP OF A TOOL LOOP — the agent's primitive
+// ---------------------------------------------------------------------------------------------------
+//
+// `callModel` above is one-shot: a prompt in, prose out. An agent needs the other shape — a conversation
+// that accumulates, where the model may answer with *tool calls* instead of an answer and the caller runs
+// them and comes back. This is one step of that: send what has happened so far, get back either text (the
+// turn is over) or calls to make (it is not).
+//
+// The LOOP itself is deliberately not here. It belongs to `lib/digest/agent/`, because "which tools exist,
+// how many steps are allowed, what to do when one fails" is agent policy, not provider plumbing. What
+// stays here is the chokepoint invariant: every step is one logged row in `ai_calls`, so an agent turn is
+// as attributable as anything else the app spends money on.
+//
+// DeepSeek only, by the policy above: function tools are a protocol both providers speak, so there is no
+// reason to be on the expensive one.
+
+export interface ToolSpec {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+}
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  /** Set when the model emitted arguments that weren't valid JSON — hand it back and let it correct itself. */
+  parseError?: string;
+}
+
+/** One entry in the running conversation. Provider-neutral on purpose; converted at the boundary below. */
+export type Turn =
+  | { role: "user"; content: string }
+  | { role: "assistant"; content: string; toolCalls?: ToolCall[] }
+  | { role: "tool"; toolCallId: string; content: string };
+
+export interface StepOptions {
+  system: string;
+  messages: Turn[];
+  tools?: ToolSpec[];
+  model?: string;
+  maxTokens?: number;
+  effort?: "low" | "medium" | "high";
+  signal?: AbortSignal;
+}
+
+export interface StepResult {
+  text: string;
+  toolCalls: ToolCall[];
+  stopReason: string | null;
+}
+
+export async function callModelStep(opts: StepOptions, meta: CallMeta): Promise<StepResult> {
+  const started = Date.now();
+  const model = opts.model ?? MODEL_WRITE;
+  if (providerFor(model) !== "deepseek") {
+    throw new Error(`Tool loops run on DeepSeek; ${model} is not a DeepSeek model.`);
+  }
+  const key = process.env.DEEPSEEK_API_KEY;
+  if (!key) throw new Error("DEEPSEEK_API_KEY is not set");
+
+  const headroom = opts.effort ? (REASONING_HEADROOM[opts.effort] ?? 0) : 0;
+  const body: Record<string, unknown> = {
+    model,
+    max_tokens: (opts.maxTokens ?? 4000) + headroom,
+    messages: [{ role: "system", content: opts.system }, ...opts.messages.map(toOpenAiMessage)],
+  };
+  if (opts.effort) body.reasoning_effort = opts.effort;
+  if (opts.tools?.length) {
+    body.tools = opts.tools.map((t) => ({
+      type: "function",
+      function: { name: t.name, description: t.description, parameters: t.input_schema },
+    }));
+  }
+
+  try {
+    const res = await fetch(DEEPSEEK_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+      body: JSON.stringify(body),
+      signal: opts.signal ?? AbortSignal.timeout(180_000),
+    });
+    if (!res.ok) throw new Error(`DeepSeek ${res.status}: ${(await res.text()).slice(0, 300)}`);
+
+    const json = (await res.json()) as {
+      choices?: Array<{
+        message?: {
+          content?: string | null;
+          tool_calls?: Array<{ id: string; function?: { name?: string; arguments?: string } }>;
+        };
+        finish_reason?: string;
+      }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
+    const choice = json.choices?.[0];
+    const text = (choice?.message?.content ?? "").trim();
+    const toolCalls = (choice?.message?.tool_calls ?? []).map(parseToolCall);
+
+    await log(
+      meta,
+      { system: opts.system, prompt: JSON.stringify(opts.messages) },
+      model,
+      "deepseek",
+      text || JSON.stringify(toolCalls),
+      { usage: json.usage, stop_reason: choice?.finish_reason },
+      started,
+      choice?.finish_reason === "length" ? "truncated: hit max_tokens" : null,
+    );
+
+    return { text, toolCalls, stopReason: choice?.finish_reason ?? null };
+  } catch (e) {
+    await log(
+      meta,
+      { system: opts.system, prompt: JSON.stringify(opts.messages) },
+      model,
+      "deepseek",
+      "",
+      null,
+      started,
+      String((e as Error)?.message ?? e),
+    );
+    throw e;
+  }
+}
+
+/**
+ * Arguments arrive as a JSON *string*, and a model can produce one that doesn't parse.
+ *
+ * That is recorded rather than thrown: a malformed call is something the model can fix if it is told, and
+ * killing the whole turn over it turns a recoverable stumble into a failure the reader has to see.
+ */
+function parseToolCall(call: { id: string; function?: { name?: string; arguments?: string } }): ToolCall {
+  const name = call.function?.name ?? "";
+  try {
+    return { id: call.id, name, input: JSON.parse(call.function?.arguments || "{}") };
+  } catch {
+    return {
+      id: call.id,
+      name,
+      input: {},
+      parseError: `arguments were not valid JSON: ${(call.function?.arguments ?? "").slice(0, 200)}`,
+    };
+  }
+}
+
+function toOpenAiMessage(turn: Turn): Record<string, unknown> {
+  switch (turn.role) {
+    case "user":
+      return { role: "user", content: turn.content };
+    case "tool":
+      return { role: "tool", tool_call_id: turn.toolCallId, content: turn.content };
+    case "assistant":
+      return {
+        role: "assistant",
+        // OpenAI's shape wants null, not "", when the turn was purely tool calls.
+        content: turn.content || null,
+        ...(turn.toolCalls?.length
+          ? {
+              tool_calls: turn.toolCalls.map((c) => ({
+                id: c.id,
+                type: "function",
+                function: { name: c.name, arguments: JSON.stringify(c.input) },
+              })),
+            }
+          : {}),
+      };
+  }
+}
+
 // Pull citations out of the web_search server-tool result blocks so a section can show where it got things.
 function extractSources(res: Anthropic.Message): Array<{ title: string; url: string }> {
   const out: Array<{ title: string; url: string }> = [];
@@ -243,7 +451,9 @@ interface LoggedUsage {
 // Best-effort: a logging failure must never take down a digest build.
 async function log(
   meta: CallMeta,
-  opts: CallOptions,
+  // Narrowed to what this actually reads, so `callModelStep` (whose "prompt" is a serialized message list)
+  // can log through the same chokepoint instead of growing a second insert.
+  opts: { system: string; prompt: string },
   model: string,
   provider: Provider,
   output: string,

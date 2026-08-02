@@ -5,10 +5,10 @@ import type { Digest, IssueContent, Section } from "./types";
 
 // READINESS — "will this digest produce something worth reading tomorrow at 6am?", answered from data.
 //
-// The failure this exists to kill is the SILENT SKIP. A `search` section with AI off, a `readwise` section
-// whose token was never entered, a feed that has served nothing but 2019 archive posts — every one of these
-// compiles fine, delivers fine, and simply isn't there. The reader finds out at 6am, or never. Nothing in
-// the pipeline is broken enough to log an error, which is exactly why a separate pass has to ask.
+// The failure this exists to kill is the SILENT SKIP. A `search` section with AI off, or a `readwise` section
+// whose token was never entered — either compiles fine, delivers fine, and simply isn't there. The reader
+// finds out at 6am, or never. Nothing in the pipeline is broken enough to log an error, which is exactly why
+// a separate pass has to ask.
 //
 // Two properties are deliberate:
 //
@@ -20,15 +20,13 @@ import type { Digest, IssueContent, Section } from "./types";
 //
 // It also splits BLOCKING from DEGRADING, because they are different kinds of bad news. Blocking = this
 // will produce nothing (or this section will silently vanish). Degrading = it will deliver, but it isn't
-// earning its place. Only the corpus can see the second kind, which is most of why the corpus exists.
+// earning its place — e.g. a section that keeps coming up empty run after run. An old-but-good piece is
+// neither: age alone isn't a readiness problem, so it's just labeled "From the archives" in the issue
+// itself (see write.ts) rather than flagged here.
 
 const LOOKBACK_ISSUES = 5;
 /** A section that was due this many times and never appeared once is silent, not merely quiet. */
 const MIN_DUE_RUNS = 3;
-/** Median age above which a "daily" is really serving an archive. Measured: James Clear 6.8y, Daily Stoic 3y. */
-const STALE_DAYS = 180;
-/** Below this, a median is one lucky old post rather than a pattern. */
-const MIN_POSTS_FOR_AGE = 4;
 
 export type ReadinessLevel = "blocking" | "degrading";
 
@@ -59,11 +57,6 @@ export interface IssueSummary {
   sectionIds: string[];
 }
 
-export interface PostSummary {
-  section_id: string | null;
-  published_at: string | null;
-}
-
 export interface ReadinessInput {
   digest: Pick<Digest, "id" | "sections" | "active" | "ai_enabled" | "web_search_enabled">;
   /** Already resolved: the digest's own override, else the account's OTP-verified address, else null. */
@@ -72,7 +65,6 @@ export interface ReadinessInput {
   readwiseReady: boolean;
   /** Newest first. */
   issues: IssueSummary[];
-  posts: PostSummary[];
   /** Messages ever received at this digest's inbound address. */
   inboxCount: number;
 }
@@ -156,7 +148,6 @@ export function readiness(input: ReadinessInput): Readiness {
   }
 
   notes.push(...silentSections(live, input.issues));
-  notes.push(...staleSections(live, input.posts));
 
   if (input.inboxCount === 0 && live.some((s) => s.kind === "inbox")) {
     notes.push({
@@ -211,50 +202,6 @@ function silentSections(live: Section[], issues: IssueSummary[]): ReadinessNote[
 }
 
 /**
- * Sections serving old writing.
- *
- * Median, not mean, and keyed on when the piece was WRITTEN rather than when we fetched it. Several feeds
- * republish evergreen archives, so a "daily" quietly ships 2019 — visible in the corpus and nowhere else.
- */
-function staleSections(live: Section[], posts: PostSummary[]): ReadinessNote[] {
-  const ages = new Map<string, number[]>();
-  for (const p of posts) {
-    if (!p.section_id || !p.published_at) continue;
-    const t = new Date(p.published_at).getTime();
-    if (Number.isNaN(t)) continue;
-    const bucket = ages.get(p.section_id) ?? [];
-    bucket.push((Date.now() - t) / 86_400_000);
-    ages.set(p.section_id, bucket);
-  }
-
-  const out: ReadinessNote[] = [];
-  for (const s of live) {
-    const days = ages.get(s.id);
-    if (!days || days.length < MIN_POSTS_FOR_AGE) continue;
-    const med = median(days);
-    if (med <= STALE_DAYS) continue;
-    out.push({
-      level: "degrading",
-      sectionId: s.id,
-      title: `“${s.title}” is serving writing that is ${ageLabel(med)} old, on average`,
-      detail: `Half of what it has pulled was published over ${ageLabel(med)} ago — an archive, not a day's news.`,
-    });
-  }
-  return out;
-}
-
-function median(xs: number[]): number {
-  const sorted = [...xs].sort((a, b) => a - b);
-  const mid = sorted.length >> 1;
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
-function ageLabel(days: number): string {
-  if (days < 365) return `${Math.round(days / 30)} months`;
-  return `${(days / 365).toFixed(1).replace(/\.0$/, "")} years`;
-}
-
-/**
  * The ONE next step: where to start, when there is more than one thing wrong. Deliberately a single
  * sentence rather than a ranked list — this is the string the agent will later inject as
  * `<suggested_next>`, and a list there reads as a set of orders rather than as a default.
@@ -269,18 +216,26 @@ function nextStep(notes: ReadinessNote[]): string | null {
 // ---------------------------------------------------------------------------------------------------
 
 /**
- * Read everything `readiness()` needs through the caller's client. Request-scoped (RLS-enforcing) on
- * purpose — this runs for a signed-in reader looking at their own digest, not for the 6am pipeline.
+ * Read everything `readiness()` needs through the caller's client.
  *
  * `kindle_email` follows the same fallback the delivery step uses (`buildIssue`): the digest's own override
  * first, then the account's OTP-verified address. A different rule here would report ready for a digest
  * that is not.
+ *
+ * The two ACCOUNT-level reads are filtered by `owner_id` rather than leaning on RLS to return one row. That
+ * looks redundant under a request-scoped client and isn't: `.maybeSingle()` against an unfiltered table
+ * ERRORS when it sees more than one row, and the error is swallowed into a null — so a caller holding a
+ * service-role client (a script, a server-side agent) would silently be told this digest has no verified
+ * Kindle address, on a digest that has been delivering for days. Caught by `scripts/smoke-tools.ts`.
  */
 export async function loadReadiness(
   supabase: SupabaseClient,
-  digest: Pick<Digest, "id" | "sections" | "active" | "ai_enabled" | "web_search_enabled" | "delivery">,
+  digest: Pick<
+    Digest,
+    "id" | "owner_id" | "sections" | "active" | "ai_enabled" | "web_search_enabled" | "delivery"
+  >,
 ): Promise<Readiness> {
-  const [issuesRes, postsRes, rwRes, inboxRes, userRes] = await Promise.all([
+  const [issuesRes, rwRes, inboxRes, userRes] = await Promise.all([
     supabase
       .from("digest_issues")
       .select("issue_date, status, content")
@@ -288,17 +243,19 @@ export async function loadReadiness(
       .order("issue_date", { ascending: false })
       .limit(LOOKBACK_ISSUES),
     supabase
-      .from("digest_posts")
-      .select("section_id, published_at")
-      .eq("digest_id", digest.id)
-      .order("fetched_at", { ascending: false })
-      .limit(300),
-    supabase.from("digest_user_settings").select("readwise_enabled, readwise_verified_at").maybeSingle(),
+      .from("digest_user_settings")
+      .select("readwise_enabled, readwise_verified_at")
+      .eq("user_id", digest.owner_id)
+      .maybeSingle(),
     supabase
       .from("digest_inbox_messages")
       .select("id", { count: "exact", head: true })
       .eq("digest_id", digest.id),
-    supabase.from("user_data").select("kindle_email, kindle_configured").maybeSingle(),
+    supabase
+      .from("user_data")
+      .select("kindle_email, kindle_configured")
+      .eq("user_id", digest.owner_id)
+      .maybeSingle(),
   ]);
 
   const issues: IssueSummary[] = (
@@ -320,7 +277,6 @@ export async function loadReadiness(
       null,
     readwiseReady: Boolean(rw?.readwise_enabled && rw?.readwise_verified_at),
     issues,
-    posts: (postsRes.data ?? []) as PostSummary[],
     inboxCount: inboxRes.count ?? 0,
   });
 }

@@ -56,6 +56,7 @@ export type Command =
       kind: SectionKind;
       fields: SectionFields;
       max_items?: number;
+      expectedVersion?: number;
     }
   | {
       type: "update_section";
@@ -64,8 +65,9 @@ export type Command =
       kind: SectionKind;
       fields: SectionFields;
       max_items?: number;
+      expectedVersion?: number;
     }
-  | { type: "remove_section"; digestId: number; sectionId: string }
+  | { type: "remove_section"; digestId: number; sectionId: string; expectedVersion?: number }
   | { type: "forget_message"; digestId: number; messageId: number };
 
 export interface CommandResult {
@@ -73,6 +75,11 @@ export interface CommandResult {
   revalidate: Array<{ path: string; scope?: "layout" }>;
   /** `create_digest` only. */
   digestId?: number;
+  /**
+   * The `sections_version` AFTER a section write. A caller making several writes in one turn must carry
+   * this into the next one, or its second write conflicts with its own first.
+   */
+  sectionsVersion?: number;
   /** One line describing what happened, in the past tense. The agent reports this; a form ignores it. */
   summary: string;
 }
@@ -88,7 +95,7 @@ export async function applyCommand(supabase: SupabaseClient, cmd: Command): Prom
     case "update_section":
       return updateSection(supabase, cmd);
     case "remove_section":
-      return removeSection(supabase, cmd.digestId, cmd.sectionId);
+      return removeSection(supabase, cmd.digestId, cmd.sectionId, cmd.expectedVersion);
     case "forget_message":
       return forgetMessage(supabase, cmd.digestId, cmd.messageId);
   }
@@ -203,30 +210,82 @@ function buildSection(
   } as Section;
 }
 
-async function readSections(supabase: SupabaseClient, digestId: number): Promise<Section[]> {
+/**
+ * Which version a write must match. There are TWO windows, and only the caller knows about the long one:
+ *
+ *   - the SHORT window is inside `applyCommand` — read, modify, write, a few milliseconds. Guarded for free
+ *     by using the version just read, which is what a form gets without passing anything.
+ *   - the LONG window belongs to an agent: it reads the digest at the start of a turn, thinks for twenty
+ *     seconds, and only then writes. Guarding the short window would do nothing for it, so the caller
+ *     passes the version it actually reasoned about, and the write is checked against *that*.
+ *
+ * Which is why `expectedVersion` is a caller concern rather than something this module could infer.
+ */
+function guard(expected: number | undefined, current: number): number {
+  return expected ?? current;
+}
+
+/**
+ * Raised when a section write lost a race. Its own class because the right RESPONSE differs by caller: a
+ * form can re-render, but an agent must re-read and reconsider rather than retry — a retry would re-apply
+ * an intent computed against a configuration that no longer exists.
+ */
+export class ConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConflictError";
+  }
+}
+
+async function readSections(
+  supabase: SupabaseClient,
+  digestId: number,
+): Promise<{ sections: Section[]; version: number }> {
   const { data, error } = await supabase
     .from("digests")
-    .select("sections")
+    .select("sections, sections_version")
     .eq("id", digestId)
     .single();
   if (error) throw new Error(error.message);
-  return ((data as { sections: Section[] | null }).sections ?? []) as Section[];
+  const row = data as { sections: Section[] | null; sections_version: number };
+  return { sections: (row.sections ?? []) as Section[], version: row.sections_version };
 }
 
+/**
+ * Compare-and-swap on the whole array: the UPDATE only matches while `sections_version` is still what we
+ * read, and bumps it in the same statement. Zero rows back means a concurrent writer won.
+ *
+ * `.select("id")` is what makes "zero rows" observable — a plain update reports no error when it matches
+ * nothing, which is exactly the silence this whole mechanism exists to end.
+ */
 async function writeSections(
   supabase: SupabaseClient,
   digestId: number,
   sections: Section[],
-): Promise<void> {
-  const { error } = await supabase.from("digests").update({ sections }).eq("id", digestId);
+  version: number,
+): Promise<number> {
+  const { data, error } = await supabase
+    .from("digests")
+    .update({ sections, sections_version: version + 1 })
+    .eq("id", digestId)
+    .eq("sections_version", version)
+    .select("id");
   if (error) throw new Error(error.message);
+  if (!data?.length) {
+    throw new ConflictError(
+      "This digest's sections changed while you were working. Re-read it before writing again — " +
+        "the change you were about to make was based on a version that no longer exists.",
+    );
+  }
+  return version + 1;
 }
 
 async function addSection(
   supabase: SupabaseClient,
   cmd: Extract<Command, { type: "add_section" }>,
 ): Promise<CommandResult> {
-  const existing = await readSections(supabase, cmd.digestId);
+  const { sections: existing, version } = await readSections(supabase, cmd.digestId);
+  const at = guard(cmd.expectedVersion, version);
   const section = buildSection(cmd.fields, {
     // Timestamp-based id: stable across edits, and unique enough for a hand-authored list.
     id: `s${Date.now().toString(36)}`,
@@ -235,9 +294,10 @@ async function addSection(
     enabled: true,
   });
 
-  await writeSections(supabase, cmd.digestId, [...existing, section]);
+  const sectionsVersion = await writeSections(supabase, cmd.digestId, [...existing, section], at);
   return {
     revalidate: [{ path: `/digests/${cmd.digestId}`, scope: "layout" }],
+    sectionsVersion,
     summary: `Added a ${cmd.kind} section, “${section.title}”.`,
   };
 }
@@ -246,7 +306,8 @@ async function updateSection(
   supabase: SupabaseClient,
   cmd: Extract<Command, { type: "update_section" }>,
 ): Promise<CommandResult> {
-  const existing = await readSections(supabase, cmd.digestId);
+  const { sections: existing, version } = await readSections(supabase, cmd.digestId);
+  const at = guard(cmd.expectedVersion, version);
   const current = existing.find((s) => s.id === cmd.sectionId);
   if (!current) throw new Error("Section not found");
 
@@ -257,13 +318,15 @@ async function updateSection(
     enabled: current.enabled ?? true,
   });
 
-  await writeSections(
+  const sectionsVersion = await writeSections(
     supabase,
     cmd.digestId,
     existing.map((s) => (s.id === cmd.sectionId ? section : s)),
+    at,
   );
   return {
     revalidate: [{ path: `/digests/${cmd.digestId}`, scope: "layout" }],
+    sectionsVersion,
     summary: `Updated “${section.title}”.`,
   };
 }
@@ -272,16 +335,20 @@ async function removeSection(
   supabase: SupabaseClient,
   digestId: number,
   sectionId: string,
+  expectedVersion?: number,
 ): Promise<CommandResult> {
-  const existing = await readSections(supabase, digestId);
+  const { sections: existing, version } = await readSections(supabase, digestId);
+  const at = guard(expectedVersion, version);
   const gone = existing.find((s) => s.id === sectionId);
-  await writeSections(
+  const sectionsVersion = await writeSections(
     supabase,
     digestId,
     existing.filter((s) => s.id !== sectionId),
+    at,
   );
   return {
     revalidate: [{ path: `/digests/${digestId}`, scope: "layout" }],
+    sectionsVersion,
     summary: gone ? `Removed “${gone.title}”.` : "Nothing to remove.",
   };
 }

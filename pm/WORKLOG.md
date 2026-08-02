@@ -19,6 +19,175 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-02 — Citations vs links, and the paragraph gap the preview never had `[ship]`
+- **What:** Two more reader-side reports (`doc_1785656805078.md` §10), both `issueStyles` doing less than the
+  code around it assumed.
+  **(a) Inline links shrunk to 0.75em mid-sentence.** `.src` wrapped EVERY prose link, so a verbatim
+  article's own sentence link ("…we write about in *our daily email newsletter*") rendered two-thirds size.
+  The obvious fix — stop shrinking `.src` — is wrong: it would flatten the AI path's real citations (the
+  reader asked for "source in small words") and blow up the article byline, which genuinely is metadata. The
+  two cases want opposite things, so the renderer gets told which: `RenderOpts.citations`, resolved per
+  section by **`isVerbatimSection(markdown)` — inferred, not stored.** `renderRawList` always opens with
+  `## [Title](url)` and the constitution forbids the model from emitting headings at all, so a leading `## [`
+  is unambiguous; inferring costs no schema change and is correct for issues ALREADY in the database, which
+  a column could never be. Body links now full-size ink + hairline underline; `.src` keeps 0.75em and means
+  one thing again. The byline then needed a home: identified structurally as `h3 + p`, which is only safe
+  because `demoteHeadings` guarantees sub-heads start at `h4` AND `renderRawList` now **always** emits a
+  byline (domain fallback) — without that, an article whose feed declares no source would have handed byline
+  styling to its first real paragraph.
+  **(b) Paragraphs ran together.** `issueStyles` never set `p` margins. Three consumers, two compensating by
+  accident — the reader page via a Tailwind `space-y-3` utility, the mailed HTML via browser defaults (no
+  reset in a standalone doc). The preview page had neither and Tailwind's preflight zeroes `p`, so every
+  paragraph ran into the next. Spacing moved into `issueStyles`; `space-y-3` dropped from the reader so
+  there's one owner. Same failure as the `globals.css` one earlier today, one layer down: **a shared
+  stylesheet missing a rule looks fine wherever something else happens to supply it.**
+  **Verified:** body `p` margin-top 14.4px (was 0 in preview), inline link 16px/#1a1917/underline (was
+  12px/#666), byline 12.8px/#666; 4 assertions on the citation split + `isVerbatimSection` both directions.
+  `tsc` + `next build` green.
+- **Files/commits:** `lib/digest/render.ts`, `lib/digest/write.ts`, `components/IssueContentView.tsx`,
+  `app/digests/[id]/preview/page.tsx`, `doc_1785656805078.md` §10. Uncommitted.
+- **PM impact:** folded into today's "Issue reader render" STATE row. Note: a concurrent session is editing
+  the same app (`llm.ts`, `commands.ts`, `readiness.ts`, `app/digests/[id]/page.tsx`) — one build failed
+  transiently on a `scripts/tmp-cleanup.ts` that appeared and vanished mid-run; re-ran green.
+
+## 2026-08-02 — Digest agent loop, on DeepSeek `[ship]`
+- **What:** Rung 4's core (loop, not UI). Owner directive: *Anthropic only for `web_search`, everything else
+  DeepSeek.* Audit first — the code already complied (`MODEL_GATHER` appears at exactly one call site; the
+  other four omit `model:` and default to DeepSeek), so nothing to migrate. What was missing was
+  enforcement, so the policy is now checked from the **capability** side: reaching Anthropic requires
+  asking for a *server* tool, and `callModel` throws on a `claude-*` model without one. Function tools carry
+  no such licence — they're a protocol both providers speak.
+  New in `llm.ts`: `callModelStep` — one step of a tool loop on DeepSeek (OpenAI-shape `tools`,
+  `tool_calls` parsing, `role:"tool"` turns, multi-turn message arrays), logged to `ai_calls` like every
+  other call so an agent turn is as attributable as anything else. Malformed tool arguments are *recorded*
+  (`parseError`) rather than thrown — the model can fix them if told.
+  New `lib/digest/agent/loop.ts`: `runAgentTurn`. Static constitution then `<digest_state>` re-read every
+  turn (cacheable prefix + state that can't be stale); tool calls run in sequence because they contend on
+  one version counter; `execute` never throws, and the conflict case tells the model to **re-read and
+  decide**, explicitly not to retry. No self-chaining/durable-row/watchdog — that's a Supabase-worker
+  workaround and Vercel gives 300s.
+- **Verified:** `scripts/smoke-agent.ts` (new), two real turns on live digest #1. Read turn: called
+  `read_digest` + `check_readiness`, found the genuine silent failure (`prompt` section with AI off),
+  explained it, offered two paths and **asked before proposing paid spend** — the constitution rule
+  holding. Write turn: `add_feed_section` with every field right including weekday 3 = Wednesday, 7s.
+  Scratch section removed after; sections back to 6. typecheck + build green.
+- **Two bugs caught while writing, not by tests:** (1) the conflict remedy was unreachable — `read_digest`
+  didn't refresh the version holder, so "re-read then write" would have conflicted forever. It refreshes
+  now, and *only* on the tool the model calls: the internal read inside `update_section` must not, or the
+  guard would re-arm microseconds before every write and protect nothing. (2) a shadowed `step` variable.
+- **Open decision for the owner (in README):** the agent sits behind the same `aiEnabled(digest)` gate as
+  the 6am pipeline, so an AI-off digest can't use it. Possibly backwards — an AI-off digest still delivers
+  a good plain linked list, and the agent is what would help someone set one up. The pipeline gate is about
+  *unattended* spend; the agent is user-initiated, closer to Preview. Not decided; flagged.
+- **Files/commits:** `apps/digest/lib/digest/{llm.ts,agent/loop.ts}`, `scripts/smoke-agent.ts` (new),
+  `lib/digest/agent/tools.ts`, `apps/digest/README.md`. Uncommitted, with rung 3 + the version column.
+- **PM impact:** none yet. Remaining for rung 4: the rail UI and conversation persistence. Rung 5 (context
+  policy) is unstarted — history currently accumulates unbounded in `AgentTurn.messages`.
+
+## 2026-08-02 — `cleanBody` was deleting paragraphs and demolishing every heading, quote and italic `[ship]`
+- **What:** Owner read the rendered issue against the source article and spotted two things: formatting gone
+  (a sub-head, its pull-quote and the paragraph under it all landing as identical undifferentiated
+  paragraphs) and text simply **missing**. Both in `entities.ts`, two independent faults that had been hiding
+  each other. Full write-up in `doc_1785656805078.md` §9.
+  **(a) `isLinkHeavy` deleted real prose.** It called anything under 300 characters-per-link a nav row, so a
+  200-char paragraph with ONE inline citation scored 200 and was dropped — including *"As mentioned before,
+  hardship allows you to show your true character… Amor Fati…"*, gone purely because "Amor Fati" was linked.
+  It also ate the article's own `## [](url)How do we persevere?` headings, since that extractor writes an
+  **empty-label permalink anchor** that renders nothing but counted as a link. Rewrote on the right axis:
+  strip empty-label anchors, then measure the visible text that is NOT link label (share + absolute floor).
+  A nav row is links plus separators; a paragraph is the author's sentences with a link inside one of them.
+  **Measured over all 43 stored bodies: 109 blocks restored**, overwhelmingly real prose — **+8,591 chars of
+  article text on issue 15 alone** that had been deleted before anyone could read it.
+  **(b) `cleanBody` returned flat text.** `stripMarkdownSyntax` output WAS the return value, so `#`, `>`,
+  `*`, `_` all died. Fine for a one-paragraph teaser, wrong once `renderRawList` emitted whole articles. Fix
+  is one line with a principle behind it: **judge on the stripped text, return the original block** — the
+  chrome/length decisions are easier flat, the reader wants the structure, and `markdownToHtml` could already
+  render all of it.
+  **(c) Restoring structure exposed three latent bugs**, each fixed: heading collision with the article title
+  (`demoteHeadings` re-bases the *shallowest* body heading to `###` — a fixed +1 fails because one site opens
+  at `#` and another at `##`); `markdownToHtml` matched only `#{1,3}` so `##### Performance Cookies` printed
+  its hashes (now `#{1,6}` clamped at h6); and underscore litter, because real markdown nests emphasis
+  (`**_[title](url)_**`) and by the time the `_` rule ran the preceding character was a `<strong>`'s `>` — so
+  `>`/`<` now count as boundaries, `__strong__` is supported, and the closing side takes any non-word char (a
+  curly apostrophe in `_Exposure Therapy_’s` was the last survivor). Opening side stays a narrow whitelist,
+  which is what keeps `used_at` intact. Blocklist also gained the furniture that only became visible once
+  headings existed (`Tags`, `Like this:`, `Newswire`, `Discover more from …`, `Your Privacy Choices`).
+  **Verified:** issue 15 rebuilt from raw bodies — `<h3>` = 13 = exactly the 13 articles (no collisions),
+  `<h4>` sub-heads, 12 blockquotes, 42 italics, 17 bolds, 9 rules, **0 stray underscores**. 10 renderer
+  assertions pass incl. `used_at` protection and the curly apostrophe. `tsc` + `next build` green.
+  **Worth keeping:** both faults were invisible *by construction* — a filter that flattens markers leaves no
+  trace of unmatched emphasis, and one that returns only what it kept leaves no gap where a deleted paragraph
+  was. Same argument as the §5 trim pass: **make deletion legible.** Had `cleanBody` recorded its drops this
+  would have been a one-look diagnosis instead of a reader noticing a missing sentence.
+- **Files/commits:** `lib/digest/entities.ts`, `lib/digest/render.ts`, `lib/digest/write.ts`,
+  `doc_1785656805078.md` §9. Uncommitted.
+- **PM impact:** folded into the STATE row added earlier today ("Issue reader render"). No new project.
+
+## 2026-08-02 — Optimistic concurrency on digest sections `[ship]`
+- **What:** Closes the lost-update gap logged two entries ago, before rung 4 makes a second writer real.
+  New `digests.sections_version` (migration `20260803140000`, **pushed**); every section write is now a
+  compare-and-swap — `.eq("sections_version", v)` + bump, with `.select("id")` so "zero rows" is
+  observable (a plain update reports no error when it matches nothing, which is the silence this ends).
+  Mismatch raises `ConflictError`.
+  The design point: **there are two windows and only the caller knows about the long one.** The short one
+  is inside `applyCommand` and is guarded for free by the version just read — all a form needs, which is
+  why forms pass nothing. The long one is an agent's twenty seconds of thinking between read and write, so
+  `ToolCtx.sections` holds the version the turn started with and every write is checked against *that*.
+  Deliberately **not** a tool parameter: a model echoing a version back correctly on every call is not a
+  property worth depending on. The holder absorbs each result, or the agent's second write conflicts with
+  its own first. On conflict an agent must re-read and reconsider, never retry — a retry re-applies an
+  intent computed against a configuration that no longer exists (the staleness fence from the context
+  design, at the data layer instead of the prompt).
+  Not covered on purpose: scalar settings (`update_digest` writes only the keys given, so concurrent
+  patches of different columns can't clobber) and per-element `jsonb_set` (the optimization to reach for
+  only if conflicts prove common).
+- **Verified:** `scripts/smoke-tools.ts` grew a concurrency section — a competing write lands and moves the
+  version, the stale write is **refused** with `ConflictError` and writes nothing, the same write succeeds
+  after a re-read, and a second write in one turn does not conflict with the first. ALL OK on live digest
+  #1 alongside the existing 30+ assertions. typecheck + build green.
+  Also caught in review, not by a test: the first cut keyed the guard on `"expectedVersion" in cmd`, which
+  is an optional field and therefore absent at runtime — the guard would have silently never fired. Keyed
+  on `cmd.type` now.
+- **Rough edge logged, not solved:** two racing *form* submits now surface an error page instead of
+  silently taking the last write. Better, but the forms have no conflict UI; the window is milliseconds.
+- **Files/commits:** `supabase/migrations/20260803140000_digests_sections_version.sql` (new, pushed),
+  `apps/digest/lib/digest/commands.ts`, `lib/digest/agent/tools.ts`, `scripts/smoke-tools.ts`,
+  `apps/digest/README.md`. Uncommitted, with rung 3.
+- **PM impact:** none. Next: rung 4 (the loop) — owner directed it onto **DeepSeek, not Anthropic**, which
+  means `lib/digest/llm.ts` needs a real OpenAI-shape tool loop; its current guard throws on any `tools`.
+  That guard should narrow to *server* tools (`web_search` is Anthropic-infrastructure and vanishes
+  silently elsewhere) rather than being dropped.
+
+## 2026-08-02 — Digest agent tool belt, generated from the section schema `[ship]`
+- **What:** Rung 3 of `doc_1785651033920.md`. `lib/digest/agent/tools.ts` — 21 tools: 6 reads
+  (`read_digest`, `check_readiness`, `read_issues`, `read_issue_section`, `read_posts`, `read_inbox`), 11
+  **generated** `add_<kind>_section` tools, and `update_section` / `remove_section` / `update_digest` /
+  `forget_message`. Every write goes through `applyCommand` (rung 2); nothing does its own RMW. Tool
+  schemas are derived from `sectionSchema.ts` — `hint` becomes the field `description`, so there is no
+  second copy of "what this field means" to drift. Three scoping calls: the **digest id is ambient** (no
+  tool exposes it, so no model output can reach another digest), **`create_digest` is absent** (the agent
+  works inside one digest; admitting it would mean an unscoped tool for symmetry), and **`update_section`
+  merges before writing** (the command replaces the whole section — right for a form, a trap for an agent
+  changing one field; `kind` comes from the stored section so a rename can't turn a feed into a search).
+  Reads return compact text and never a body or whole issue unless asked for by id — tool results, not
+  user text, are what dominates a tool-loop transcript.
+- **Verified:** new `scripts/smoke-tools.ts <digestId>` — no model, no chat UI. 30+ assertions, ALL OK on
+  live digest #1: every kind has a tool, required-in-schema == required-in-parser for all 11, field types
+  survived (`targets` array, `min_score` integer, `source` enum), native values reached the store, a
+  `ranked/arxiv` with no targets refused with the form's own sentence, a patch left omitted fields alone,
+  cleanup restored the section count. typecheck + build green.
+- **Bug the smoke test caught (fixed):** `loadReadiness` reported "No verified Kindle address" on a digest
+  that had delivered two days running. `.maybeSingle()` on an unfiltered `user_data` ERRORS when it sees
+  >1 row and the error was swallowed into a null — invisible under RLS (one row), wrong under a
+  service-role client, i.e. exactly what a server-side agent would hold. Both account-level reads in
+  `loadReadiness` now filter by `owner_id`; `page.tsx` and `tools.ts` select it.
+- **Files/commits:** `apps/digest/lib/digest/agent/tools.ts` (new), `scripts/smoke-tools.ts` (new),
+  `lib/digest/readiness.ts`, `app/digests/[id]/page.tsx`, `apps/digest/README.md`. Uncommitted.
+  Prior rung: `84885fb`.
+- **PM impact:** none yet. Rung 4 (the loop + rail UI) is the first one that needs the owner's ratification
+  — it turns on model spend and makes the read-modify-write concurrency gap (logged in the previous entry)
+  real.
+
 ## 2026-08-02 — Issue reader: hairlines, real headlines, and a boilerplate blocklist `[ship]`
 - **What:** Items 1–3 of the issue-15 design review (`doc_1785656805078.md` §7, now §8 records the result).
   (1) `markdownToHtml` gained a thematic-break rule — `renderRawList`'s `\n\n---\n\n` had been falling
