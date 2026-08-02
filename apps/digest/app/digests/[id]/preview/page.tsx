@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { previewStream, previewClosersAndIntro, type PreviewStream } from "@/lib/digest/build";
-import { markdownToHtml, issueStyles } from "@/lib/digest/render";
+import { markdownToHtml, issueStyles, isVerbatimSection } from "@/lib/digest/render";
 import type { RenderedSection } from "@/lib/digest/types";
 
 export const dynamic = "force-dynamic";
@@ -58,7 +58,7 @@ async function ClosersBlock({ promise }: { promise: Promise<ClosersAndIntro> }) 
       {closed.map((s) => (
         <div key={s.id}>
           <h2>{s.title}</h2>
-          <div dangerouslySetInnerHTML={{ __html: markdownToHtml(s.markdown, { items: s.items }) }} />
+          <div dangerouslySetInnerHTML={{ __html: markdownToHtml(s.markdown, { items: s.items, citations: !isVerbatimSection(s.markdown), trustImageUrls: isVerbatimSection(s.markdown) }) }} />
           <hr />
         </div>
       ))}

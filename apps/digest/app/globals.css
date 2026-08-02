@@ -12,9 +12,14 @@
 }
 
 @layer components {
-  /* `prose-digest` marks rendered issue markdown. The Kindle build carries its own inline <style> (Amazon's
-     converter drops most CSS), so this is the web reader's half of the same look. */
-  .prose-digest blockquote {
-    @apply my-2 border-l-2 border-rule pl-4 italic;
+  /* `prose-digest` marks rendered issue markdown. Its look is NOT defined here — `issueStyles()` in
+     lib/digest/render.ts is the single definition, injected scoped to `.prose-digest` by IssueContentView
+     and by the preview page, and inlined bare into the mailed HTML. A rule added here would be a fourth
+     copy that only the reader page sees. */
+
+  /* Article headings inside issue markdown. Kept in Tailwind (not issueStyles) on purpose: this is the
+     app's type scale, not something Kindle's converter would honour anyway. */
+  .prose-digest h3 {
+    @apply text-lg;
   }
 }

@@ -74,22 +74,114 @@ function stripMarkdownSyntax(block: string): string {
     .trim();
 }
 
-// A block that is mostly links, by character count, is a nav/footer list ("Home · About · Subscribe ·
-// Unsubscribe") even when it reads as grammatical sentences ("View it in full <url>. Unsubscribe <url>.") —
-// real prose cites a source now and then, it doesn't run wall-to-wall links.
+// A block that is mostly links is a nav/footer list ("Home · About · Subscribe · Unsubscribe") even when it
+// reads as grammatical sentences ("View it in full <url>. Unsubscribe <url>.") — real prose cites a source
+// now and then, it doesn't run wall-to-wall links.
+//
+// The first version of this counted characters-per-link and called anything under 300 a nav row. That is far
+// too blunt once whole article bodies pass through: a 200-character paragraph containing ONE inline citation
+// scores 200 and was deleted. Two real paragraphs died that way in a single Daily Stoic piece, one of them
+// only because the phrase "Amor Fati" happened to be linked.
+//
+// What actually distinguishes the two is not how often links appear but **how much of the block is anything
+// else**. A nav row is links plus separators; a paragraph is the author's own sentences with a link inside
+// one of them. So: measure the visible text that is NOT link label, both as a share and in absolute terms.
+const MD_LINK = /\[([^\]]*)\]\((https?:\/\/[^)\s]*)\)/g;
+const BARE_URL = /<?\bhttps?:\/\/[^\s>)]+>?/g;
+const MIN_PROSE_OUTSIDE_LINKS = 80;
+const MAX_LINK_SHARE = 0.5;
+
 function isLinkHeavy(block: string): boolean {
-  const links = block.match(/https?:\/\//g)?.length ?? 0;
-  return links > 0 && block.length / links < 300;
+  let links = 0;
+  let linkTextLen = 0;
+
+  // An EMPTY-label link — `[](https://…)` — is a permalink anchor: it renders nothing and the reader never
+  // sees it. Counting it as a link is what deleted the `## [](url)How do we persevere?` headings out of the
+  // middle of an article. Strip those first so they neither count nor contribute length.
+  const withoutAnchors = block.replace(/\[\]\((?:https?:\/\/[^)\s]*)\)/g, "");
+
+  const stripped = withoutAnchors
+    .replace(MD_LINK, (_m, label: string) => {
+      links++;
+      linkTextLen += label.length;
+      return " ";
+    })
+    // A bare URL has no label, but its own characters are what the reader sees, so they count as link text.
+    .replace(BARE_URL, (m: string) => {
+      links++;
+      linkTextLen += m.length;
+      return " ";
+    });
+
+  if (!links) return false;
+
+  const prose = stripMarkdownSyntax(stripped).length;
+  const visible = prose + linkTextLen;
+  return prose < MIN_PROSE_OUTSIDE_LINKS && (visible === 0 || linkTextLen / visible >= MAX_LINK_SHARE);
+}
+
+// Page furniture that carries no links, and therefore sails straight past `isLinkHeavy`: a cookie-consent
+// panel, a share widget, a subscribe box. One real issue ran ~3,000 unbroken characters of Cookiebot copy
+// ("Manage Consent Preferences", "Switch Label label", "checkbox label label") as the tail of an art
+// section, because the extractor's markdown had stripped the links out of it.
+//
+// Kept as two DATA lists, not code: adding a newly-observed junk phrase should be one line here, and the
+// two tiers exist because the false-positive risk is completely different between them.
+
+// Tier 1 — strings that are only ever furniture, matched anywhere in a block of any length. No essay
+// contains "Manage Consent Preferences" except as a banner.
+const CHROME_PHRASES: RegExp[] = [
+  /manage consent preferences/i,
+  /consent leg\.?\s*interest/i,
+  /switch label label/i,
+  /checkbox label/i,
+  /confirm my choices/i,
+  /privacy\/terms of use policy/i,
+  /\bthese cookies (are|allow|may be|enable|collect|do not|help)/i,
+  /^(strictly necessary|performance|functional|targeting|social media|advertising) cookies$/i,
+  /enter your email address to (subscribe|follow)/i,
+  /subscribe to get the latest posts/i,
+  /\d[\d,]* other subscribers/i,
+  // Footers that survive `isLinkHeavy` because their link is a bare "here" or "Go here" — almost all text,
+  // one tiny anchor, which is the exact shape the relaxed link rule is designed NOT to delete.
+  /need to cancel a recurring donation/i,
+  /^see more on (instagram|twitter|facebook|threads|bluesky|x)\b/i,
+  /^\|?\s*posted:.*\|\s*\d+\s*comments?\s*$/i,
+  /your privacy choices/i,
+  /by providing my details/i,
+  /^type your email/i,
+];
+
+// Tier 2 — words that are furniture as a STANDALONE label but ordinary English inside a sentence ("the
+// gallery ran an advertisement in 1912"). So these only fire on a short block that is nothing BUT the
+// label, which is exactly what a stripped widget collapses to.
+const WIDGET_LABEL =
+  /^(advertisements?|share this:?|like this:?|sponsored|related( posts?| articles?| reading| tags)?|tags|read more|comments? (are )?closed\.?|leave a (comment|reply)|subscribe( to .{0,40})?|sign ?up|log ?in|follow us( on .{0,20})?|newsletter|newswire|join us( today)?!?|previous|next|home|menu|search|skip to content|discover more from .{0,40}|other articles from .{0,40}|support (independent|our) .{0,40}|like loading\.{0,3}|(first |last |full )?name ?\*?|e-?mail( address)? ?\*?|phone( number)? ?\*?|message ?\*?|submit|send|continue reading)$/i;
+const WIDGET_LABEL_MAX = 60;
+
+function isChrome(plain: string): boolean {
+  if (plain.length <= WIDGET_LABEL_MAX && WIDGET_LABEL.test(plain.replace(/[.·|—–-]+$/, "").trim())) {
+    return true;
+  }
+  return CHROME_PHRASES.some((re) => re.test(plain));
 }
 
 /**
- * Extracted text, in full, markdown-stripped for plain display and with leading chrome removed — nav
- * menus, a forward header, a link-heavy disclaimer block. Walks paragraph-sized blocks (blank-line
- * separated): while still hunting for where the real content starts, a block has to clear the same bar
- * `firstParagraph` used to (not a forward header, not link-heavy, not too short); once that bar is cleared
- * once, every later block is kept as long as it isn't link-heavy or empty after stripping — a short
+ * Extracted body with chrome removed — nav menus, a forward header, a link-heavy disclaimer block, and
+ * (anywhere in the body) a blocklisted cookie/share/subscribe widget. Walks paragraph-sized blocks
+ * (blank-line separated): while still hunting for where the real content starts, a block has to clear the
+ * same bar `firstParagraph` used to (not a forward header, not link-heavy, not too short); once that bar is
+ * cleared once, every later block is kept as long as it isn't link-heavy or empty after stripping — a short
  * transition or a one-line blockquote mid-article is legitimate even though it wouldn't have been a good
  * OPENING paragraph. Falls back to a plain-stripped copy of the whole thing if nothing ever clears the bar.
+ *
+ * **The markdown survives.** `stripMarkdownSyntax` is used to JUDGE a block (is it chrome? is it long
+ * enough?) but never to produce the output, because judging and rendering want opposite things: the
+ * decisions are easier on flat text, and the reader wants the structure. Returning flat text was defensible
+ * while this fed a one-paragraph teaser; it stopped being defensible when `renderRawList` began emitting
+ * whole articles, at which point it was silently demolishing every heading, blockquote and emphasis the
+ * author wrote — a sub-head, its pull-quote and the paragraph under it all landing as three identical
+ * undifferentiated paragraphs. `markdownToHtml` can render all of it; it just never got the chance.
  */
 export function cleanBody(raw: string): string {
   if (!raw) return "";
@@ -102,9 +194,14 @@ export function cleanBody(raw: string): string {
     if (isLinkHeavy(block)) continue;
     const plain = stripMarkdownSyntax(block);
     if (!plain) continue;
+    // Checked regardless of `started`: unlike the leading-chrome rules above, furniture mostly arrives at
+    // the END (consent panel, share row, subscribe box), long after the bar has been cleared.
+    if (isChrome(plain)) continue;
     if (!started && plain.length < MIN_PARAGRAPH_LEN) continue;
     started = true;
-    kept.push(plain);
+    // The ORIGINAL block, not `plain` — see the note above. Empty permalink anchors go, though: they render
+    // as nothing and would otherwise leave `[]()` debris at the head of every extracted sub-head.
+    kept.push(block.replace(/\[\]\((?:https?:\/\/[^)\s]*)\)/g, "").trim());
   }
 
   return kept.length ? kept.join("\n\n") : stripMarkdownSyntax(raw);

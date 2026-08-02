@@ -41,6 +41,15 @@ FORMAT: plain markdown prose. Two or three short paragraphs. No headings, no bul
 
 const NOTHING = "NOTHING_TODAY";
 
+/** Age past which a piece reads as an archive rather than the day's news. Same cutoff readiness used to flag. */
+const ARCHIVE_DAYS = 180;
+
+function isArchival(publishedAt?: string): boolean {
+  if (!publishedAt) return false;
+  const t = new Date(publishedAt).getTime();
+  return !Number.isNaN(t) && (Date.now() - t) / 86_400_000 > ARCHIVE_DAYS;
+}
+
 // Quotes are laid out, not written. No model call at all.
 //
 // This is the one section kind where passing the material through a model could only subtract: the value of
@@ -67,6 +76,35 @@ function renderQuotes(items: Item[]): string {
     .join("\n\n");
 }
 
+// An extracted article keeps its own headings (`cleanBody` no longer flattens them), but those levels were
+// chosen for a page where the article title was the top of the document. Here it sits a rung down, under the
+// section — so they have to be re-based, and a fixed "+1" does not work: one site opens its sub-heads at
+// `#`, another at `##`, and adding one to each leaves the first colliding with the article title while the
+// second nests correctly. Shift by whatever it takes to put the SHALLOWEST heading in the body at `###`
+// (`<h4>`), one below the article's own `##`. Relative depth inside the article is preserved.
+const ARTICLE_SUBHEAD_LEVEL = 3;
+
+// Last-resort byline when a feed declares no source name. A bare domain is honest and recognisable, which is
+// the same bar the writing constitution sets for citations.
+function hostOf(url?: string): string {
+  if (!url) return "";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+function demoteHeadings(body: string): string {
+  const levels = [...body.matchAll(/^(#{1,6}) /gm)].map((m) => m[1].length);
+  if (!levels.length) return body;
+  const shift = Math.max(0, ARTICLE_SUBHEAD_LEVEL - Math.min(...levels));
+  if (!shift) return body;
+  return body.replace(/^(#{1,6}) /gm, (_m, hashes: string) =>
+    `${"#".repeat(Math.min(hashes.length + shift, 6))} `,
+  );
+}
+
 // Non-AI fallback for every section kind except `readwise` (already a template above) and `prompt` (a
 // reflection has no retrieval to fall back on — it simply doesn't run without a model). One entry per item:
 // linked title, source, and the extracted text in full (chrome stripped). No synthesis, no transitions —
@@ -74,9 +112,26 @@ function renderQuotes(items: Item[]): string {
 function renderRawList(items: Item[]): string {
   return items
     .map((i) => {
-      const head = [`**[${i.title}](${i.url})**`, i.source && `— ${i.source}`].filter(Boolean).join(" ");
-      const body = cleanBody(i.text);
-      return body ? `${head}\n\n${body}` : head;
+      // A real heading, not bold text. Three things follow from it that emphasis could not give: the title
+      // stops being run through the citation rule (which was rendering the headline at 0.75em grey while the
+      // publication name beside it sat at full size), the article becomes an anchor a table of contents can
+      // point at, and Amazon's converter — which builds the Kindle TOC from headings — gains a per-article
+      // entry instead of one entry per section. `##` is deliberate: the section owns `#`-level, so an
+      // article sits one rung below it rather than competing with it.
+      const head = `## [${i.title}](${i.url})`;
+      // The source line. ALWAYS emitted, falling back to the bare domain, because the stylesheet identifies
+      // the byline structurally — as the paragraph immediately after the article's `h3`. Omitting it when a
+      // feed happens not to declare a source would silently hand that styling to the article's first real
+      // paragraph instead.
+      const meta = [
+        i.source || hostOf(i.url),
+        // Old, not broken: a feed that republishes its archive still deserves a place in the digest, just
+        // honestly labeled — the reader decides whether an old good piece is worth their time.
+        isArchival(i.published_at) && "From the archives",
+      ].filter(Boolean);
+      const byline = `[${meta.join(" · ")}](${i.url})`;
+      const body = demoteHeadings(cleanBody(i.text));
+      return [head, byline, body].filter(Boolean).join("\n\n");
     })
     .join("\n\n---\n\n");
 }

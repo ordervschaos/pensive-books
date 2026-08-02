@@ -42,7 +42,7 @@
 - **Files/commits:** `apps/digest/lib/digest/agent/context.ts`, `scripts/smoke-context.ts`,
   `supabase/migrations/20260803160000_digest_agent_chat_context.sql` (all new),
   `lib/digest/agent/loop.ts`, `app/api/digests/[id]/agent/route.ts`, `scripts/smoke-agent.ts`,
-  `README.md`. Uncommitted.
+  `README.md`. **`29c787b`**.
 - **PM impact:** the 6-rung agent plan is **complete**. Remaining known gaps, none blocking: the turn isn't
   streamed (needs no new runtime), the rail hasn't been clicked in a browser, and the two owner decisions
   stand — the agent's entitlement gate (currently the same as the 6am pipeline, argued backwards in the
