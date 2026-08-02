@@ -18,6 +18,29 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-03 — Schema conformance becomes a grader family `[ship]`
+- **What:** `279b8b3` (author token cap 400→900, after the truncation guard caught a real cut-off reply the
+  AGENT then had to reason around) and `ea40ba9` (schema conformance in the grader).
+- **Why it earns a family of its own:** a schema violation surfaces in judge scores as a LOW SCORE, which
+  reads as *"the writing got worse"* and sends you hunting the wrong thing. Yesterday's regression cost ~20
+  minutes of hand-querying the DB to establish that `read-premise` 4.86→2.29 was a field the judge could no
+  longer READ, not prose that got worse. The grader now prints it in one line:
+  `premise.shape.movements [list_element_type] expected a list of strings, got 5/5 object(s)`.
+- **The check is structural, not per-field.** Layer 1 is the app's own `validateContent`. Layer 2 is LIST
+  ELEMENT types, which it does **not** check — `checkSpecs` verifies a list IS an array but never inspects
+  what's inside, so a `string[]` field silently accepts objects. Rule: a spec of `type:"list"` with no
+  `fields[]` declares a list of primitives, so object elements are a violation. That covers every list in
+  NODE_SCHEMA rather than special-casing `movements`.
+- **Deliberately reported SEPARATELY from the judges**, and run on every graded run (deterministic, free) —
+  the entire point is that a violation does not look like a violation from the scores alone. The suite
+  additionally flags any run with violating content and states the verdict is unreadable until fixed.
+- **Verified:** flags 1362/1363 (objects), reports `conforms` on 1348 (strings) — no false positive.
+- **Note on the underlying fix:** the real repair belongs in shared `dnaSchema.ts` (`checkSpecs` should
+  check element types, and `sanitizeContent` could coerce `{description}` → the string). NOT done here —
+  that file is being actively edited by the other session, and the movements regression is theirs to
+  diagnose. This is the detection half only.
+- **PM impact:** none — detection, not a product change. The A/B still awaits the regression fix.
+
 ## 2026-08-02 — The convergence A/B was VOID; the suite now proves its arms `[ship]`
 - **Ran the 3×2 interleaved suite; the result was a confident null that turned out to be broken.** Printed
   table: production `pushes 2.00±0.00` (n=3) vs `no_converge 2.00±1.41` (n=2) — identical means, which reads
