@@ -209,6 +209,8 @@ export interface Digest {
   voice: string | null;
   /** Opt-in for `search` sections — the only gather path that bills per run. Default false. */
   web_search_enabled: boolean;
+  /** Umbrella gate for every model call (search/select/write/quiz). Default false — the paid AI tier. */
+  ai_enabled: boolean;
   /** Routing token for this digest's inbound address (`read+<token>@…`). See the inbox source. */
   inbox_token?: string | null;
   sections: Section[];

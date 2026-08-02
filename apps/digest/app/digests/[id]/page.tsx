@@ -16,12 +16,12 @@ export default async function SectionsPage({ params }: { params: { id: string } 
   const supabase = createClient();
   const { data } = await supabase
     .from("digests")
-    .select("id, sections, web_search_enabled, inbox_token")
+    .select("id, sections, web_search_enabled, ai_enabled, inbox_token")
     .eq("id", Number(params.id))
     .maybeSingle();
   if (!data) notFound();
 
-  const digest = data as Pick<Digest, "id" | "sections" | "web_search_enabled" | "inbox_token">;
+  const digest = data as Pick<Digest, "id" | "sections" | "web_search_enabled" | "ai_enabled" | "inbox_token">;
   const hasInbox = (digest.sections ?? []).some((s: Section) => s.kind === "inbox");
 
   // Readwise is an ACCOUNT-level connection, so its state is read separately and only to warn: a section
@@ -53,10 +53,13 @@ export default async function SectionsPage({ params }: { params: { id: string } 
               {s.cadence && s.cadence !== "daily" && (
                 <p className="font-mono text-xs text-muted">runs {cadenceLabel(s)}</p>
               )}
-              {s.kind === "search" && !digest.web_search_enabled && (
+              {s.kind === "search" && (!digest.ai_enabled || !digest.web_search_enabled) && (
                 <p className="text-sm text-muted">
-                  ⚠ Skipped — live web search is off for this digest.
+                  ⚠ Skipped — {!digest.ai_enabled ? "AI writing" : "live web search"} is off for this digest.
                 </p>
+              )}
+              {s.kind === "prompt" && !digest.ai_enabled && (
+                <p className="text-sm text-muted">⚠ Skipped — AI writing is off for this digest.</p>
               )}
               {s.kind === "readwise" && !readwiseReady && (
                 <p className="text-sm text-muted">

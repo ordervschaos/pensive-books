@@ -1,5 +1,5 @@
 import type { Closer, QuizSection, RenderedSection, RunCtx, Section } from "./types";
-import { callModel } from "./llm";
+import { aiEnabled, callModel } from "./llm";
 import { createServiceClient } from "@/lib/supabase/server";
 
 // CLOSERS — the second contract.
@@ -34,6 +34,10 @@ FORMAT: a numbered list of at most 3 questions. Then a line containing exactly -
 
 const quizCloser: Closer = async (section, sections, ctx, issueId) => {
   const s = section as QuizSection;
+
+  // No non-AI equivalent — a recall quiz over yesterday's issue IS a model call. Drop it, same as any
+  // other closer that has nothing honest to say this morning.
+  if (!aiEnabled(ctx.digest)) return null;
 
   const material =
     s.over === "today" ? fromSections(sections) : await previousIssueMaterial(ctx);

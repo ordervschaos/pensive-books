@@ -25,6 +25,22 @@ import { createServiceClient } from "@/lib/supabase/server";
 export const MODEL_GATHER = "claude-opus-5";
 export const MODEL_WRITE = "deepseek-v4-pro";
 
+// The umbrella gate every one of the four call sites (search gather, select triage, write, quiz closer)
+// checks BEFORE calling callModel — not inside it, because each site has a different mechanical fallback
+// (raw item list, feed order, dropped section) and callModel has no way to know which one applies.
+//
+// Two layers, checked in order: DIGEST_AI_ENABLED is an ops-level override in either direction (kill AI
+// everywhere with `=false`, e.g. a cost incident; or opt back into it outside production with `=true`, e.g.
+// testing the paid path locally). Absent that, AI defaults OFF outside production — iterating on the
+// pipeline locally should never quietly spend real money — and in production the per-digest column
+// (digests.ai_enabled, the seed of the paid tier) is the sole authority.
+export function aiEnabled(digest: { ai_enabled: boolean }): boolean {
+  const override = process.env.DIGEST_AI_ENABLED;
+  if (override === "false") return false;
+  if (override !== "true" && process.env.NODE_ENV !== "production") return false;
+  return digest.ai_enabled;
+}
+
 type Provider = "anthropic" | "deepseek";
 
 // Bare `deepseek-*` ids are DeepSeek's own API; everything else here is a `claude-*` id. Same convention the

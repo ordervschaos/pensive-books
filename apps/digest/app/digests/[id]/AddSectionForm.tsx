@@ -3,18 +3,22 @@
 import { useState } from "react";
 import { addSection, updateSection } from "../actions";
 import type { Section, SectionKind } from "@/lib/digest/types";
+import { fieldsFor, fieldValue, isRequired, type Field } from "@/lib/digest/sectionSchema";
 
-// The section form, kind-aware, doing double duty as both "add" and "edit".
+// The section form, doing double duty as both "add" and "edit". It renders whatever
+// `lib/digest/sectionSchema.ts` declares for the chosen kind, and knows nothing about any individual kind.
 //
-// It used to be one flat form whose unused fields were ignored by the matching branch in addSection — fine
-// at four kinds, unusable at eleven ("Book id (serial)" sitting above "Subreddits (ranked)" above "Channels
-// (video)"). So the kind selector now drives which fieldset renders. The submitted FormData shape is
-// unchanged, and addSection/updateSection still read only the fields their branch cares about: this is a
-// progressive disclosure layer over the same contract, not a new one.
+// Two rewrites got it here. First it was one flat form whose unused fields were ignored by the matching
+// branch in addSection — fine at four kinds, unusable at eleven ("Book id (serial)" sitting above
+// "Subreddits (ranked)" above "Channels (video)"). Then it was a hand-written fieldset per kind, which fixed
+// the noise but left the field list duplicated across here, `types.ts` and the parse branch in `actions.ts`:
+// three edits per new field, and silent drift the moment you forgot one.
 //
-// Edit mode reuses the exact same fieldsets rather than a parallel read-only view, prefilled via `val()` —
-// a section IS its fields, so "make it editable" means "put the add form's inputs in front of the current
-// values," not a second form to keep in sync with the first.
+// Now the schema is the single declaration and this file is a renderer. Required-ness is MARKED here and
+// ENFORCED in the action — the asterisk is a courtesy, not the check.
+//
+// Edit mode reuses the same inputs rather than a parallel read-only view — a section IS its fields, so
+// "make it editable" means "put the form in front of the current values," not a second form to keep in sync.
 
 const FIELD = "w-full rounded border border-rule bg-white px-3 py-2 text-sm";
 const LABEL = "font-mono text-xs uppercase tracking-wider text-muted";
@@ -74,20 +78,17 @@ const KINDS: KindInfo[] = [
   { value: "prompt", label: "prompt — no retrieval", blurb: "A reflection. Nothing is fetched or cited." },
 ];
 
-// Prefill helper: reads a field by its section-object key (which is usually, but not always, the same as
-// the form field name — e.g. the "ranked_source" input maps to the object's "source" property). Arrays
-// round-trip through the same comma/whitespace-separated text the inputs already parse on submit.
-function val(section: Section | undefined, key: string): string {
-  if (!section) return "";
-  const v = (section as unknown as Record<string, unknown>)[key];
-  if (Array.isArray(v)) return v.join(", ");
-  return v == null ? "" : String(v);
-}
-
 export function AddSectionForm({ digestId, section }: { digestId: number; section?: Section }) {
   const [kind, setKind] = useState<SectionKind>(section?.kind ?? "feed");
   const [cadence, setCadence] = useState(section?.cadence ?? "daily");
+  // Live copy of the kind's field values, so `requiredWhen` can be reflected as you type — the "Targets"
+  // field marks itself required the moment you pick arxiv, rather than only on a rejected submit.
+  const [values, setValues] = useState<Record<string, string>>({});
   const info = KINDS.find((k) => k.value === kind)!;
+  const fields = fieldsFor(kind);
+
+  // Reading a field's current value: what's been typed this session, else what's saved, else its default.
+  const current = (field: Field) => values[field.name] ?? fieldValue(section, field);
 
   return (
     <form
@@ -97,243 +98,70 @@ export function AddSectionForm({ digestId, section }: { digestId: number; sectio
       <input type="hidden" name="id" value={digestId} />
       {section && <input type="hidden" name="section_id" value={section.id} />}
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block space-y-1">
-          <span className={LABEL}>Kind</span>
-          <select
-            name="kind"
-            className={FIELD}
-            value={kind}
-            onChange={(e) => setKind(e.target.value as SectionKind)}
-          >
-            {KINDS.map((k) => (
-              <option key={k.value} value={k.value}>
-                {k.label}
-              </option>
-            ))}
-          </select>
-          <span className={HINT}>{info.blurb}</span>
-        </label>
-        <label className="block space-y-1">
-          <span className={LABEL}>Title</span>
-          <input
-            name="title"
-            className={FIELD}
-            placeholder="What's new in AI writing tools"
-            defaultValue={section?.title ?? ""}
-          />
-        </label>
-      </div>
+      <label className="block space-y-1">
+        <span className={LABEL}>Kind</span>
+        <select
+          name="kind"
+          className={FIELD}
+          value={kind}
+          onChange={(e) => {
+            setKind(e.target.value as SectionKind);
+            setValues({}); // a different kind has different fields; carrying stale ones over is noise
+          }}
+        >
+          {KINDS.map((k) => (
+            <option key={k.value} value={k.value}>
+              {k.label}
+            </option>
+          ))}
+        </select>
+        <span className={HINT}>{info.blurb}</span>
+      </label>
 
-      {kind === "search" && (
-        <label className="block space-y-1">
-          <span className={LABEL}>Search query</span>
-          <input
-            name="query"
-            className={FIELD}
-            placeholder="AI writing tools launches and research"
-            defaultValue={val(section, "query")}
-          />
-        </label>
-      )}
+      {/* Every field this kind has, rendered from ONE declaration in lib/digest/sectionSchema.ts. Adding a
+          field to a kind is an edit there and nowhere else — this component never learns kind names. */}
+      {fields.map((field) => {
+        const required = isRequired(field, resolved(fields, current));
+        return (
+          <label key={field.name} className="block space-y-1">
+            <span className={LABEL}>
+              {field.label}
+              {required ? <span className="text-ink"> *</span> : <span className="normal-case"> — optional</span>}
+            </span>
 
-      {kind === "feed" && (
-        <label className="block space-y-1">
-          <span className={LABEL}>Feed URLs — whitespace or comma separated</span>
-          <input
-            name="urls"
-            className={FIELD}
-            placeholder="https://example.com/feed.xml"
-            defaultValue={val(section, "urls")}
-          />
-          <span className={HINT}>
-            Several feeds in one section are read round-robin, so a daily publisher can&apos;t crowd out a
-            monthly one.
-          </span>
-        </label>
-      )}
-
-      {kind === "ranked" && (
-        <div className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block space-y-1">
-              <span className={LABEL}>Source</span>
-              <select name="ranked_source" className={FIELD} defaultValue={val(section, "source") || "hn"}>
-                <option value="hn">hn — Hacker News above a points floor</option>
-                <option value="arxiv">arxiv — new papers by category (primary sources)</option>
-                <option value="github">github — releases of repos you follow</option>
-                <option value="reddit">reddit — top of a subreddit, last 24h</option>
-                <option value="lobsters">lobsters — hottest</option>
-              </select>
-            </label>
-            <label className="block space-y-1">
-              <span className={LABEL}>Min score (hn, reddit, lobsters)</span>
-              <input
-                name="min_score"
-                type="number"
+            {field.type === "select" ? (
+              <select
+                name={field.name}
                 className={FIELD}
-                placeholder="100"
-                defaultValue={val(section, "min_score")}
+                value={current(field)}
+                onChange={(e) => setValues((v) => ({ ...v, [field.name]: e.target.value }))}
+              >
+                {field.options?.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                name={field.name}
+                type={field.type === "number" ? "number" : "text"}
+                className={FIELD}
+                placeholder={field.placeholder}
+                value={current(field)}
+                onChange={(e) => setValues((v) => ({ ...v, [field.name]: e.target.value }))}
               />
-            </label>
-          </div>
-          <label className="block space-y-1">
-            <span className={LABEL}>Query (hn, arxiv)</span>
-            <input
-              name="query"
-              className={FIELD}
-              placeholder="local-first software"
-              defaultValue={val(section, "query")}
-            />
-          </label>
-          <label className="block space-y-1">
-            <span className={LABEL}>Targets — subreddits, owner/repo, or arXiv categories</span>
-            <input
-              name="targets"
-              className={FIELD}
-              placeholder="cs.CL, cs.AI  ·  anthropics/claude-code  ·  r/writing"
-              defaultValue={val(section, "targets")}
-            />
-          </label>
-        </div>
-      )}
+            )}
 
-      {kind === "inbox" && (
-        <div className="space-y-3">
-          <label className="block space-y-1">
-            <span className={LABEL}>Only from (optional) — addresses or domains, comma separated</span>
-            <input
-              name="senders"
-              className={FIELD}
-              placeholder="stratechery.com, hello@newsletter.dev"
-              defaultValue={val(section, "senders")}
-            />
-            <span className={HINT}>Blank means everything that arrives at this digest&apos;s address.</span>
+            {field.hint && <span className={HINT}>{field.hint}</span>}
           </label>
-          <label className="block space-y-1">
-            <span className={LABEL}>Look back (days)</span>
-            <input
-              name="days"
-              type="number"
-              defaultValue={val(section, "days") || "2"}
-              className={FIELD}
-            />
-          </label>
-        </div>
-      )}
-
-      {kind === "video" && (
-        <div className="space-y-3">
-          <label className="block space-y-1">
-            <span className={LABEL}>Channels — YouTube urls/@handles, or podcast RSS</span>
-            <input
-              name="channels"
-              className={FIELD}
-              placeholder="https://youtube.com/@veritasium, https://feeds.example/podcast.xml"
-              defaultValue={val(section, "channels")}
-            />
-          </label>
-          <label className="block space-y-1">
-            <span className={LABEL}>Look back (days)</span>
-            <input
-              name="days"
-              type="number"
-              defaultValue={val(section, "days") || "3"}
-              className={FIELD}
-            />
-          </label>
-        </div>
-      )}
-
-      {kind === "serial" && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block space-y-1">
-            <span className={LABEL}>Book id</span>
-            <input name="book_id" type="number" className={FIELD} defaultValue={val(section, "book_id")} />
-          </label>
-          <label className="block space-y-1">
-            <span className={LABEL}>Pages/day</span>
-            <input
-              name="pages_per_day"
-              type="number"
-              defaultValue={val(section, "pages_per_day") || "1"}
-              className={FIELD}
-            />
-          </label>
-        </div>
-      )}
-
-      {kind === "readwise" && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block space-y-1">
-            <span className={LABEL}>Draw</span>
-            <select name="readwise_mode" className={FIELD} defaultValue={val(section, "mode") || "review"}>
-              <option value="review">review — Readwise&apos;s own daily pick</option>
-              <option value="random">random — resurface from your library</option>
-            </select>
-          </label>
-          <label className="block space-y-1">
-            <span className={LABEL}>From (random only)</span>
-            <select name="readwise_category" className={FIELD} defaultValue={val(section, "category")}>
-              <option value="">everything</option>
-              <option value="books">books</option>
-              <option value="articles">articles</option>
-              <option value="podcasts">podcasts</option>
-              <option value="tweets">tweets</option>
-            </select>
-          </label>
-        </div>
-      )}
-
-      {kind === "unread" && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block space-y-1">
-            <span className={LABEL}>Skip anything newer than (days)</span>
-            <input
-              name="min_age_days"
-              type="number"
-              defaultValue={val(section, "min_age_days") || "3"}
-              className={FIELD}
-            />
-            <span className={HINT}>Keeps this out of the way of the sections still considering those posts.</span>
-          </label>
-          <label className="block space-y-1">
-            <span className={LABEL}>…or older than (days)</span>
-            <input
-              name="max_age_days"
-              type="number"
-              defaultValue={val(section, "max_age_days") || "30"}
-              className={FIELD}
-            />
-          </label>
-        </div>
-      )}
-
-      {kind === "sitewatch" && (
-        <label className="block space-y-1">
-          <span className={LABEL}>Page URLs — whitespace or comma separated</span>
-          <input
-            name="urls"
-            className={FIELD}
-            placeholder="https://example.com/syllabus"
-            defaultValue={val(section, "urls")}
-          />
-          <span className={HINT}>Speaks only when the extracted text changes. Silence means nothing moved.</span>
-        </label>
-      )}
-
-      {kind === "quiz" && (
-        <label className="block space-y-1">
-          <span className={LABEL}>Quiz which issue</span>
-          <select name="quiz_over" className={FIELD} defaultValue={val(section, "over") || "previous"}>
-            <option value="previous">the previous issue — retrieval practice</option>
-            <option value="today">today&apos;s issue — a self-check at the end</option>
-          </select>
-        </label>
-      )}
+        );
+      })}
 
       <label className="block space-y-1">
-        <span className={LABEL}>Instructions</span>
+        <span className={LABEL}>
+          Instructions<span className="normal-case"> — optional</span>
+        </span>
         <textarea
           name="instructions"
           rows={2}
@@ -380,4 +208,9 @@ export function AddSectionForm({ digestId, section }: { digestId: number; sectio
       </button>
     </form>
   );
+}
+
+// `requiredWhen` reads a sibling's value, so it needs the whole set, not one field at a time.
+function resolved(fields: readonly Field[], current: (f: Field) => string): Record<string, string> {
+  return Object.fromEntries(fields.map((f) => [f.name, current(f)]));
 }

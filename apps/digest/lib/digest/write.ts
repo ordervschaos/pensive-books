@@ -1,5 +1,5 @@
 import type { Item, RenderedSection, RunCtx, Section } from "./types";
-import { callModel } from "./llm";
+import { aiEnabled, callModel } from "./llm";
 
 // The WRITE stage. One LLM call per section, and it sees ONLY the text the gather stage handed it.
 //
@@ -66,6 +66,20 @@ function renderQuotes(items: Item[]): string {
     .join("\n\n");
 }
 
+// Non-AI fallback for every section kind except `readwise` (already a template above) and `prompt` (a
+// reflection has no retrieval to fall back on — it simply doesn't run without a model). One entry per item:
+// linked title, source, and the opening of the extracted text. No synthesis, no transitions — exactly the
+// material the writer itself would have been handed, just not written.
+function renderRawList(items: Item[]): string {
+  return items
+    .map((i) => {
+      const head = [`**[${i.title}](${i.url})**`, i.source && `— ${i.source}`].filter(Boolean).join(" ");
+      const excerpt = i.text.replace(/\s+/g, " ").trim().slice(0, 280);
+      return excerpt ? `${head}\n${excerpt}…` : head;
+    })
+    .join("\n\n");
+}
+
 export async function writeSection(
   section: Section,
   items: Item[],
@@ -81,6 +95,18 @@ export async function writeSection(
       id: section.id,
       title: section.title,
       markdown: renderQuotes(grounded),
+      items: grounded.map(({ title, url, source, image_url }) => ({ title, url, source, image_url })),
+    };
+  }
+
+  if (!aiEnabled(ctx.digest)) {
+    // A reflection has nothing to fall back TO — it IS the model call. Everything else degrades to a
+    // plain list rather than dropping the section outright.
+    if (section.kind === "prompt") return null;
+    return {
+      id: section.id,
+      title: section.title,
+      markdown: renderRawList(grounded),
       items: grounded.map(({ title, url, source, image_url }) => ({ title, url, source, image_url })),
     };
   }
@@ -143,6 +169,9 @@ export async function writeIntro(
   issueId: number | null,
 ): Promise<string> {
   if (sections.length < 2) return "";
+  // No non-AI equivalent — an opener that summarizes today's issue IS a model call. Skip it; the issue
+  // reads fine without one, same as any thin morning.
+  if (!aiEnabled(ctx.digest)) return "";
   const { text } = await callModel(
     {
       system:

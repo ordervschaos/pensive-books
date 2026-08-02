@@ -37,7 +37,7 @@ async function main() {
   const db = createServiceClient();
   const { data } = await db
     .from("digests")
-    .select("id, owner_id, name, timezone, deliver_at, active, voice, web_search_enabled, sections, delivery, inbox_token")
+    .select("id, owner_id, name, timezone, deliver_at, active, voice, web_search_enabled, ai_enabled, sections, delivery, inbox_token")
     .eq("id", digestId)
     .maybeSingle();
   if (!data) throw new Error(`digest ${digestId} not found`);

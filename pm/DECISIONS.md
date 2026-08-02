@@ -6,6 +6,18 @@
 
 ## Log
 
+### 2026-08-01 — Digest AI moves behind a paid gate; the pipeline defaults to mechanical
+
+Owner call: the digest pipeline was calling a model too readily. Direction going forward — most of the
+pipeline should work with **no LLM at all**, with AI as an explicit paid add-on, off by default outside
+production. Audited all 4 call sites (search gather, select triage, write, quiz closer — all through one
+`callModel` chokepoint) and gave each a mechanical fallback (raw item list, pre-select feed order) except
+the two that are pure generation (`prompt` reflections, the quiz), which simply don't run without AI.
+Gated by a new `digests.ai_enabled` column (default false) — the seed for the real paid-entitlement work
+already on the roadmap (Now #2), not a full billing system built now — plus a `DIGEST_AI_ENABLED` env
+override for local testing / an ops kill-switch. See WORKLOG 2026-08-01 "Digest AI gated behind a paid
+tier" for the full file list.
+
 ### 2026-08-01 — Digest gets a second contract (`Closer`), a push source, and per-section cadence
 
 Six new source kinds landed at once (`ranked`, `inbox`, `unread`, `sitewatch`, `video`, plus the closer

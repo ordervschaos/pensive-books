@@ -48,13 +48,17 @@ problem. Nothing works until the route exists.
       - Also tick **Store and notify** if you want Mailgun to keep a copy while you're testing
 - [ ] Confirm the domain has MX records pointing at Mailgun (Mailgun shows this on the domain page). A
       sending-only domain will silently drop everything.
-- [ ] Add an `inbox` section to a digest → the page shows **this digest's address** (`read+<token>@…`).
+- [ ] The address is on the digest's **Settings** tab (always) and on **Sections** (once an `inbox` section
+      exists). For digest 1 it is `read+8684dc4c0705@pensive.me`.
 - [ ] **Verify:** send yourself a test mail to that address, then run:
       ```sh
       cd apps/digest && npx tsx --env-file=.env.local scripts/smoke-db-sources.ts 1
       ```
-      Working = the message appears under `inbox`. If it doesn't, check Mailgun's route **Logs** tab — a 401
-      there means the signing key is wrong, a 503 means the DB write failed (Mailgun will retry for 8h).
+      Working = the message appears under `inbox`. **Or just open the digest's `Inbox` tab** — the mailbox
+      is now a first-class view (subject, sender, size, used/unused, delete), so the script is only for
+      when you want the adapter's own filtered output. If nothing shows, check Mailgun's route **Logs**
+      tab — 401 means the signing key doesn't match the *deployed* build, 503 means the DB write failed
+      (that one Mailgun retries for 8h).
 - [ ] Then subscribe one real newsletter to the address, or set up a forwarding rule in Gmail.
 
 ---
@@ -126,8 +130,13 @@ sends nothing and marks nothing seen, so this is free to repeat.
       (session bounce working), inbound webhook 401s (fail-closed working).
 - [x] Production env vars set: `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`, `MAILGUN_API_KEY`,
       `MAILGUN_DOMAIN`, `CRON_SECRET`.
-- [ ] **`MAILGUN_SIGNING_KEY` is still missing** (that 401 above is it, working as designed). Add it to
-      production before testing `inbox`, then redeploy.
+- [x] `MAILGUN_SIGNING_KEY` set in production **and redeployed**. Vercel env vars only apply to *new*
+      deployments — setting the var without redeploying leaves the old build running without it, which is
+      exactly how the first forwarded newsletter died (Mailgun log: `accepted → failed / Unauthorized`).
+      Note the consequence: a 401 is a **4xx, so Mailgun drops the message permanently** — anything sent
+      during the broken window is gone and must be re-sent. Verified end-to-end 2026-08-01 by POSTing a
+      locally-signed synthetic message: `{"ok":true,"digest_id":1}`, row inserted, adapter picked it up,
+      test row deleted.
 - [ ] **`digest.pensive.me` DNS.** The domain is attached to the project but unconfigured — `pensive.me`
       runs on Squarespace/NS1 nameservers, so add this at your DNS host:
       `A  digest  76.76.21.21`. Vercel verifies automatically and emails you.

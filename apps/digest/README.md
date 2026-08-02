@@ -58,6 +58,7 @@ with `autoRefreshToken: false` and bounces to `app.pensive.me/auth?returnTo=…`
 | `GITHUB_TOKEN` | optional | Any read-only PAT. Lifts `ranked/github` from 60 req/hr **per shared IP** to 5,000 |
 | `PENSIVE_APP_ORIGIN` | optional | Defaults to `https://app.pensive.me` (`localhost:8080` in dev) |
 | `PENSIVE_DIGEST_ORIGIN` | optional | Defaults to `https://digest.pensive.me` |
+| `DIGEST_AI_ENABLED` | optional | Ops override for the paid AI gate (`lib/digest/llm.ts` `aiEnabled`). `=false` kills every model call regardless of environment; `=true` lifts the dev-default-off so you can test the AI path locally. Unset: off outside production, `digests.ai_enabled` decides in production |
 
 The Supabase URL and anon key are checked into `lib/pensive.ts`, same as `apps/marketing` — the anon key is
 a public credential and RLS is the real boundary.
@@ -331,6 +332,27 @@ don't want it to (the same shape of bug as regenerating a delivered day). Each v
 own identity: `?v=<hash8>` appended, which survives canonicalization because `canonicalUrl` strips *tracking*
 params, not unknown ones. The previous text is read back out of `digest_posts` scoped to that section, so
 this kind adds no table.
+
+## Section fields
+
+Every kind's fields are declared once, in `lib/digest/sectionSchema.ts`: which fields exist, which are
+**required**, what each one *means*, and how a raw form string becomes a Section property. The form renders
+from it and the server action parses and enforces from it.
+
+That declaration replaced the same knowledge living in three places — the TS interface in `types.ts`, the JSX
+per kind in `AddSectionForm.tsx`, and a hand-written branch per kind in `addSection`. Three edits per new
+field, and silent drift the moment one was missed. Same multi-mirror problem `dnaSchema.ts` was introduced to
+kill on the DNA side.
+
+The schema is **pure data** — a `type` tag both sides interpret, not parse callbacks — so it imports cleanly
+into a client component and reads top-to-bottom as documentation. `name` is both the form field name and the
+Section property name, which is what removes the rename table entirely.
+
+**Required is enforced, not suggested.** Before it, a `feed` with no URLs or a `serial` with no book id saved
+happily and then gathered nothing every morning, forever — a section that could not possibly work, with no
+signal anywhere. An empty `search` query was worse: it still billed an Opus call to produce nothing. Adding a
+field to a kind is now one edit, and a kind that needs conditional requiredness has exactly one hook
+(`requiredWhen` — `ranked.targets` is mandatory for arxiv/github/reddit and meaningless for hn/lobsters).
 
 ## Known gaps
 

@@ -28,6 +28,7 @@ const ctx: RunCtx = {
     active: true,
     voice: null,
     web_search_enabled: false,
+    ai_enabled: false,
     sections: [],
     delivery: {},
   },

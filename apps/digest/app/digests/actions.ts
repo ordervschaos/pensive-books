@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { Cadence, RankedSection, ReadwiseSection, Section, SectionKind } from "@/lib/digest/types";
+import type { Cadence, Section, SectionKind } from "@/lib/digest/types";
+import { parseSectionFields } from "@/lib/digest/sectionSchema";
 
 // Server actions for the config surface. All of these go through the request-scoped (RLS-enforcing) client
 // on purpose — the service role belongs to the 6am pipeline, not to anything a browser can reach.
@@ -27,6 +28,7 @@ export async function createDigest(form: FormData) {
       timezone: str(form, "timezone") || "UTC",
       deliver_at: str(form, "deliver_at") || "06:00",
       voice: str(form, "voice") || null,
+      ai_enabled: form.get("ai_enabled") === "on",
       web_search_enabled: form.get("web_search_enabled") === "on",
       sections: [],
     })
@@ -48,6 +50,7 @@ export async function updateDigest(form: FormData) {
       deliver_at: str(form, "deliver_at"),
       voice: str(form, "voice") || null,
       active: form.get("active") === "on",
+      ai_enabled: form.get("ai_enabled") === "on",
       web_search_enabled: form.get("web_search_enabled") === "on",
     })
     .eq("id", id);
@@ -57,91 +60,42 @@ export async function updateDigest(form: FormData) {
   revalidatePath(`/digests/${id}`, "layout");
 }
 
-// Shared by add and edit: everything about turning the section form's FormData into a Section, except the
-// identity/bookkeeping fields (id, max_items, enabled) — those come from the caller, since "new section" and
-// "editing an existing one" disagree on where max_items/enabled come from (a fresh default vs. carried over).
+// Shared by add and edit: turning the section form's FormData into a Section.
+//
+// Every per-kind field — which ones exist, which are required, how a raw string becomes a value — comes from
+// `lib/digest/sectionSchema.ts`, the same declaration the form renders from. This function used to carry a
+// switch with one hand-written branch per kind, which meant the field list lived here AND in the form AND in
+// `types.ts`; three edits per new field and silent drift when one was missed.
+//
+// It throws on a missing required field. That is the whole point: before this check, a `feed` with no URLs
+// or a `serial` with no book id saved happily and then gathered nothing every morning, forever — a section
+// that could not possibly work, with no signal anywhere. An empty `search` query was worse: it still billed
+// an Opus call to produce nothing.
+//
+// The identity/bookkeeping fields (id, max_items, enabled) come from the caller, because "new section" and
+// "editing an existing one" disagree on where they come from (a fresh default vs. carried over).
 function buildSection(
   form: FormData,
   identity: { id: string; kind: SectionKind; max_items: number; enabled: boolean },
 ): Section {
+  const { values, missing } = parseSectionFields(identity.kind, (name) => str(form, name));
+  if (missing.length) {
+    throw new Error(
+      `${identity.kind} sections need ${missing.join(" and ")}. ` +
+        `A section missing that can never produce anything, so it isn't saved.`,
+    );
+  }
+
   const cadence = str(form, "cadence");
-  const shared = {
+  return {
     ...identity,
-    title: str(form, "title") || "Untitled section",
+    ...values,
     instructions: str(form, "instructions") || undefined,
     // Omitted rather than stored when it's the default: "no cadence" and "daily" mean the same thing, and
     // one of them doesn't need a row of jsonb to say so.
     cadence: cadence && cadence !== "daily" ? (cadence as Cadence) : undefined,
     weekday: cadence === "weekly" ? Number(form.get("weekday")) || 0 : undefined,
-  };
-
-  // Shared parsers. A list field is whitespace-or-comma separated everywhere in this form, so it is parsed
-  // in one place rather than four slightly different ones.
-  const list = (key: string) =>
-    str(form, key)
-      .split(/[\s,]+/)
-      .map((x) => x.trim())
-      .filter(Boolean);
-  const num = (key: string) => (Number(form.get(key)) > 0 ? Number(form.get(key)) : undefined);
-
-  switch (identity.kind) {
-    case "search":
-      return { ...shared, kind: "search", query: str(form, "query") };
-    case "feed":
-      return {
-        ...shared,
-        kind: "feed",
-        urls: str(form, "urls").split(/[\s,]+/).filter((u) => u.startsWith("http")),
-      };
-    case "serial":
-      return {
-        ...shared,
-        kind: "serial",
-        book_id: Number(form.get("book_id")),
-        pages_per_day: Number(form.get("pages_per_day")) || 1,
-      };
-    case "readwise":
-      return {
-        ...shared,
-        kind: "readwise",
-        mode: str(form, "readwise_mode") === "random" ? "random" : "review",
-        // "any" is the empty case, not a value — a section with no category draws from the whole vault.
-        category: (str(form, "readwise_category") || undefined) as ReadwiseSection["category"],
-      };
-    case "ranked":
-      return {
-        ...shared,
-        kind: "ranked",
-        source: (str(form, "ranked_source") || "hn") as RankedSection["source"],
-        query: str(form, "query") || undefined,
-        targets: list("targets"),
-        min_score: num("min_score"),
-        days: num("days"),
-      };
-    case "inbox":
-      return {
-        ...shared,
-        kind: "inbox",
-        // Sender filters are matched as substrings, so "stratechery.com" and a full address both work.
-        senders: list("senders"),
-        days: num("days"),
-      };
-    case "unread":
-      return {
-        ...shared,
-        kind: "unread",
-        min_age_days: num("min_age_days"),
-        max_age_days: num("max_age_days"),
-      };
-    case "sitewatch":
-      return { ...shared, kind: "sitewatch", urls: list("urls").filter((u) => u.startsWith("http")) };
-    case "video":
-      return { ...shared, kind: "video", channels: list("channels"), days: num("days") };
-    case "quiz":
-      return { ...shared, kind: "quiz", over: str(form, "quiz_over") === "today" ? "today" : "previous" };
-    default:
-      return { ...shared, kind: "prompt" };
-  }
+  } as Section;
 }
 
 // Sections live as jsonb (policy-as-data), so add/edit/remove is a read-modify-write of the array rather
@@ -201,6 +155,21 @@ export async function updateSection(form: FormData) {
   const { error } = await supabase.from("digests").update({ sections }).eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath(`/digests/${id}`, "layout");
+}
+
+// Drop one inbound message. RLS already restricts DELETE to the digest's owner, so this is the request-
+// scoped client like everything else here — the service role is the pipeline's, not the browser's.
+//
+// Deleting the message does NOT delete the digest_posts row it may have produced: that row is the record of
+// what was *delivered*, and rewriting delivery history to tidy a mailbox would be the wrong trade.
+export async function forgetMessage(form: FormData) {
+  const id = Number(form.get("id"));
+  const messageId = Number(form.get("message_id"));
+  const supabase = createClient();
+
+  const { error } = await supabase.from("digest_inbox_messages").delete().eq("id", messageId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/digests/${id}/inbox`);
 }
 
 export async function removeSection(form: FormData) {

@@ -9,7 +9,7 @@ import type {
   Section,
   SerialSection,
 } from "./types";
-import { callModel, MODEL_GATHER, WEB_SEARCH_TOOL } from "./llm";
+import { aiEnabled, callModel, MODEL_GATHER, WEB_SEARCH_TOOL } from "./llm";
 import { urlHash } from "./canonical";
 import { createServiceClient } from "@/lib/supabase/server";
 import { dailyReview, randomHighlights, type Highlight } from "./readwise";
@@ -39,8 +39,14 @@ import { videoAdapter } from "./sources/video";
 // WRITE stage still only sees the text those Items carry — the contract holds.
 const searchAdapter: Adapter = async (section, ctx) => {
   const s = section as SearchSection;
-  // The kill-switch. Checked here rather than at the call site so every future caller inherits it — a paid
-  // path should be impossible to reach by accident, not merely discouraged.
+  // Two kill-switches, both checked here rather than at the call site so every future caller inherits them
+  // — a paid path should be impossible to reach by accident, not merely discouraged. `ai_enabled` is the
+  // umbrella (this digest's AI tier at all); `web_search_enabled` is the narrower opt-in for the one gather
+  // path that bills every run even within that tier.
+  if (!aiEnabled(ctx.digest)) {
+    console.info(`section ${s.id}: AI is off for this digest — skipping search`);
+    return [];
+  }
   if (!ctx.digest.web_search_enabled) {
     console.info(`section ${s.id}: web search is off for this digest — skipping`);
     return [];

@@ -1,4 +1,4 @@
-import { callModel } from "./llm";
+import { aiEnabled, callModel } from "./llm";
 import type { RunCtx, Section } from "./types";
 
 // ②½ SELECT — the editorial cut.
@@ -56,6 +56,9 @@ export async function selectValuable<T extends Candidate>(
 ): Promise<T[]> {
   // Nothing to choose between: don't spend a call to confirm the obvious.
   if (candidates.length <= keep) return candidates;
+
+  // No AI tier: same fallback as an actual model failure below — the pre-select behaviour, feed order.
+  if (!aiEnabled(ctx.digest)) return candidates.slice(0, keep);
 
   const list = candidates
     .map((c, n) => {

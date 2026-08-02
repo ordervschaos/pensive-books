@@ -16,7 +16,147 @@
 > `wip` (in progress, no promotion) · `chore` (housekeeping, no promotion).
 
 
+
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+
+## 2026-08-01 — Cached post bodies were feeding the r.jina.ai preamble to everything `[ship]`
+- **What:** Owner caught it from the new raw-list preview (previous entry): sections showed "Title: X URL
+  Source: Y Published Time: Z Markdown Content:" instead of actual article text. Root cause: `articleText()`
+  already strips that preamble on a fresh fetch, but `loadCorpus()` (`lib/digest/build.ts`) read cached
+  bodies straight from `digest_posts.body` with no stripping — and those rows predated the stripper, so
+  every recurring article kept re-serving its dirty cached copy forever. This fed BOTH the new non-AI list
+  and the LLM writer's prompt (confirmed: the same un-stripped text is what `write.ts` slices into the
+  writer's source material) — a real, silent data-quality bug in the AI path too, just invisible because
+  the model quietly worked around its own garbage input. Fixed by running `stripReaderPreamble` in
+  `loadCorpus` as well, same "clean on read and on write" rule `PostPage` already followed.
+  Verified live: renamed digest 1 to "Pssst...it's me!" and force-resent today's issue (`buildIssue(6,
+  {force:true})`) — real content now, sent successfully (16 items, status `sent`). One smaller, separate
+  cosmetic issue survived (a few excerpts lead with feed clutter — category tag, byline, a stray image
+  markdown — before the real sentence; one inbox item shows raw email forward-headers) — flagged to the
+  owner, not fixed, out of scope for this bug.
+- **Files/commits:** `apps/digest/lib/digest/build.ts` (import + one line in `loadCorpus`). Uncommitted.
+- **PM impact:** none beyond the fix — no STATE/ROADMAP row changes, this is a correctness fix to a shipped
+  pipeline, not a new capability.
+
+## 2026-08-01 — Digest AI gated behind a paid tier, mechanical fallback otherwise `[ship]`
+- **What:** Owner call — the digest pipeline was overusing LLMs; most of it should work without one, with AI
+  as a paid add-on. Audited the whole pipeline: exactly 4 model call sites, all through one `callModel`
+  chokepoint (`search` gather, `select` editorial triage, `write` intro/section, `quiz` closer). Added one
+  `aiEnabled(digest)` resolver in `lib/digest/llm.ts` and checked it at all 4 sites, each falling back to
+  its own mechanical equivalent: select → `candidates.slice(0, keep)` (the pre-select behavior), write →
+  plain linked list of gathered items instead of prose, intro → omitted. `prompt` (reflection) sections and
+  the quiz closer have no non-AI equivalent and are simply skipped when AI is off — pure generation, nothing
+  to fall back to.
+  Two-layer gate: new `digests.ai_enabled` column (migration `20260803130000`, default false, mirrors the
+  existing `web_search_enabled` pattern — this is the seed the real paid-entitlement work
+  (ROADMAP Now #2) will set later, not a full billing system yet) + `DIGEST_AI_ENABLED` env override
+  (unset = off outside production, `=true` opts back in locally, `=false` is an ops kill-switch). Settings
+  UI (new + edit) gained an "AI writing (paid)" checkbox above the existing web-search one, off by default.
+  Typecheck clean; migration pushed to remote.
+- **Files/commits:** `apps/digest/lib/digest/{llm,adapters,select,write,closers,build,types}.ts`,
+  `apps/digest/app/digests/{actions.ts,new/page.tsx,[id]/page.tsx,[id]/settings/page.tsx}`,
+  `apps/digest/scripts/{smoke-sources,smoke-db-sources}.ts`, `apps/digest/README.md`,
+  `supabase/migrations/20260803130000_digests_ai_enabled_flag.sql`. Uncommitted.
+- **PM impact:** connects to ROADMAP Now #2 (Monetization rails v1) — `ai_enabled` is the chokepoint that
+  work should flip once real Stripe entitlement lands, no further pipeline changes needed.
+
+## 2026-08-01 — Explained digest LLM chokepoint/gateway architecture `[chore]`
+- **What:** Q&A only, no code changes from me — walked through how digest creation works: the `callModel` gateway in `lib/digest/llm.ts`, the 4 conceptual LLM chokepoints (gather/selectValuable/write/closers), the `compile()` pipeline in `build.ts`, and the `web_search_enabled` kill-switch pattern (checked inside `adapters.ts`, not scattered). Used as groundwork for the upcoming monetization gating work (extend the same kill-switch pattern to all 4 chokepoints).
+- **Files/commits:** none by me. Note: working tree already has uncommitted digest changes (adapters.ts, llm.ts, select.ts, types.ts, new `digests_ai_enabled_flag` migration) that predate/are outside this conversation — not catalogued here since I didn't author them.
+- **PM impact:** none.
+
+## 2026-08-01 — `/api/digests/1/preview` spinner: not a bug, just slow `[wip]`
+- **What:** Resolved the diagnosis from the prior entry. Ran `previewIssue(1)` directly (outside the HTTP
+  layer) and it completed cleanly in **173s** — 6 sections, 19 items, no errors. So the route isn't hanging;
+  it's doing real LLM work across 6 sections (gather + write each) with zero progress feedback in the
+  browser, which reads identically to a hang for the first ~3 minutes. Told the author to confirm whether
+  they waited that long; if they did and it still never resolved, the bug is in the HTTP path specifically
+  (dev-server handling / browser abort), not the compile logic — otherwise no fix needed. Deleted the
+  scratch debug harness (`apps/digest/scripts/tmp-preview-debug.ts`) now that it served its purpose.
+- **Files/commits:** none (diagnosis only; debug script removed, not committed).
+- **PM impact:** none — no fix was needed if the theory holds; revisit only if the author reports otherwise.
+
+## 2026-08-01 — Inbox messages open to a full-text detail view `[ship]`
+- **What:** The inbox list only showed a 240-char clamp per message. Subject is now a link to
+  `/digests/[id]/inbox/[messageId]`, a detail page mirroring `PostPage`'s pattern (full text, sender/date,
+  back link, "used in issue" link). Rendered via the same `body_text || stripHtml(body_html)` the pipeline
+  itself trusts — deliberately NOT `dangerouslySetInnerHTML` on raw mail HTML, since that's sender-controlled
+  content and would be stored XSS in an authenticated view. Typecheck passes.
+- **Files/commits:** new `apps/digest/app/digests/[id]/inbox/[messageId]/page.tsx`; edited
+  `apps/digest/app/digests/[id]/inbox/page.tsx`. Uncommitted.
+- **PM impact:** none.
+
+## 2026-08-01 — `/api/digests/1/preview` hangs (spinner, no response) `[wip]`
+- **What:** Reported not working; ruled out auth (401-without-cookie was expected, but user is signed in at
+  :8080 and still gets an infinite spinner, not even a 401 — so the request itself is hanging somewhere in
+  gather → write → render). Reproducing directly via `previewIssue(1)` outside the HTTP layer to find which
+  stage stalls; not yet resolved.
+- **Files/commits:** scratch-only `apps/digest/scripts/tmp-preview-debug.ts` (debug harness, delete before
+  commit, not part of the fix).
+- **PM impact:** none yet — will promote once root cause + fix land.
+
+## 2026-08-01 — Inbox tab: the mailbox becomes a first-class view `[ship]`
+- **What:** Inbound mail was only inspectable by running a script — "a push source you cannot see is a push
+  source you cannot trust." New `Inbox` tab per digest: subject, sender, received, body size, used/unused
+  (linking to the issue), a 2-line preview, and per-message delete. Two deliberate calls: (1) *used* is NOT
+  a column on `digest_inbox_messages` — it's recomputed by hashing the adapter's synthetic permalink and
+  joining `digest_posts`, so "delivered" keeps ONE definition across every source kind; (2) deleting a
+  message does not delete the `digest_posts` row it produced — delivery history isn't rewritten to tidy a
+  mailbox. Empty state names the failure mode that looks identical to "nothing sent yet" (401 → permanent
+  drop). Also flags messages under the 120-char floor that the adapter will skip.
+- **Files/commits:** `app/digests/[id]/inbox/page.tsx` (new), `layout.tsx` (tab), `actions.ts`
+  (`forgetMessage`), SETUP.md §B. Typecheck + `next build` green.
+- **PM impact:** none beyond the already-shipped `inbox` row in STATE.
+
+## 2026-08-01 — Inbound mail proven end-to-end; the push source is live `[ship]`
+- **What:** First forwarded newsletter 401'd. Mailgun's event log had the whole story
+  (`accepted → read+…@pensive.me`, `accepted → webhook`, `failed / Unauthorized`): `MAILGUN_SIGNING_KEY`
+  was in `.env.local` but never in Vercel production. Added it, **redeployed** (env vars only bind to new
+  deployments — that gap is what killed the message), then verified the full path without waiting on
+  another forward: POSTed a synthetic message signed with the real key → `{"ok":true,"digest_id":1}`, row
+  inserted, `inboxAdapter` returned it, test row deleted. `digest_inbox_messages` back to 0 rows.
+- **Files/commits:** SETUP.md §F (signing-key item now closed, with the redeploy trap recorded). No code.
+- **PM impact:** STATE — Mailgun route row moves from `blocked (owner)` to shipped/verified.
+- **Consequence worth remembering:** a signature failure returns 401, and Mailgun treats **4xx as
+  permanent drop**. Mail sent during a misconfigured window is not retried — it is simply lost.
+
+## 2026-08-01 — digest.pensive.me live; inbox address moved to the Settings tab `[ship]`
+- **What:** A record added by owner → `digest.pensive.me` resolves (76.76.21.21), TLS valid, root 307s to
+  the auth bounce, webhook 401s (fail-closed, signing key now added). Mailgun route created successfully.
+  UX fix off a real miss: the inbound address only rendered on the Sections tab, gated on an `inbox` section
+  existing — the owner went looking on Settings and found nothing. `InboxAddress` now renders on the digest
+  Settings tab unconditionally (Sections keeps its contextual copy). Also cleared a stale `.next` (dev and
+  prod builds sharing one directory → `Cannot find module './958.js'`).
+- **Files/commits:** `app/digests/[id]/settings/page.tsx`, SETUP.md §B (address location + digest 1's token).
+- **PM impact:** STATE deployment row already true; `inbox` now blocked only on an actual test message.
+- **Note:** ran `prettier --write` on the settings page before noticing the repo has **no prettier config** —
+  it reflowed a ~110-col file to 80. Reverted by rewriting in the house style. Don't reach for prettier here.
+## 2026-08-01 — Per-kind section field schema (SSOT) `[ship]`
+- **What:** owner-approved fix for the gap raised the same day. `lib/digest/sectionSchema.ts` now declares
+  every kind's fields once — which exist, which are **required**, what each *means*, how a raw string becomes
+  a property — and both consumers derive from it: `AddSectionForm` renders it (no kind names left in the
+  component) and `buildSection` parses + **enforces** it. Replaces the same list living in `types.ts` +
+  the form's JSX + a per-kind switch in `actions.ts` (3 edits/field, silent drift). Pure data, not parse
+  callbacks, so it crosses the client boundary and reads as documentation; `field.name` doubles as the
+  Section property name, which deleted the rename table (`readwise_mode`→`mode` etc). `requiredWhen` is one
+  named hook for the single conditional case (`ranked.targets`), not a rule engine. Verified: feed-without-
+  urls / serial-without-book / search-without-query / any-kind-without-title now **rejected** with a reason;
+  all valid configs still parse; junk URLs filtered; `category:""` omitted rather than stored. 0 typecheck
+  errors, builds.
+- **Files/commits:** uncommitted. `apps/digest/lib/digest/sectionSchema.ts` (new),
+  `apps/digest/app/digests/[id]/AddSectionForm.tsx`, `apps/digest/app/digests/actions.ts`, README.
+- **PM impact:** none — an internal consistency fix, no priority change.
+
+
+## 2026-08-01 — Digest section editing, in progress `[wip]`
+- **What:** Pre-existing uncommitted changes found in the tree, not made in this session — no context available on intent. Flagging so they're not silently uncatalogued; author to fill in details or re-tag on next touch.
+- **Files/commits:** `apps/digest/app/digests/[id]/AddSectionForm.tsx` (trimmed, -247/+80), new `apps/digest/lib/digest/sectionSchema.ts` (317 lines, untracked). Uncommitted.
+- **PM impact:** none.
+
+## 2026-08-01 — Root `dev:digest` script `[chore]`
+- **What:** Added `pnpm dev:digest` to root `package.json`, matching the existing `dev:web`/`dev:marketing` convention (proxies to `apps/digest`'s own `next dev --port 3001`). No new server code — the app script already existed, just wasn't wired at the root.
+- **Files/commits:** `package.json` (uncommitted).
+- **PM impact:** none.
 
 ## 2026-08-01 — Digest write stage moves to DeepSeek `[ship]`
 - **What:** owner directive — write on DeepSeek instead of Sonnet. `lib/digest/llm.ts` now routes on the

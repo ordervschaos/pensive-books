@@ -6,6 +6,7 @@ import { sendToKindle } from "./deliver";
 import { urlHash } from "./canonical";
 import { close } from "./closers";
 import { isCloser } from "./types";
+import { stripReaderPreamble } from "./entities";
 import type { Digest, Item, IssueContent, RenderedSection, RunCtx, Section } from "./types";
 
 // The whole pipeline for one issue: gather → filter → write → verify → assemble → render → deliver.
@@ -126,7 +127,10 @@ async function loadCorpus(
   const bodies = new Map<string, string>();
   for (const r of (data ?? []) as Array<{ url_hash: string; body: string | null; used_at: string | null }>) {
     if (r.used_at) seen.add(r.url_hash);
-    if (r.body) bodies.set(r.url_hash, r.body);
+    // Clean on read as well as on write (same rule as PostPage): rows stored before the extractor learned
+    // to strip r.jina.ai's metadata block still carry it verbatim, and this cache is exactly what lets a
+    // dirty body outlive the fix — every future run reuses it instead of re-fetching a clean copy.
+    if (r.body) bodies.set(r.url_hash, stripReaderPreamble(r.body).text);
   }
   return { seen, bodies };
 }
@@ -215,7 +219,7 @@ export async function buildIssue(
 
   const { data: digestRow } = await db
     .from("digests")
-    .select("id, owner_id, name, timezone, deliver_at, active, voice, web_search_enabled, sections, delivery")
+    .select("id, owner_id, name, timezone, deliver_at, active, voice, web_search_enabled, ai_enabled, sections, delivery")
     .eq("id", issue.digest_id)
     .maybeSingle();
   if (!digestRow) return fail(db, issueId, "digest not found");
@@ -320,7 +324,7 @@ export async function previewIssue(
 
   const { data: digestRow } = await db
     .from("digests")
-    .select("id, owner_id, name, timezone, deliver_at, active, voice, web_search_enabled, sections, delivery")
+    .select("id, owner_id, name, timezone, deliver_at, active, voice, web_search_enabled, ai_enabled, sections, delivery")
     .eq("id", digestId)
     .maybeSingle();
   if (!digestRow) return { error: "digest not found" };

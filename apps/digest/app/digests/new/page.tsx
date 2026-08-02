@@ -47,12 +47,23 @@ export default function NewDigestPage() {
         </label>
 
         <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="ai_enabled" className="mt-1" />
+          <span>
+            AI writing (paid)
+            <span className="block text-xs text-muted">
+              Leave this off unless you want it. Off, sections are a plain linked list of what was gathered
+              — no writing, no editorial triage. On, sections are selected and written for you.
+            </span>
+          </span>
+        </label>
+
+        <label className="flex items-start gap-2 text-sm">
           <input type="checkbox" name="web_search_enabled" className="mt-1" />
           <span>
             Allow live web search
             <span className="block text-xs text-muted">
-              Leave this off unless you want it. RSS feeds cost nothing to gather; live search runs a paid
-              model every morning whether or not it finds anything.
+              Requires AI writing above. RSS feeds cost nothing to gather; live search runs a paid model
+              every morning whether or not it finds anything.
             </span>
           </span>
         </label>

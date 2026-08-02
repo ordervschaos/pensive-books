@@ -38,6 +38,7 @@ export default async function DigestLayout({
         tabs={[
           { label: "Sections", href: base },
           { label: "Issues", href: `${base}/issues` },
+          { label: "Inbox", href: `${base}/inbox` },
           { label: "Posts", href: `${base}/posts` },
           { label: "Settings", href: `${base}/settings` },
         ]}
