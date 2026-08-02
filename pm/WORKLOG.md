@@ -19,6 +19,34 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-02 — Digest agent rail: persistence + UI, rung 4 complete `[ship]`
+- **What:** New `digest_agent_chats` table (migration `20260803150000`, **pushed**) — one ROW per
+  conversation, not a growing blob on the digest; the main app already paid for that lesson (slow "New
+  chat", REPLICA-FULL Realtime amplification). It stores the **model's** transcript, and the displayed view
+  is derived from it (`agent/transcript.ts` `toExchanges`) rather than stored alongside — two stored
+  representations of one conversation is the mirror that drifts, and only this direction works.
+  `POST /api/digests/:id/agent` (RLS-scoped client, `maxDuration = 300`) + `AgentRail.tsx` + an **Agent
+  tab**. The rail deliberately shows every tool call with its arguments — "Added a feed section" as prose
+  is a claim, `add_feed_section {…}` is a receipt — and renders errors as steps rather than swallowing
+  them. `router.refresh()` fires on `changed`, which is derived from the steps, **not** trusted from the
+  model's prose.
+- **Verified:** a round-trip script (temporary, removed) on live digest #1 — turn 1 persisted, transcript
+  reloaded out of the table as a fresh request would, turn 2 continued it correctly ("which of *those*"
+  resolved to turn 1's sections), and the fold rendered 2 exchanges with their steps. Chat row deleted
+  after. Notable: turn 1 needed **zero** tool calls because `<digest_state>` already carried the sections —
+  the static-then-volatile prompt design paying off. typecheck + build green; both new routes in the
+  manifest. **Not** clicked in a browser (MCP profile busy, page needs a session).
+- **Known and deliberate:** not streamed (7–16s covered by a spinner; streaming needs no new runtime and is
+  the obvious next UI change), and **history is untrimmed** — every turn sends the whole conversation, so a
+  long chat grows without bound. That is rung 5 and is now the top of the list.
+- **Files/commits:** `supabase/migrations/20260803150000_digest_agent_chats.sql` (new, pushed),
+  `apps/digest/app/api/digests/[id]/agent/route.ts`, `app/digests/[id]/agent/{page.tsx,AgentRail.tsx}`,
+  `lib/digest/agent/transcript.ts` (all new), `app/digests/[id]/layout.tsx`, `README.md`. Uncommitted.
+  Prior rungs: `e13f382`.
+- **PM impact:** none yet — still an internal surface on an app with no scheduler running. The two open
+  owner decisions stand: the agent's entitlement gate (README) and whether the rail earns a place next to
+  the Sections tab rather than as its own tab.
+
 ## 2026-08-02 — Citations vs links, and the paragraph gap the preview never had `[ship]`
 - **What:** Two more reader-side reports (`doc_1785656805078.md` §10), both `issueStyles` doing less than the
   code around it assumed.

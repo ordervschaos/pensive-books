@@ -450,9 +450,16 @@ rather than solved.
 
 ## The agent
 
-`lib/digest/agent/loop.ts` — one turn: the reader says something, the model reads and edits the digest
+Lives at **`/digests/:id/agent`**. One turn: the reader says something, the model reads and edits the digest
 through the belt below, and it ends with something said back. `scripts/smoke-agent.ts` drives a turn with no
 UI at all.
+
+```
+AgentRail (client) ──POST──► /api/digests/:id/agent ──► runAgentTurn
+      ▲                              │                        │
+      │                              │                  digest_agent_chats
+   router.refresh() ◄── changed? ────┘                   (model transcript)
+```
 
 ```
 runAgentTurn ─► callModelStep ──► tool calls? ──yes──► runTool (in order) ─┐
@@ -479,6 +486,32 @@ Four decisions worth not undoing:
 - **`execute` never throws.** A malformed argument, a refused write, a lost race — each is something the
   model can respond to sensibly if told plainly, and an unrecoverable turn if not. The conflict case says
   *re-read and decide*, explicitly not *retry*.
+
+### The rail, and what it shows on purpose
+
+Two things a chat window normally hides:
+
+- **Every tool call, named, with its arguments.** The agent edits the reader's real configuration, so
+  "Added a feed section" as prose is a *claim* while `add_feed_section {…}` is a *receipt*. When the two
+  disagree the receipt is right, and the reader should be able to see which is which.
+- **Errors as steps, not as failures.** A refused write is usually a real constraint. Hiding it would leave
+  the model's summary as the only account of a turn that didn't do what it said.
+
+`digest_agent_chats` stores the **model's** transcript — user turns, assistant turns with their tool calls,
+tool results. The displayed view is *derived* from it (`agent/transcript.ts`), never stored alongside: two
+stored representations of one conversation is the mirror that drifts, and only this direction works, since
+the model's transcript contains everything the display needs and not the reverse.
+
+`router.refresh()` fires when a turn actually wrote something — derived from the steps, not trusted from the
+model's prose, which is a different kind of claim. That's the RSC form of the house *refresh-is-a-no-op* rule.
+
+**Not streamed yet.** A turn measures 7–16s, which a spinner covers, but the honest reason to stream is that
+watching the steps arrive is most of what makes a rail feel alive. It needs no new runtime — Node streams
+with no config and `runAgentTurn` already produces steps in order.
+
+**History is not trimmed yet.** Every turn sends the whole conversation, so a long chat grows without bound.
+The table is right to keep everything; deciding how much to *send* is a per-turn question that belongs in the
+agent, and is the next piece of work.
 
 **Open question for the owner:** the agent is currently behind the same `aiEnabled(digest)` gate as the 6am
 pipeline, so a digest with AI writing off cannot use it. That may be backwards — an AI-off digest still
