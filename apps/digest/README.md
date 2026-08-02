@@ -354,6 +354,82 @@ signal anywhere. An empty `search` query was worse: it still billed an Opus call
 field to a kind is now one edit, and a kind that needs conditional requiredness has exactly one hook
 (`requiredWhen` — `ranked.targets` is mandatory for arxiv/github/reddit and meaningless for hn/lobsters).
 
+## One write surface
+
+Every change anyone can make to a digest is a **Command**, and every command lands in
+`lib/digest/commands.ts`. `app/digests/actions.ts` is a thin FormData→Command adapter; anything else that
+needs to write (an agent, an importer, a script) is another adapter over the same port.
+
+```
+ forms (RSC)  ──FormData──► adapter ─┐
+                                     ├──►  applyCommand(supabase, cmd)  ──►  digests row
+ (an agent)   ──JSON──────► adapter ─┘
+```
+
+The reason is the one this codebase keeps paying for: a second write path agrees with the first on the day
+it is written and drifts the first time either changes. `sectionSchema.ts` killed that for *what fields a
+kind has*; this kills it for *what happens when you save one*.
+
+Three things stay on the adapter side, and the line is "framework-specific presentation":
+
+- **`revalidatePath`** — commands *return* the paths to revalidate. Calling Next's cache API outside a
+  request context throws, which would make every command untestable from a script.
+- **`redirect`** — `create_digest` returns the new id; where the browser goes next is the form's business.
+- **FormData itself.** Values arrive as native types (`urls: ["https://…"]`, `days: 3`) and are flattened by
+  `normalizeFieldValue` before reaching `parseSectionFields`, so the schema stays the single interpreter of
+  what a field means rather than each caller pre-formatting its own strings.
+
+`update_digest` takes a **patch**, not a whole object: only the keys present are written. Forms always send
+everything, so nothing changes for them — but "rename this digest" from any other caller must not blank the
+voice it never mentioned.
+
+Deliberately **not** commands: `preview`, `run now`, `regenerate`. Those aren't config edits — they're the
+pipeline, they already have routes, and they cost money. This module is the surface where writes are cheap
+and reversible, and that distinction is worth keeping visible.
+
+**Known sharp edge:** sections are stored as one jsonb array, so every section command is a read-modify-write
+of the whole array with no optimistic concurrency. Two writers at once (a form and an agent, say) silently
+clobber each other. Fine while a human is the only writer; it needs a version column or a jsonb-path update
+before a second writer is real.
+
+## Readiness — "will this work tomorrow at 6am?"
+
+`lib/digest/readiness.ts` answers that from data, and the Sections tab renders the answer.
+
+The failure it exists to kill is the **silent skip**. A `search` section with AI off, a `readwise` section
+whose token was never entered, a `prompt` section on a non-AI digest — each of these saves happily, shows
+nothing wrong, compiles without error, and simply *isn't in the issue*. Nothing in the pipeline is broken
+enough to log anything, which is exactly why a separate pass has to ask.
+
+Two levels, because they're different kinds of bad news:
+
+- **blocking** — nothing will be delivered, or this section won't be: no sources, everything disabled, only
+  a closer configured (a quiz runs *over* written sections, so alone it can never fire), digest paused, no
+  verified Kindle address (the issue builds, costs what it costs, and then dies at delivery), and the four
+  silent skips above.
+- **degrading** — it delivers, but isn't earning its place: never built; a section that was **due** and
+  produced nothing in its last N runs; a section whose posts have a **median age** over six months; an
+  `inbox` section at an address nothing has ever been sent to.
+
+Only the corpus can see the second kind — which is most of why `digest_posts` keeps what it didn't use.
+
+Three decisions worth not undoing:
+
+- **Derived, never stored.** No readiness table, no wizard step, nothing to migrate or backfill. Adding a
+  check is adding a term to a pure function.
+- **Pure, with the fetching split out.** `readiness(input)` takes rows; `loadReadiness(supabase, digest)`
+  goes and gets them. So the same function can answer for a *page* (RLS-scoped) and, later, for an agent —
+  which is what stops "what the screen says" and "what the agent believes" from being two opinions.
+- **Cadence is consulted, not ignored.** A weekly resurfacer legitimately misses six issues in seven, so
+  "produced nothing" counts only the issues where `runsToday` says it was up. That predicate moved from
+  `build.ts` to `types.ts` for this — two copies of the rule would disagree the first time either changed.
+
+It replaced the per-section ⚠ lines that used to live inside each section card: the same three checks
+written a second time in JSX. One derivation, one place it renders.
+
+**A clean digest gets one quiet line**, not a green panel congratulating itself. A status surface you learn
+to ignore when it's fine is a status surface you ignore when it isn't.
+
 ## Known gaps
 
 - **Article extraction** is the highest-risk piece: `r.jina.ai` (URL→markdown) is v1 because it has zero
@@ -369,8 +445,8 @@ field to a kind is now one edit, and a kind that needs conditional requiredness 
 - **Feeds carry no recency filter, and the corpus now proves it matters.** Measured on real pulls:
   James Clear **6.8y old**, Daily Stoic **3y old**, Modern Stoicism **7mo old** — against same-day items
   from Hyperallergic, ARTnews and Tricycle. Those feeds republish evergreen archives, so a "daily" quietly
-  serves 2020 writing. The posts view flags anything over six months; a `max_age_days` per section is the
-  fix and isn't built.
+  serves 2020 writing. The posts view shows the age per item and **readiness now names the offending
+  section** (median over six months), but the *fix* — a `max_age_days` per section — still isn't built.
 - **Narrow beats produce empty days.** The "writing craft" section correctly found nothing new in the last
   few days and shipped nothing. That's honest, but a daily cadence on a weekly-volume beat mostly yields
   silence — either widen the beat or let a section declare its own cadence (weekly, on a named day).

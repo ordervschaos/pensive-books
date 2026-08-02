@@ -242,6 +242,21 @@ export const SECTION_FIELDS: Record<SectionKind, readonly Field[]> = {
 
 const SPLIT = /[\s,]+/;
 
+/**
+ * Flatten a value of any shape into the raw string `parseField` expects.
+ *
+ * A form only ever produces strings; anything else calling a command (an agent tool, an importer, a test)
+ * naturally holds native values — `urls: ["https://a", "https://b"]`, `days: 3`. Rather than teach those
+ * callers to pre-format, they hand over what they have and it is flattened HERE, so `parseField` stays the
+ * single interpreter of what a field means. Joining an array with ", " round-trips exactly, because SPLIT
+ * treats commas and whitespace the same.
+ */
+export function normalizeFieldValue(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  if (Array.isArray(value)) return value.join(", ");
+  return String(value);
+}
+
 /** Coerce one raw form value by its declared type. `undefined` means "not set" — never a zero or an "". */
 export function parseField(field: Field, raw: string): string | number | string[] | undefined {
   const value = (raw ?? "").trim();

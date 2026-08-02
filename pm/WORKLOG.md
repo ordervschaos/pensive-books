@@ -19,6 +19,137 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-02 — Issue reader: hairlines, real headlines, and a boilerplate blocklist `[ship]`
+- **What:** Items 1–3 of the issue-15 design review (`doc_1785656805078.md` §7, now §8 records the result).
+  (1) `markdownToHtml` gained a thematic-break rule — `renderRawList`'s `\n\n---\n\n` had been falling
+  through to the paragraph branch and printing a literal "---" between every pair of articles (7 in one
+  issue). (2) `inline(s, {citations})` splits the two meanings of a markdown link: a CITATION inside prose
+  stays `<small class="src">`, a link that IS a heading gets a plain anchor. That inversion was the worst
+  thing on the page — the article headline rendered 0.75em grey while its unlinked publication name sat
+  beside it at full body size. `renderRawList` now emits `## [Title](url)` plus a small linked byline, which
+  also buys a per-article Kindle TOC entry (Amazon builds the TOC from headings) and an anchor for the real
+  TOC later. (3) `cleanBody` gained a two-tier boilerplate blocklist, kept as DATA: tier 1 = phrases that are
+  only ever furniture, matched anywhere (`Manage Consent Preferences`, `Switch Label label`, `Confirm My
+  Choices`); tier 2 = words that are furniture only as a standalone short label ("Advertisement", "Share
+  this:", "Subscribe"), since they're ordinary English mid-sentence. Cookie panels carry no links, so
+  `isLinkHeavy` had been sailing straight past ~3,000 unbroken characters of Cookiebot copy.
+  **Fixing the link colour surfaced a structural duplication:** the reader page never used `issueStyles()` —
+  the mailed HTML inlined it and the preview injected it scoped, but the page you actually read on
+  hand-copied a subset into `globals.css`, so a non-`.src` link fell through to browser-default blue.
+  `IssueContentView` now injects `issueStyles(".prose-digest")` and globals dropped its copy — back to the
+  one definition that function's own comment already asked for.
+  **Verified** by rebuilding issue 15 from the raw `digest_posts.body` rows (not the stored render), so every
+  changed stage ran: literal `<p>---</p>` 7→0, `<hr/>` 9, article `<h3>` 13; headline computed style
+  12px #666 → 18px #1a1917 no-underline, byline 12px #666; all six observed junk patterns gone; blocklist
+  isolated old-vs-new over all 43 stored bodies = 47 blocks / 3.6% removed with **zero false positives**
+  (every removed block printed and read). 8 renderer branch assertions pass (inline citation, heading anchor,
+  `---`, `***`, bullets, escaped asterisk, blockquote). `tsc --noEmit` + `next build` green.
+  **Deliberately not fixed:** mid-word truncation (`"…the purposes of cor"`), the TOC, section chrome, and
+  the Substack-migration notice that is structurally an article but editorially admin noise — that last one
+  is exactly the residue a blocklist can't reach and the trim pass is for.
+- **Files/commits:** `lib/digest/render.ts`, `lib/digest/write.ts`, `lib/digest/entities.ts`,
+  `components/IssueContentView.tsx`, `app/globals.css`, `doc_1785656805078.md` §8. Uncommitted.
+- **PM impact:** new row in STATE → Morning Digest ("Issue reader render (design pass 1 of 3)"), snapshot
+  date bumped to 2026-08-02. Still open for the author: whether the delete-only trim pass is exempt from
+  `ai_enabled` (recommended — it gates voice, not hygiene) or gets its own switch. → DECISIONS once ruled.
+
+## 2026-08-02 — Readiness stops flagging old-but-good posts; digest labels them instead `[ship]`
+- **What:** Owner feedback on the readiness panel (screenshot of digest #1): old articles aren't a
+  readiness problem, they're fine content — just say so. Removed `staleSections()` from
+  `readiness.ts` (the median-age-over-6-months degrading note, plus its now-unused `posts` query and
+  `PostSummary`/`median`/`ageLabel` plumbing in `loadReadiness`) so age alone no longer blocks/degrades a
+  section. Moved the signal from a *gate* to a *label*: `renderRawList()` (`write.ts`, the non-AI fallback
+  path) now appends "· *From the archives*" to any item whose `published_at` is >180 days old — same
+  cutoff the old check used. Deliberately not extended to the AI-written prose path or `readwise` quotes
+  (would need feeding age into the model prompt — out of scope for this fix). Verified live: digest #1's
+  readiness panel dropped its two stale-feed notes, and the rendered preview shows the tag on a Daily Stoic
+  archive repost.
+- **Files/commits:** `apps/digest/lib/digest/readiness.ts`, `apps/digest/lib/digest/write.ts`. Uncommitted.
+- **PM impact:** `pm/STATE.md` readiness-panel row updated to drop the stale-feed example and note the
+  archive-tag behavior instead.
+
+## 2026-08-02 — Digest writes collapse to one command layer `[ship]`
+- **What:** Rung 2 of `doc_1785651033920.md`. New `lib/digest/commands.ts` owns every write to a digest
+  (`create_digest`, `update_digest`, `add`/`update`/`remove_section`, `forget_message`);
+  `app/digests/actions.ts` is now a thin FormData→Command adapter (247 lines → ~120, all translation, no
+  decisions). Ports-and-adapters, so an agent tool becomes a second adapter rather than a second write path
+  — the multi-mirror drift `sectionSchema.ts` was introduced to kill, applied to *what happens when you
+  save* instead of *what fields a kind has*.
+  Three things stay framework-side by design: `revalidatePath` (commands return the paths; calling Next's
+  cache API outside a request throws, which would make commands untestable from a script), `redirect`, and
+  FormData itself. Commands take **native** values — `normalizeFieldValue` in sectionSchema flattens
+  `urls: [...]` / `days: 3` before `parseSectionFields`, so the schema stays the single interpreter.
+  `update_digest` is now a **patch** (only present keys are written) — no change for forms, which always
+  send everything, but "rename this" from any other caller must not blank the voice it never mentioned.
+  Preview/run/regenerate deliberately excluded: they're the pipeline, not config, and they cost money.
+- **Verified:** `applyCommand` driven directly against digest #1 with no request context — native array +
+  numeric fields stored correctly, update carried `max_items` over and dropped the omitted cadence, a
+  `feed` with no urls refused with the same message the form gives, a `{name}`-only patch left voice and
+  active untouched, cleanup restored the section count. typecheck + build green. **Not** clicked through
+  the browser (MCP profile busy, page needs a session) — the form path is verified by compile + reasoning
+  over field names, not by a click.
+- **Found, not fixed:** sections are one jsonb array, so every section command is a read-modify-write with
+  no optimistic concurrency — two writers clobber each other silently. Harmless with one human writer;
+  needs a version column or jsonb-path update before rung 4 makes a second writer real. Recorded in
+  `apps/digest/README.md`.
+- **Files/commits:** `apps/digest/lib/digest/commands.ts` (new), `app/digests/actions.ts`,
+  `lib/digest/sectionSchema.ts`, `apps/digest/README.md`. Uncommitted.
+- **PM impact:** none — internal refactor, no user-visible change. Rung 3 (tools generated from
+  `sectionSchema`) is the next one and is where the agent design starts needing ratification.
+
+## 2026-08-02 — Issue 15 read as a reader: the non-AI path ships the corpus, not a digest `[wip]`
+- **What:** Design review of `/issues/15` from the reader's side. Couldn't load the live page (automation
+  Chrome is signed in as another account → RLS 404), so pulled the stored `digest_issues.content` and
+  re-rendered it through the app's own `markdownToHtml` + `IssueContentView` markup/type scale.
+  **Root cause:** digest #1 has `ai_enabled:false`, so `writeSection` falls to `renderRawList`, which emits
+  entire extracted bodies verbatim — 55,127 chars, **22,619px (~24 screens)**, 4 `<h2>`s, no TOC, no
+  landmarks. Three renderer bugs the raw path exposes: (1) `render.ts:35` wraps *every* link in
+  `<small class="src">`, so the article **headline renders 0.75em grey** while the publication name renders
+  full-size — hierarchy inverted; (2) no `<hr>` rule in `markdownToHtml`, so `renderRawList`'s `\n\n---\n\n`
+  separator renders as literal `<p>---</p>` (7×); (3) `fetch.ts:83` `slice(0,12_000)` cuts mid-word with no
+  marker. Plus ~8% measurable boilerplate (cookie-consent tail, `Share this:`, a whole "article" that is a
+  Substack migration notice) and a `readwise` section literally titled "Untitled section".
+  **Proposed trim design:** delete-only pass where the model returns **block indices, not text** — output
+  alphabet is integers, so the result is a provable subsequence of the input and fabrication is structurally
+  impossible; ~30–60 output tokens/article regardless of length. Deterministic blocklist first, model for the
+  residue; cache as `body_clean` + `trim_version` so a better trimmer re-cleans on read (same trap
+  `loadCorpus` already dodges for the jina preamble). Nothing implemented — review + plan only.
+- **Files/commits:** `doc_1785656805078.md` (new, full review + cheapest-first fix order). No code touched.
+  Note: the other uncommitted `apps/digest/**` edits in the tree (`actions.ts`, `commands.ts`,
+  `sectionSchema.ts`, `write.ts`, `readiness.ts`) are **not** from this session.
+- **PM impact:** none yet. One open product decision for the author: a trim pass is an LLM call but this
+  digest has `ai_enabled:false` — recommend exempting hygiene from that toggle (it gates *voice*, not
+  cleaning; the subsequence guarantee is what earns the exemption) rather than adding a `clean_enabled`
+  switch. Promote to DECISIONS once ratified.
+
+## 2026-08-02 — Digest readiness: the silent skip is now visible before 6am `[ship]`
+- **What:** Rung 1 of the digest-agent plan (`doc_1785651033920.md`), built as a standalone feature — no
+  agent involved. `lib/digest/readiness.ts` derives "will this deliver something worth reading tomorrow?"
+  from rows that already exist. **Blocking:** no sources / all disabled / only a closer (a quiz alone can
+  never fire) / paused / no verified Kindle address / the four silent skips (`search` and `prompt` with AI
+  off, `search` with web search off, `readwise` with no token). **Degrading:** never built; a section that
+  was *due* and produced nothing in its last N runs; a section whose posts have a median age over six
+  months; an `inbox` section nothing was ever sent to. Pure `readiness(input)` + `loadReadiness(supabase,
+  digest)` so a page and (later) an agent read the same sentences. `runsToday` moved `build.ts` → `types.ts`
+  because readiness must ask the same cadence question — a weekly section legitimately misses six issues in
+  seven, and flagging it would train the reader to ignore the panel.
+  New `ReadinessPanel` at the top of the Sections tab; it **replaced** the per-section ⚠ lines (the same
+  three checks written a second time in JSX). A clean digest gets one quiet line, not a green panel.
+  Verified against the live digest #1: correctly flagged the `prompt` section as skipped (ai_enabled=false)
+  and two feeds serving 7- and 10-month-old writing; no false positives on the connected Readwise section or
+  the Kindle address. All three panel states rendered via `renderToStaticMarkup`. typecheck + build green.
+- **Files/commits:** `apps/digest/lib/digest/readiness.ts` (new), `app/digests/[id]/Readiness.tsx` (new),
+  `app/digests/[id]/page.tsx`, `lib/digest/{types,build}.ts`, `apps/digest/README.md`. Uncommitted.
+- **PM impact:** none — a diagnostic surface inside the existing digest app, not a Now-slot item. The agent
+  design it comes from is still unratified (see the `[wip]` entry below).
+
+## 2026-08-02 — Digest session committed (`d5c8691`) `[chore]`
+- **What:** Committed the raw-list content fix, the streamed live preview page, and the (concurrently
+  authored) readiness panel — see the three preceding entries for what each does. No new work here, just
+  landing what was already catalogued.
+- **Files/commits:** `d5c8691` "digest: better raw-list content, streamed live preview, readiness checks".
+- **PM impact:** promoting the preview-page ship to STATE below.
+
 ## 2026-08-02 — Live streaming preview page, one Suspense boundary per section `[ship]`
 - **What:** The `/api/digests/[id]/preview` route (still there, for curl/`?ignoreSeen=1` dev workflows) can
   only ever return one atomic blob — no Suspense possible on a route handler, per the earlier design
