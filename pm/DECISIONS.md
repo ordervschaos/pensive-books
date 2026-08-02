@@ -6,6 +6,41 @@
 
 ## Log
 
+### 2026-08-02 — The digest agent is free for everyone; the paid gate stays on the pipeline
+
+Owner call. The agent shipped behind `aiEnabled(digest)` — the same `digests.ai_enabled` gate the 6am
+pipeline uses (2026-08-01 above). Removed: it now has its own predicate, `agentEnabled()`, which honours
+only the `DIGEST_AI_ENABLED` ops kill-switch.
+
+**Why.** `aiEnabled` guards *unattended, recurring* spend — a job that bills every morning whether anyone is
+watching — which is why it defaults off and lives per digest. The agent is neither unattended nor recurring:
+it costs something only when a reader presses send, making it closer to Preview than to the scheduler. And
+the gate inverted who got helped. An `ai_enabled=false` digest is a complete, useful product (a plain linked
+list), and the agent is exactly what helps someone build one — so the people who most needed setup help were
+locked out, while the people who could reach it had already paid. It was also a wall in front of its own
+pitch: the agent is where someone would discover they want AI writing.
+
+The pipeline's dev-default-off is dropped for the agent too — "don't quietly spend while iterating" is a
+real hazard for something on a timer and not for something that fires on a keypress.
+
+**What this owes.** Metering, and it must not be skipped: a conversation has no natural bound (Preview is one
+compile; a chat is as many turns as someone likes, each up to `MAX_STEPS` tool-calling steps). `ai_calls`
+already records every call with `source='digest'` and `operation='turn'`, so turns-per-user-per-day is a
+query against data we already keep — no new table. Past an allowance the refusal becomes the pitch.
+
+Replaces: nothing shipped; the agent had been gated for one day and never released that way.
+
+### 2026-08-02 — The agent rail is docked beside every digest tab, not a tab of its own
+
+Owner call, choosing between a docked side panel, its own tab (as first built), and a panel on the Sections
+tab only. The agent edits the same configuration the tabs display, so the point is watching the sections
+list change as it works — which requires both on screen. Mounted in `app/digests/[id]/layout.tsx`, so the
+conversation also survives tab navigation: App Router swaps `children` without remounting the layout, and
+`router.refresh()` re-renders the server components around the rail without discarding its state.
+Collapsible, and it stacks under the page below `lg` rather than becoming a drawer to build and maintain.
+
+Replaces: the `/digests/:id/agent` tab, deleted.
+
 ### 2026-08-01 — Digest AI moves behind a paid gate; the pipeline defaults to mechanical
 
 Owner call: the digest pipeline was calling a model too readily. Direction going forward — most of the

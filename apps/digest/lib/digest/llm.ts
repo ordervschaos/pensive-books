@@ -41,6 +41,29 @@ export function aiEnabled(digest: { ai_enabled: boolean }): boolean {
   return digest.ai_enabled;
 }
 
+/**
+ * The AGENT's gate, and deliberately not `aiEnabled` above.
+ *
+ * That one guards the 6am pipeline, where the failure it prevents is UNATTENDED, RECURRING spend — a job
+ * that bills every morning forever whether anyone is watching. Hence its default-off and its per-digest
+ * column.
+ *
+ * The agent is neither unattended nor recurring: it costs something only when a reader presses send. Gating
+ * it on the paid tier also inverted who gets helped — an `ai_enabled=false` digest is a complete, useful
+ * product (a plain linked list), and the agent is exactly what helps someone build one. So the people who
+ * most needed setup help were the ones locked out, while the people who could reach it had already paid.
+ *
+ * What remains is the ops kill-switch, which is about a cost incident rather than a tier. The dev-default-off
+ * is dropped here on purpose too: "don't quietly spend while iterating" is a real hazard for something on a
+ * timer and not for something that fires on a keypress.
+ *
+ * Owner decision, 2026-08-02. Metering (turns per user per day, queryable from `ai_calls` today, no new
+ * table) is the follow-up — the part that must not get skipped, since a conversation has no natural bound.
+ */
+export function agentEnabled(): boolean {
+  return process.env.DIGEST_AI_ENABLED !== "false";
+}
+
 type Provider = "anthropic" | "deepseek";
 
 // Bare `deepseek-*` ids are DeepSeek's own API; everything else here is a `claude-*` id. Same convention the

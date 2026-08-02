@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ConflictError } from "../commands";
-import { aiEnabled, callModel, callModelStep, type ToolCall, type Turn } from "../llm";
+import { agentEnabled, callModel, callModelStep, type ToolCall, type Turn } from "../llm";
 import { buildContext, foldPrompt, stalenessNote } from "./context";
 import { TOOLS, runTool, type ToolCtx } from "./tools";
 
@@ -104,11 +104,10 @@ export async function runAgentTurn(opts: {
   message: string;
   signal?: AbortSignal;
 }): Promise<AgentTurn> {
-  if (!aiEnabled(opts.digest)) {
-    throw new Error(
-      "AI is off for this digest, and the agent is a model call like any other. Turn on AI writing in " +
-        "Settings first.",
-    );
+  // Available to every digest, paid tier or not — see `agentEnabled`. All that is left is the ops
+  // kill-switch, which answers a cost incident rather than a tier.
+  if (!agentEnabled()) {
+    throw new Error("The agent is switched off right now. Try again shortly.");
   }
 
   // The concurrency guard, captured ONCE at the start of the turn: every write this turn makes is checked

@@ -58,7 +58,7 @@ with `autoRefreshToken: false` and bounces to `app.pensive.me/auth?returnTo=…`
 | `GITHUB_TOKEN` | optional | Any read-only PAT. Lifts `ranked/github` from 60 req/hr **per shared IP** to 5,000 |
 | `PENSIVE_APP_ORIGIN` | optional | Defaults to `https://app.pensive.me` (`localhost:8080` in dev) |
 | `PENSIVE_DIGEST_ORIGIN` | optional | Defaults to `https://digest.pensive.me` |
-| `DIGEST_AI_ENABLED` | optional | Ops override for the paid AI gate (`lib/digest/llm.ts` `aiEnabled`). `=false` kills every model call regardless of environment; `=true` lifts the dev-default-off so you can test the AI path locally. Unset: off outside production, `digests.ai_enabled` decides in production |
+| `DIGEST_AI_ENABLED` | optional | Ops override for both model gates (`lib/digest/llm.ts`). `=false` kills every model call including the agent — the cost-incident switch. `=true` lifts the **pipeline's** dev-default-off so you can test the 6am path locally. Unset: pipeline off outside production and `digests.ai_enabled` decides in production; the **agent** ignores all of that and only stops on `=false` (see `agentEnabled`) |
 
 The Supabase URL and anon key are checked into `lib/pensive.ts`, same as `apps/marketing` — the anon key is
 a public credential and RLS is the real boundary.
@@ -450,9 +450,15 @@ rather than solved.
 
 ## The agent
 
-Lives at **`/digests/:id/agent`**. One turn: the reader says something, the model reads and edits the digest
-through the belt below, and it ends with something said back. `scripts/smoke-agent.ts` drives a turn with no
-UI at all.
+**Docked beside every digest tab**, not parked on a tab of its own — the agent edits the same configuration
+the tabs display, so the useful thing is watching the sections list change as it works, which needs both on
+screen. Mounted in `app/digests/[id]/layout.tsx`, which also means the conversation survives tab navigation:
+App Router swaps `children` without remounting the layout, and `router.refresh()` re-renders the server
+components around the rail without discarding its state. Collapsible, and it stacks under the page below
+`lg` rather than becoming a drawer to build and maintain.
+
+One turn: the reader says something, the model reads and edits the digest through the belt below, and it
+ends with something said back. `scripts/smoke-agent.ts` drives a turn with no UI at all.
 
 ```
 AgentRail (client) ──POST──► /api/digests/:id/agent ──► runAgentTurn
@@ -551,11 +557,32 @@ turn 120: sent 1887 chars
 The displayed conversation is unaffected: the rail renders `messages` in full, and only the model sees the
 trimmed view.
 
-**Open question for the owner:** the agent is currently behind the same `aiEnabled(digest)` gate as the 6am
-pipeline, so a digest with AI writing off cannot use it. That may be backwards — an AI-off digest still
-delivers a perfectly good plain linked list, and the agent is exactly the thing that would help someone set
-one up. The pipeline gate is about *unattended daily* spend; the agent is a *user-initiated* action, closer
-to Preview. Worth deciding deliberately when the entitlement model lands.
+### Which gate the agent is behind — decided
+
+An **entitlement** is the record of what an account may use; a **gate** is the check at the point of use.
+`digests.ai_enabled` is this app's only entitlement — the seed column for the paid tier, checked by
+`aiEnabled()` and consulted by all four pipeline call sites. Off means the digest still delivers, as a plain
+linked list rather than written prose.
+
+The agent was briefly behind that same gate. **It no longer is** (owner decision, 2026-08-02): it has its
+own predicate, `agentEnabled()`, which honours only the ops kill-switch.
+
+The reasoning, worth keeping because it generalises. `aiEnabled` guards **unattended, recurring** spend — a
+job that bills every morning whether anyone is watching — which is why it defaults off and lives per digest.
+The agent is neither unattended nor recurring; it costs something only when a reader presses send. And
+gating it on the paid tier inverted who got helped: an AI-off digest is a complete, useful product, and the
+agent is exactly what helps someone build one, so the people who most needed setup help were locked out
+while the people who could reach it had already paid. It is also where someone would *discover* they want AI
+writing, which made it a wall in front of its own pitch.
+
+The dev-default-off is dropped for the agent too: "don't quietly spend while iterating" is a real hazard for
+something on a timer and not for something that fires on a keypress.
+
+**The follow-up that must not be skipped: metering.** A conversation has no natural bound — Preview is one
+compile, a chat is as many turns as someone likes, each up to `MAX_STEPS` tool-calling steps. `ai_calls`
+already records every call with `source='digest'` and `operation='turn'`, so "how many agent turns has this
+user had today" is a query against data we already keep, needing no new table. Past an allowance, the
+refusal is the pitch rather than a wall.
 
 ## The agent's tool belt
 

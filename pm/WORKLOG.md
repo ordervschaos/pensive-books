@@ -18,6 +18,30 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-02 — Agent docked beside the tabs, and un-gated `[decision]`
+- **What:** Two owner calls, both in `pm/DECISIONS.md`.
+  **(1) The rail is a docked side panel**, not its own tab. Moved into `app/digests/[id]/layout.tsx` as a
+  second column (`lg:grid-cols-[1fr_22rem]`, sticky, collapsible, stacking under the page below `lg`); the
+  `/digests/:id/agent` tab and page are deleted. The point is watching the sections list change as the
+  agent works, which needs both on screen — and the conversation now survives tab navigation, because App
+  Router swaps `children` without remounting the layout and `router.refresh()` keeps client state.
+  **(2) The agent is free for every digest**, paid tier or not. New `agentEnabled()` in `llm.ts` honours
+  only the `DIGEST_AI_ENABLED` ops kill-switch; `aiEnabled` keeps guarding the 6am pipeline. Reasoning:
+  that gate is for *unattended, recurring* spend, whereas the agent costs something only when someone
+  presses send — and gating it inverted who got helped, since an AI-off digest is a complete product and
+  the agent is what helps someone build one. The pipeline's dev-default-off is dropped for the agent too:
+  the "don't quietly spend while iterating" hazard is real for a timer, not for a keypress.
+- **Verified:** `scripts/smoke-agent.ts` with **no flags** on digest #1 (`ai_enabled=false`) — the turn ran,
+  found the silently-skipped prompt section, and offered to turn AI on rather than doing it, which is the
+  free-tier story working end to end. The `--force-ai` flag is gone as dead weight. typecheck + build green;
+  `/digests/[id]/agent` no longer in the route manifest. Not clicked in a browser (MCP profile busy).
+- **Owed, and named so it isn't skipped:** metering. A conversation has no natural bound; `ai_calls` already
+  records `source='digest'` / `operation='turn'`, so turns-per-user-per-day needs no new table.
+- **Files/commits:** `apps/digest/app/digests/[id]/{layout.tsx,AgentRail.tsx}`, `lib/digest/llm.ts`,
+  `lib/digest/agent/loop.ts`, `scripts/smoke-agent.ts`, `README.md`, `pm/DECISIONS.md`;
+  `app/digests/[id]/agent/` deleted. Uncommitted.
+- **PM impact:** two DECISIONS entries; STATE's Digest agent row updated.
+
 ## 2026-08-02 — Digest agent context policy: a long chat costs what a short one costs `[ship]`
 - **What:** Rung 5, the last of `doc_1785651033920.md`. New `lib/digest/agent/context.ts` + three columns
   on `digest_agent_chats` (`fold`, `folded_through`, `last_version`; migration `20260803160000`,
