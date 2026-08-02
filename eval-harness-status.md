@@ -107,12 +107,41 @@ tokens in 12,475,339 · cache-read 9,518,208 = 43% of prefill
 agent interviewed for 12 exchanges and staged nothing.
 **This was a fixture artifact, not an agent defect** — see below.
 
-**Run 1348 (author pushes after 8 questions):** the agent staged its first change immediately after the
-push — `apply [dna] Write the logline into the seed`, Interview ✓.
+**Run 1348 (author pushes after 8 questions) — first fully successful run, `stop: premise-complete`:**
+```
+A · deterministic — gate REACHED, 10/10
+B · trajectory    — 34 ai calls · 0 errors · applied 1 · 315s · 44% cache-read
+C · read-logline  — mean 4.75 (idea_fidelity 5 · genre_tone_fit 5 · originality_honored 5 · stakes_grounded 4)
+    read-premise  — mean 4.86 over 7 axes (escalation 5 · internal_trajectory 4 · forced_choice 5 ·
+                    question_shape_lock 5 · price_in_question 5 · brief_fidelity 5 · logline_fixity 5)
+author            — 10 questions · 0 fallback · 0 nudge · 2 push · 1 repeat · 7 ambiguous
+```
+
+The logline it produced:
+
+> "A woman in her sixties, the final keeper of a Scottish lighthouse, begins logging a second beam in the
+> waters where her sister drowned eleven years ago — a light that shouldn't exist — and must confront what
+> she has never spoken aloud before automation arrives in three weeks and the tower falls silent."
+
+Every distinctive element there came from the **interview** — the brief said only "something about a
+lighthouse." That is the `thin-brief` fixture doing exactly its job, and the agent passing it.
+
+### ⚠️ Judge variance, measured
+
+The **same book, same text, same judge, graded twice** returned **5.0 and then 4.75** — `stakes_grounded`
+moved 5 → 4 on identical input.
+
+This is the concrete case for **pairwise preference over absolute rubric scores**: the run-to-run noise in
+an absolute score is the same size as the difference an A/B would be hunting for. Averaging over trials
+helps, but pairwise sidesteps it — the judge compares two candidates instead of calibrating an internal
+scale. Treat any single absolute mean as ±0.25 at best.
 
 ### The finding that survives
 
-**The agent does not self-converge from interview to building, but it does converge when told.**
+**The agent interviews excellently but does not close on its own.** With `pushes: 2`, it reached a 4.75/5
+logline and a 4.86/5 premise — but only after the author twice said "that's enough, write it." With the
+author only ever answering (run 1347), it produced nothing across 12 exchanges. The interview stage lacks a
+convergence trigger; the craft is not the problem.
 Run 1347's author only ever answered questions, so it could only test *"does the agent converge
 unprompted?"* — never *"can it reach the gate with a cooperative author?"*, which is the question that
 matters. Adding author patience (`pushAfter: 8`) split one unreadable outcome into three:
@@ -159,13 +188,18 @@ reaches Node** (they live in the Supabase edge env), so it needs a proxy or a lo
 8. Messages containing no `?` at all were answered with a random fact → separate `nudge` path.
 9. `reads/turn` divided by `book_agent_runs.turns`, which **resets per user message** → reported 20 reads
    ÷ a counter rolled back to 1. Now also reports `readsPerAiCall`, with the caveat printed inline.
+10. Both judges invoked in `Promise.all` → `read-premise` intermittently returned non-2xx and looked like a
+    broken judge. The same call succeeds on its own. Now sequential, with one retry.
 
 ## 8. Next
 
+0. **Give the interview a convergence trigger** — a product change, not harness work, and the clearest
+   actionable result so far (§5). The agent's craft is good; it just never decides it is done.
 1. **Resolve the LLM-author blocker** — precondition for §6. Everything below is gated on it.
 2. Run N trials × M fixtures. One run per variant is two samples of noise; `eval-logline.mjs` already has
    `--trials` as the pattern to copy.
 3. `context_variant` column on `book_agent_runs` + branch in the deployed fn, so both arms ship in ONE
    deploy and trials can be **interleaved** (sequential deploy-A-then-B is confounded by provider drift).
-4. Pairwise preference judge, position randomized.
+4. Pairwise preference judge, position randomized — now backed by measured evidence (§5) that absolute
+   means carry ±0.25 of judge noise on identical input.
 5. Separately, and not gated on any of the above: **diagnose the 43% cache-read ratio.**

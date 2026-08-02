@@ -130,10 +130,18 @@ async function trajectory(bookId: number) {
 }
 
 // ── C · model judges (the deployed read-logline / read-premise) ─────────────────────────────────────
+// Judges run SEQUENTIALLY, not in parallel. Both are long LLM calls; issuing them concurrently bought
+// nothing and intermittently returned a non-2xx from one of them (read-premise), which then looked like a
+// broken judge — it isn't, the same call succeeds on its own. One retry absorbs the rest of the flake.
 async function judge(fn: string, bookId: number, input: unknown) {
-  const { data, error } = await supabase.functions.invoke(fn, { body: { bookId, input } });
-  if (error) throw new Error(`${fn}: ${errText(error)}`);
-  return data as Record<string, { axis: string; score: number; note?: string }[]>;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const { data, error } = await supabase.functions.invoke(fn, { body: { bookId, input } });
+    if (!error) return data as Record<string, { axis: string; score: number; note?: string }[]>;
+    lastErr = error;
+    if (attempt === 1) await new Promise((r) => setTimeout(r, 2_000));
+  }
+  throw new Error(`${fn}: ${errText(lastErr)}`);
 }
 
 function axisTable(rows: { axis: string; score: number; note?: string }[] | undefined) {
@@ -165,10 +173,8 @@ if (!NO_JUDGES) {
     const loglineInput = buildLoglineFitInput(nodes) ?? {};
     const bi = REFS ? { ...briefInput, logline } : briefInput;
     const li = REFS ? { ...loglineInput, logline, dramatic_question: question } : loglineInput;
-    const [lj, pj] = await Promise.all([
-      judge("read-logline", BOOK, bi).catch((e) => ({ __error: errText(e) })),
-      judge("read-premise", BOOK, li).catch((e) => ({ __error: errText(e) })),
-    ]);
+    const lj = await judge("read-logline", BOOK, bi).catch((e) => ({ __error: errText(e) }));
+    const pj = await judge("read-premise", BOOK, li).catch((e) => ({ __error: errText(e) }));
     judges = {
       logline: (lj as { __error?: string }).__error ?? axisTable((lj as { brief_fit?: never[] }).brief_fit),
       premise: (pj as { __error?: string }).__error ?? axisTable((pj as { premise_fit?: never[] }).premise_fit),
