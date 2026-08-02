@@ -41,8 +41,8 @@
   long chat grows without bound. That is rung 5 and is now the top of the list.
 - **Files/commits:** `supabase/migrations/20260803150000_digest_agent_chats.sql` (new, pushed),
   `apps/digest/app/api/digests/[id]/agent/route.ts`, `app/digests/[id]/agent/{page.tsx,AgentRail.tsx}`,
-  `lib/digest/agent/transcript.ts` (all new), `app/digests/[id]/layout.tsx`, `README.md`. Uncommitted.
-  Prior rungs: `e13f382`.
+  `lib/digest/agent/transcript.ts` (all new), `app/digests/[id]/layout.tsx`, `README.md`. **`a0aefd1`**.
+  Prior rungs: `84885fb` `e13f382`.
 - **PM impact:** none yet — still an internal surface on an app with no scheduler running. The two open
   owner decisions stand: the agent's entitlement gate (README) and whether the rail earns a place next to
   the Sections tab rather than as its own tab.
@@ -108,7 +108,7 @@
   a good plain linked list, and the agent is what would help someone set one up. The pipeline gate is about
   *unattended* spend; the agent is user-initiated, closer to Preview. Not decided; flagged.
 - **Files/commits:** `apps/digest/lib/digest/{llm.ts,agent/loop.ts}`, `scripts/smoke-agent.ts` (new),
-  `lib/digest/agent/tools.ts`, `apps/digest/README.md`. Uncommitted, with rung 3 + the version column.
+  `lib/digest/agent/tools.ts`, `apps/digest/README.md`. **`e13f382`** (with rung 3 + the version column).
 - **PM impact:** none yet. Remaining for rung 4: the rail UI and conversation persistence. Rung 5 (context
   policy) is unstarted — history currently accumulates unbounded in `AgentTurn.messages`.
 
