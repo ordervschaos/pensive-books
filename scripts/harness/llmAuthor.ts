@@ -80,7 +80,7 @@ export class LlmAuthor {
     // The retries matter — without them a single transient 5xx from the host aborts an entire run, which
     // then reads as an agent failure. Nothing here logs to `ai_calls`; the simulated author must not appear
     // in the trajectory metrics it exists to help measure.
-    const text = await harnessLlm({ system: SYSTEM, user, maxTokens: 400, model: this.opts.model });
+    const text = await harnessLlm({ system: SYSTEM, user, maxTokens: 900, model: this.opts.model });
 
     // Classify from an EXPLICIT marker the model emits, not by regexing its prose. Inferring it was a real
     // bug: a reply that answered the question and then hedged on a sub-part ("...not decided yet whether
