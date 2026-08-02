@@ -18,6 +18,36 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-02 — Premise eval harness lands; first successful graded run `[ship]`
+- **What:** Committed `96c7edf` (harness) + `b3ec4a3` (sequential judges + results); summary doc
+  `eval-harness-status.md`. Steps 1–5 of `doc_1785672823780.md` §7 all built, exercised, and green.
+- **First success — book 1348, `stop: premise-complete`:** gate REACHED, **10/10** deterministic,
+  `read-logline` **4.75**, `read-premise` **4.86** (7 axes), 34 ai calls, 0 errors, 315s. From a brief that
+  said only *"something about a lighthouse"* — every distinctive element in the logline came from the
+  scripted interview. `--refs` calibration passes 10/10.
+- **Product finding (the actionable one): the agent interviews excellently but never CLOSES.** It reached
+  those scores only after the scripted author twice demanded the artifact (`pushes: 2`); with an author
+  that only answers (book 1347) it staged **nothing** across 12 exchanges — `applied 0`, `asks 0`. The
+  craft is not the problem; the interview stage has no convergence trigger. Proposed as item 0 of
+  `eval-harness-status.md` §8 — **product change, awaiting owner ratification**, not harness work.
+- **Method finding: judge variance is the size of the effect.** The SAME text, SAME judge, graded twice
+  returned **5.0 then 4.75** (`stakes_grounded` 5→4). That is the run-to-run noise an A/B would be hunting
+  through, which promotes "add a pairwise-preference judge" from a preference to a requirement. Treat any
+  single absolute mean as ±0.25.
+- **Also measured, not diagnosed:** book 1278's full build sits at **43% cache-read of prefill** against
+  Now #1's "cache-read ≫ input" bar. Independent of the eval work; worth its own investigation.
+- **Two more harness bugs (bringing the day's tally to 9 harness : 0 agent):** both judges issued via
+  `Promise.all` → `read-premise` intermittently non-2xx and looked broken, though the same call succeeds
+  alone (now sequential + one retry); and `reads/turn` divided by `book_agent_runs.turns`, which **resets
+  per user message** (now also reports `readsPerAiCall`, caveat printed inline).
+- **PM impact:** STATE row added under **Verify layer** — "Premise-rung agent eval harness", `shipped
+  (harness)`. Snapshot date already 2026-08-02. ROADMAP deliberately **not** re-ranked: the two findings
+  above are proposals for the owner, and Now #1 is advanced but not closed.
+- **⚠️ Blocker on the A/B (steps 6–7):** the regex author is coupled to how an agent PHRASES questions, so
+  a variant could score better merely by matching the patterns more often — not variant-neutral. Needs an
+  LLM-backed author (fact sheet, temp 0); blocked because no LLM key reaches Node (Supabase edge env only).
+  **Resolve before running any A/B.**
+
 ## 2026-08-02 — First graded premise run; the author learns to run out of patience `[wip]`
 - **What:** Steps 1–5 of `doc_1785672823780.md` §7 are now all built AND exercised end-to-end.
   `--refs` calibration passes **10/10** on `thin-brief`, so the task is solvable and the graders aren't
@@ -127,6 +157,18 @@
   obligation ledger, health, versions, staleness) must filter — paid once via a `liveNodes()` chokepoint,
   same discipline as `stopRun.ts` / `validateOps`. Two rules fall out: materialize only as deep as the
   template knows the shape (**stop at BEAT**), and the materializer is **one-shot, not a reconciler**.
+  **Follow-up (same day), §5a — the prompt-context risk, run to ground:** the "200 stubs, tokens
+  explode" worry was wrong twice over. The count is **~16** (stop-at-BEAT excludes scenes; Weiland =
+  3 acts + 9 slots + 2 cast + premise + pillar), so token cost is noise — but the semantic risk is
+  worse than stated. `dna-expand/index.ts:349–420` is 8 registry blocks each guarded by
+  `xs.length ? … : ""`; **the guards test presence, and materialization makes presence meaningless**,
+  so all 8 flip from omitted to emitting `-  [?] {}`. Three harms: nameless anchor in a "reference BY
+  NAME" block · `{}` as *asserted* absence · few-shot poisoning that lowers fill rate on the FILLED
+  nodes too. Fix = `liveNodes()` at the `nodes` binding (one line, all 8 blocks inherit) + a **golden
+  test** pinning materialized-prompt == sparse-prompt. Refinement: blanket-omit breaks multi-entry —
+  entity kinds omit, **ladder kinds outline as `NOT YET WRITTEN`** (`isEntityKind()` is the predicate),
+  else an author who wrote only Act 2 gets it generated as the whole book. Partials already degrade
+  safely (`JSON.stringify` drops absent keys), so damage is confined to fully-empty nodes.
 - **Files/commits:** `doc_1785673597000.md`, `learning_1785673597000_empty-nodes-redesign.md`. No code changed.
 - **PM impact:** none — **spec awaiting owner go-ahead.** Phasing in §7: P0 `fill` fold + P1 `liveNodes`
   routing are both zero-behavior-change and must land before P2 materialization. Open question blocking P2
