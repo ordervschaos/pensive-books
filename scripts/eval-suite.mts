@@ -109,6 +109,7 @@ async function runOne(taskId: string, trial: number, variant: string): Promise<T
   const withRun: Trial = {
     ...base, bookId: r.bookId, stopReason: r.stopReason, wallClockMs: r.wallClockMs, turns: r.turns,
     pushes: r.author?.pushes ?? null, fallbacks: r.author?.fallbackUses ?? null, nudges: r.author?.nudges ?? null,
+    variantVerified: r.variantVerified ?? null,
     variantRequested: r.variantRequested ?? null, variantVerified: r.variantVerified ?? null,
   };
 
@@ -183,10 +184,18 @@ results.sort((a, b) => a.taskId.localeCompare(b.taskId) || a.trial - b.trial || 
 // Per-ARM roll-up — the actual A/B read. `pushes` is the convergence metric: how often the scripted author
 // had to DEMAND the artifact rather than the agent deciding it was done.
 const perVariant = ARMS.map((variant) => {
-  const rs = results.filter((r) => r.variant === variant && !r.failure);
+  const all = results.filter((r) => r.variant === variant && !r.failure);
+  // A VOID trial is one whose arm never reached the model — the row was stamped but the deployed function
+  // did not apply it, so the run silently executed the OTHER arm. This happened for real: 2 of 3
+  // no_converge trials on 2026-08-02 ran production prompts because the deploy lagged the stamp. Averaging
+  // those in manufactures a null result out of a broken experiment, which is the most expensive way to be
+  // wrong — so they are EXCLUDED and counted separately.
+  const rs = variant ? all.filter((r) => r.variantVerified === true) : all;
+  const voided = all.length - rs.length;
   return {
     variant: variant || "(production)",
     trials: rs.length,
+    voided,
     gateRate: rs.length ? +(rs.filter((r) => r.gate).length / rs.length).toFixed(2) : null,
     pushes: stat(rs.map((r) => r.pushes)),
     logline: stat(rs.map((r) => r.loglineMean)),
@@ -238,11 +247,16 @@ for (const p of perTask) {
 }
 if (ARMS.length > 1) {
   console.log(`\n── A/B by arm (interleaved) ──`);
-  console.log(`${"arm".padEnd(18)} ${"n".padStart(3)} ${"gate".padStart(5)} ${"pushes".padStart(12)} ${"logline".padStart(12)} ${"premise".padStart(12)}`);
+  console.log(`${"arm".padEnd(18)} ${"n".padStart(3)} ${"void".padStart(5)} ${"gate".padStart(5)} ${"pushes".padStart(12)} ${"logline".padStart(12)} ${"premise".padStart(12)}`);
   for (const v of perVariant) {
     const f = (x: { mean: number | null; sd: number | null } | null) =>
       x?.mean == null ? "—".padStart(12) : `${x.mean.toFixed(2)}±${(x.sd ?? 0).toFixed(2)}`.padStart(12);
-    console.log(`${v.variant.padEnd(18)} ${String(v.trials).padStart(3)} ${String(v.gateRate ?? "—").padStart(5)} ${f(v.pushes)} ${f(v.logline)} ${f(v.premise)}`);
+    console.log(`${v.variant.padEnd(18)} ${String(v.trials).padStart(3)} ${String(v.voided || "").padStart(5)} ${String(v.gateRate ?? "—").padStart(5)} ${f(v.pushes)} ${f(v.logline)} ${f(v.premise)}`);
+  }
+  const anyVoid = perVariant.some((v) => v.voided > 0);
+  if (anyVoid) {
+    console.log(`\n⚠️  VOID trials excluded: the arm was stamped on the row but the DEPLOYED function did not`);
+    console.log(`   apply it, so those runs silently executed the other arm. Redeploy book-agent and re-run.`);
   }
   console.log(`\nLower \`pushes\` = the agent converged on its own rather than being told to.`);
   console.log(`Read the ±sd before the means: if the spread overlaps, the arms are not distinguishable at this n.`);
