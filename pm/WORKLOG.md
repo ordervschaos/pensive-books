@@ -17,6 +17,55 @@
 
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+## 2026-08-02 — Delete-only trim pass: the model returns indices, code does the deleting `[ship]`
+- **What:** Item 7, the last of the reader review (`doc_1785656805078.md` §13). `lib/digest/trim.ts` + migration
+  `20260803170000_digest_posts_trim.sql` (pushed). Body → numbered paragraph blocks → model returns
+  `{"drop":[{i,starts,why}]}` → **this file deletes**. Output alphabet is integers, so the result is provably
+  a subsequence of the input and output stays ~40 tokens whatever the article length. Cached on
+  `digest_posts.body_clean` + `trim_version` (raise the constant to re-trim without re-fetching); `body` is
+  never overwritten, so it's reversible, and `trim_drops` is the audit trail. Runs in `buildSection` AFTER the
+  per-section cut, so a feed offering 20 posts for a 4-item section isn't billed for 16 nobody reads.
+  **Owner ruling recorded:** not gated on `ai_enabled` — that flag gates *voice*; a pass that cannot introduce
+  a word is hygiene, and the subsequence guarantee is what earns the exemption.
+  **What measuring changed:** the design survived contact, the prompt didn't. v1 **deleted a real content
+  paragraph** — "[James Stockdale](youtube…) was held captive in Hanoi…" tagged `ad` because it contains a
+  link. No length heuristic separates that from a genuine CTA ("To learn more, check out Ryan's interview…" is
+  the same size and shape), so the prompt now tests what the block is DOING: a link is not an advertisement;
+  drop a promotional block only when promotion is all it does. Stockdale survives, CTAs still go.
+  **Two mechanical backstops** around the judgement: (1) **echo verification** — the model copies back each
+  dropped block's first four words and a mismatched echo voids the drop, guarding INDEX DRIFT (deleting the
+  paragraph next to the one it meant; a semantic mistake is a judgement call, an off-by-one is a silent hole);
+  (2) **a ceiling of 50%** — it correctly found 15/18 blocks of a "Happy 1st Birthday, Atomic Habits!" post
+  and 7/8 of the Stoicism Today migration notice to be pitch, but applying that leaves a stub that reads worse
+  than the honest promo post and hides the real finding: **those items shouldn't have been SELECTED.**
+  Furniture removal is this stage's job; deciding an item doesn't belong is the selector's. Past the ceiling
+  the body is kept whole, the intended drops are still recorded, and it's logged not swallowed.
+  **Corrects §5 of the doc:** it predicted this pass would remove the Substack admin notice. It *identifies*
+  it and deliberately *doesn't* delete it. The motivating residue was a selection problem in a trim problem's
+  clothes.
+  **Measured:** −4.7% on the sampled bodies after the guards; every surviving drop is furniture (leftover
+  cookie blocks the regex list missed, a Hyperallergic membership pitch, an "Available as a print" CTA, two
+  Daily Stoic course promos). Zero content paragraphs removed.
+  **Honest limit:** verified against the real prompt, numbering, parse and apply logic with only the provider
+  call stubbed (`llm.ts` transitively imports `next/headers`, so it can't load outside Next). The wiring
+  `buildSection → trimItems → DB` is typechecked and built but **not yet run end-to-end on a live issue.**
+- **Files/commits:** `lib/digest/trim.ts` (new), `lib/digest/build.ts`, `lib/digest/types.ts` (RunCtx gains
+  `db`/`issueId`), `supabase/migrations/20260803170000_digest_posts_trim.sql`, `doc_1785656805078.md` §13.
+  Branch `digest-reader-render`.
+- **PM impact:** the reader review is fully worked through — items 1–7 all shipped. STATE row updated. Next
+  natural step is exercising the trim on a live build (it has never run inside the real pipeline).
+
+## 2026-08-02 — DNA agent architecture survey `[chore]`
+- **What:** User asked what else exists in the DNA agent beyond chat/tree/tools/eval/prose/meters.
+  Ran a code-grounded survey (not memory-only) of `supabase/functions/book-agent` +
+  `apps/web/src/features/dna`; answered inline (staged writes via `propose_*`, vision layer,
+  research_web/read_skill, computed journey ladder vs hard state machine, the gap where verify-layer
+  diagnostics — cold-read/fact-ledger/structure-miner — aren't exposed as agent tools). No code
+  changed this session.
+- **Files/commits:** none (research only); wrote `learning_1785667881059_dna_agent_survey.md`.
+- **PM impact:** none. Pre-existing uncommitted digest-app changes on `digest-reader-render` branch
+  (trim.ts, layout.tsx, build.ts, etc.) predate this session and were not touched here.
+
 ## 2026-08-02 — Truncation that admits itself, and a sentinel that collided with a Jung quote `[ship]`
 - **What:** Item 6 (`doc_1785656805078.md` §12). `fetch.ts` + four source adapters each capped bodies with a
   bare `slice()` — cutting mid-word ("…the purposes of cor") and saying nothing, so the reader cannot tell a

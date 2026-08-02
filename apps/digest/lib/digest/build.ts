@@ -7,6 +7,7 @@ import { urlHash } from "./canonical";
 import { close } from "./closers";
 import { isCloser, runsToday } from "./types";
 import { stripReaderPreamble } from "./entities";
+import { trimItems } from "./trim";
 import type { Digest, Item, IssueContent, RenderedSection, RunCtx, Section } from "./types";
 
 // The whole pipeline for one issue: gather → filter → write → verify → assemble → render → deliver.
@@ -44,6 +45,17 @@ function buildSection(
     const items = await gather(section, ctx);
     // ② FILTER, part two: drop anything already delivered, then cap. Ranking happens before the cut.
     const fresh = items.filter((i) => !i.url || !seen(urlHash(i.url))).slice(0, section.max_items ?? 6);
+
+    // ②b TRIM — page furniture out, deliberately AFTER the cut: a feed that hands over twenty posts for a
+    // four-item section is never billed for the sixteen nobody will read. Deleting only, so it runs whether
+    // or not `ai_enabled` is set — that flag gates voice, and this pass cannot introduce a word (trim.ts).
+    if (ctx.db) {
+      await trimItems(ctx.db, ctx.digest.id, fresh, {
+        issueId: ctx.issueId ?? null,
+        userId: ctx.digest.owner_id,
+      }, ctx.signal);
+    }
+
     try {
       return { rendered: await writeSection(section, fresh, ctx, issueId), items: fresh, section_id: section.id };
     } catch (e) {
@@ -61,12 +73,15 @@ async function compile(
   seen: Set<string>,
   issueId: number | null,
   bodies: Map<string, string> = new Map(),
+  db?: ReturnType<typeof createServiceClient>,
 ): Promise<Compiled | null> {
   const ctx: RunCtx = {
     digest,
     issueDate,
     seen: (h) => seen.has(h),
     cachedBody: (h) => bodies.get(h),
+    db,
+    issueId,
   };
 
   const due = (digest.sections ?? [])
@@ -233,7 +248,7 @@ export async function buildIssue(
     // ② FILTER, part one: what has already been delivered, plus bodies we can reuse.
     const { seen, bodies } = await loadCorpus(db, digest.id);
 
-    const compiled = await compile(digest, issue.issue_date as string, seen, issueId, bodies);
+    const compiled = await compile(digest, issue.issue_date as string, seen, issueId, bodies, db);
     if (!compiled) return skip(db, issueId, "no enabled sections");
 
     // Record the corpus BEFORE deciding whether to send. What was pulled is worth keeping even on a morning
@@ -340,7 +355,7 @@ export async function previewIssue(
 
   // issueId is null: the ai_calls rows a preview writes are real (it really did spend those tokens) but they
   // belong to no issue, which is exactly right — nothing was issued.
-  const compiled = await compile(digest, issueDate, opts.ignoreSeen ? new Set() : seen, null, bodies);
+  const compiled = await compile(digest, issueDate, opts.ignoreSeen ? new Set() : seen, null, bodies, db);
   if (!compiled) return { error: "no enabled sections" };
 
   // A preview genuinely fetched these, so they belong in the corpus — and caching their bodies is what
@@ -391,7 +406,7 @@ export async function previewStream(
 
   const { seen, bodies } = await loadCorpus(db, digest.id);
   const effectiveSeen = opts.ignoreSeen ? () => false : (h: string) => seen.has(h);
-  const ctx: RunCtx = { digest, issueDate, seen: effectiveSeen, cachedBody: (h) => bodies.get(h) };
+  const ctx: RunCtx = { digest, issueDate, seen: effectiveSeen, cachedBody: (h) => bodies.get(h), db, issueId: null };
 
   const due = (digest.sections ?? [])
     .filter((s: Section) => s.enabled !== false)

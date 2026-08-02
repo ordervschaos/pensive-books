@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 // The domain contract. Everything in the pipeline speaks these three shapes.
 //
 // The important one is `Adapter`: every source kind — web search, RSS, a book you're re-reading, a pure
@@ -262,6 +264,13 @@ export interface RunCtx {
   seen: (urlHash: string) => boolean;
   /** Previously extracted body for a url_hash, so a re-run doesn't re-fetch an article we already have. */
   cachedBody?: (urlHash: string) => string | undefined;
+  /**
+   * Service-role client, for the stages that read or write the corpus mid-run (the trim pass caches its
+   * result per post). Optional because an adapter must never need it — gather stays pure retrieval.
+   */
+  db?: SupabaseClient;
+  /** The issue these calls belong to, for `ai_calls` attribution. Null in a preview: real spend, no issue. */
+  issueId?: number | null;
   signal?: AbortSignal;
 }
 
