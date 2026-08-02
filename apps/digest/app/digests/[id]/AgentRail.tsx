@@ -7,6 +7,13 @@ import type { Exchange } from "@/lib/digest/agent/transcript";
 // The rail. A conversation with something that can do everything this app's forms can do, docked beside
 // them rather than parked on a tab of its own — so the sections list visibly changes as the agent works.
 //
+// It lives in the PAGE MARGIN, not in the page. `position: fixed` against the viewport edge from `lg` up,
+// with `.app-shell` padding to match (globals.css), so the centred reading column re-centres in the space
+// that's left instead of being narrowed. The first cut made it a grid column inside the container, which
+// took its width straight out of the content — the digest title wrapped onto two lines and a tab fell onto
+// a second row. Below `lg` there is no spare margin to live in, so it stops being fixed and simply stacks
+// under the page, which needs no drawer to build or maintain.
+//
 // Two things it deliberately shows that a chat window normally hides:
 //
 //   - **every tool call, named, with its arguments.** The agent edits the reader's actual configuration, so
@@ -44,6 +51,15 @@ export function AgentRail({
   useEffect(() => {
     setCollapsed(window.localStorage.getItem(COLLAPSED_KEY) === "1");
   }, []);
+
+  // The shell's gutter is CSS, keyed off an attribute this component owns — the alternative is lifting the
+  // rail's open/closed state into a server layout that has no business knowing about it.
+  useEffect(() => {
+    document.body.dataset.agent = collapsed ? "closed" : "open";
+    return () => {
+      delete document.body.dataset.agent;
+    };
+  }, [collapsed]);
 
   useEffect(() => {
     if (!collapsed) endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -96,19 +112,17 @@ export function AgentRail({
 
   if (collapsed) {
     return (
-      <aside className="mt-8 lg:mt-0">
-        <button
-          onClick={toggle}
-          className="font-mono text-xs text-muted hover:text-ink lg:sticky lg:top-6"
-        >
-          agent ▸
-        </button>
-      </aside>
+      <button
+        onClick={toggle}
+        className="mt-10 block font-mono text-xs text-muted hover:text-ink lg:fixed lg:right-6 lg:top-10 lg:mt-0"
+      >
+        agent ▸
+      </button>
     );
   }
 
   return (
-    <aside className="mt-8 flex min-h-0 flex-col gap-3 border-t border-rule pt-6 lg:sticky lg:top-6 lg:mt-0 lg:max-h-[calc(100vh-3rem)] lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+    <aside className="mt-10 flex min-h-0 flex-col gap-3 border-t border-rule pt-6 lg:fixed lg:inset-y-0 lg:right-0 lg:mt-0 lg:w-[21rem] lg:border-l lg:border-t-0 lg:bg-paper lg:px-5 lg:py-8">
       <div className="flex items-baseline justify-between">
         <h2 className="font-mono text-xs uppercase tracking-wider text-muted">Agent</h2>
         <div className="flex gap-3 font-mono text-xs text-muted">

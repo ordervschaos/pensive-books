@@ -23,3 +23,22 @@
     @apply text-lg;
   }
 }
+
+@layer components {
+  /* The docked agent rail sits OUTSIDE the reading column, in the page's own margin — a `max-w-3xl`
+     centred layout has hundreds of pixels of it going spare. Putting the rail inside that column instead
+     (a two-column grid) meant the rail's width came out of the content's, which squeezed the digest title
+     onto two lines and pushed a tab onto a second row.
+     So the rail is `position: fixed` against the viewport edge, and the SHELL gains padding to match. The
+     centred column then re-centres inside the space that's left, rather than being cropped by an overlay.
+     Only from `lg` up: narrower than that there is no spare margin, so the rail stops being fixed and
+     stacks under the page like any other block (see AgentRail's own classes). */
+  .app-shell {
+    transition: padding-right 150ms ease;
+  }
+  @media (min-width: 1024px) {
+    body[data-agent="open"] .app-shell {
+      padding-right: 21rem;
+    }
+  }
+}

@@ -17,6 +17,30 @@
 
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
+
+## 2026-08-02 — Agent rail moves out of the reading column `[ship]`
+- **What:** Owner screenshot: the docked rail was squeezing the page — digest title wrapped onto two lines,
+  "Run now" overlapped, Settings pushed onto a second tab row. Cause was structural, not cosmetic: the rail
+  was a **grid column inside the `max-w-3xl` container**, so its 22rem came straight out of the content's
+  measure. A centred layout at this width has hundreds of px of *margin* going spare, which is where it
+  belongs. Now: new `.app-shell` full-width wrapper in the root layout; the rail is `position: fixed` to the
+  viewport's right edge (`lg+`), a **sibling** of `<main>` rather than a column of it; the shell takes
+  `padding-right: 21rem` so the centred column re-centres in the space left instead of being cropped by an
+  overlay. Gutter is CSS keyed off `body[data-agent]`, which the rail sets itself — the alternative was
+  lifting its open/closed state into a server layout with no business knowing it. Collapsed → gutter 0, page
+  back to full width. Below `lg` it stops being fixed and stacks, no drawer to maintain.
+- **Verified:** compiled rule confirmed live in `.next/static/css/app/layout.css`; typecheck green. **Still
+  not seen in a browser by me** (MCP chrome profile in use every attempt this session) — the owner is the
+  only one who has actually looked at this app, which is worth fixing before more UI work.
+- **Self-inflicted, recorded as a memory:** ran `next build` while the owner's dev server was live. Both
+  write `apps/digest/.next`; the prod build rewrote `vendor-chunks/` under the running process and every
+  request 500'd with `Cannot find module './vendor-chunks/@supabase+auth-js@…'`. Looks like a dependency
+  problem and isn't. Fix is `rm -rf .next` (dev rebuilds itself, no restart). **Use `typecheck`, not
+  `build`, while a dev server is up.**
+- **Files/commits:** `apps/digest/app/layout.tsx`, `app/globals.css`, `app/digests/[id]/layout.tsx`,
+  `app/digests/[id]/AgentRail.tsx`. Uncommitted.
+- **PM impact:** none — refines the 2026-08-02 "rail is docked" decision rather than changing it.
+
 ## 2026-08-02 — Delete-only trim pass: the model returns indices, code does the deleting `[ship]`
 - **What:** Item 7, the last of the reader review (`doc_1785656805078.md` §13). `lib/digest/trim.ts` + migration
   `20260803170000_digest_posts_trim.sql` (pushed). Body → numbered paragraph blocks → model returns

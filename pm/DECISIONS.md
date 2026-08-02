@@ -28,7 +28,7 @@ compile; a chat is as many turns as someone likes, each up to `MAX_STEPS` tool-c
 already records every call with `source='digest'` and `operation='turn'`, so turns-per-user-per-day is a
 query against data we already keep — no new table. Past an allowance the refusal becomes the pitch.
 
-Replaces: nothing shipped; the agent had been gated for one day and never released that way.
+Replaces: nothing shipped; the agent had been gated for one day and never released that way. `9cecd84`
 
 ### 2026-08-02 — The agent rail is docked beside every digest tab, not a tab of its own
 
@@ -39,7 +39,7 @@ conversation also survives tab navigation: App Router swaps `children` without r
 `router.refresh()` re-renders the server components around the rail without discarding its state.
 Collapsible, and it stacks under the page below `lg` rather than becoming a drawer to build and maintain.
 
-Replaces: the `/digests/:id/agent` tab, deleted.
+Replaces: the `/digests/:id/agent` tab, deleted. `9cecd84`
 
 ### 2026-08-01 — Digest AI moves behind a paid gate; the pipeline defaults to mechanical
 

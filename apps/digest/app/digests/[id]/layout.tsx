@@ -17,6 +17,9 @@ export const dynamic = "force-dynamic";
 // — which requires both being on screen at once. It also means the conversation survives tab navigation:
 // App Router swaps `children` without remounting the layout, so the client component keeps its state, and
 // `router.refresh()` after a write re-renders the server components around it without discarding it.
+//
+// It is a SIBLING of `<main>`, not a column of it. The rail lives in the page margin, fixed to the viewport,
+// and `.app-shell` pads to make room — see globals.css.
 export default async function DigestLayout({
   params,
   children,
@@ -45,10 +48,11 @@ export default async function DigestLayout({
   const chat = chatRow as { id: number; messages: Turn[] } | null;
 
   return (
-    // Two columns from `lg` up; below it the rail stacks under the page, where a narrow screen can still
-    // reach it without a drawer to build and maintain.
-    <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-8">
-      <main className="min-w-0 space-y-6">
+    // The rail is NOT a column of this page: it is fixed to the viewport edge and the shell pads to match
+    // (globals.css `.app-shell`). A grid here would take the rail's width out of the reading column, which
+    // is what squeezed the title onto two lines and pushed a tab onto a second row.
+    <>
+      <main className="space-y-6">
         <Breadcrumbs items={[{ label: "Digests", href: "/" }, { label: data.name as string }]} />
 
         <div className="flex items-baseline justify-between gap-4">
@@ -75,6 +79,6 @@ export default async function DigestLayout({
         initialChatId={chat?.id ?? null}
         initialExchanges={toExchanges(chat?.messages ?? [])}
       />
-    </div>
+    </>
   );
 }
