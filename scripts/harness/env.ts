@@ -13,6 +13,19 @@ export const env: Record<string, string> = Object.fromEntries(
     .map((l) => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim()]; }),
 );
 
+// The LLM keys live in the EDGE function env (supabase/functions/.env), not .env.local — the file
+// `supabase functions serve --env-file` uses. Optional: only the LLM-backed author needs them.
+export const fnEnv: Record<string, string> = (() => {
+  try {
+    return Object.fromEntries(
+      readFileSync(join(repoRoot, "supabase", "functions", ".env"), "utf8")
+        .split("\n")
+        .filter((l) => l.includes("=") && !l.trim().startsWith("#"))
+        .map((l) => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim()]; }),
+    );
+  } catch { return {}; }
+})();
+
 export const PROJECT_ID = env.VITE_SUPABASE_PROJECT_ID;
 export const ANON_KEY = env.VITE_SUPABASE_ANON_KEY;
 export const SERVICE_KEY = env.SERVICE_ROLE_SECRET;

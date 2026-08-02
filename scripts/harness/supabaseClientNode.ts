@@ -33,7 +33,31 @@ export const supabase = createClient(SUPABASE_URL, ANON_KEY, {
     fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
       headers.set("Authorization", `Bearer ${await token()}`);
-      return fetch(input, { ...init, headers });
+      const method = (init?.method ?? "GET").toUpperCase();
+
+      // Retry CONNECTION-level failures only. A ~15-minute run being killed by one transient TLS reset is
+      // the worst possible failure mode here: it costs the whole run and reads as an agent problem. Note
+      // this retries the *transport*, never a non-2xx — HTTP status is semantic and belongs to the caller.
+      //
+      // Honest caveat on non-idempotent verbs: an ECONNRESET while READING the response is ambiguous — the
+      // write may already have landed, so a retry can duplicate it. The DNA writes are upserts keyed by
+      // node id (safe), but a thread message could double. Retrying is still the better trade against
+      // losing the run, so mutating retries are logged loudly enough to spot a duplicate afterwards.
+      let lastErr: unknown;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          return await fetch(input, { ...init, headers });
+        } catch (e) {
+          lastErr = e;
+          if (attempt === 3) break;
+          const url = typeof input === "string" ? input : (input as Request).url ?? String(input);
+          if (method !== "GET" && method !== "HEAD") {
+            console.warn(`[harness] retrying ${method} after transport error (may duplicate): ${url.slice(0, 120)}`);
+          }
+          await new Promise((r) => setTimeout(r, attempt * 1000));
+        }
+      }
+      throw lastErr;
     },
   },
 });

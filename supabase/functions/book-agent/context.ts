@@ -4,8 +4,9 @@
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { nodeHandle, schemaFor, type DnaNodeRow } from "./shared.ts";
 import { SYSTEM_THREAD } from "./prompts.ts";
+import { variantSuffix } from "./variants.ts";
 import { type Brief, briefContext } from "../_shared/brief.ts";
-import { currentObjective, nextDraftTarget } from "../_shared/dna-journey.ts";
+import { currentObjective, nextDraftTarget, stageSubsteps } from "../_shared/dna-journey.ts";
 import { analysisText, ledgerText, lintConfigForBrief, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind } from "../_shared/novel-dna.ts";
 import { AGENT_SKILLS, matchSkills } from "../_shared/agent-skills.ts";
 import { craftOverrideBlock } from "../_shared/craft-kb.ts";
@@ -95,7 +96,7 @@ function digestNode(kind: string, content: Record<string, unknown> | null | unde
 // the tree changes after every apply, and carrying it at position 0 invalidated the whole cached prefix
 // (system + entire transcript) on every turn. Each node is a DIGEST — handle/gist + causal spine, full
 // content via read_node (see digestNode).
-async function threadSystem(service: SupabaseClient, bookId: number, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null, authorAsk = "", followObjective = false): Promise<{ instructions: string; bookState: string; groundingLabels: string[] }> {
+async function threadSystem(service: SupabaseClient, bookId: number, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null, authorAsk = "", followObjective = false, variant: string | null = null): Promise<{ instructions: string; bookState: string; groundingLabels: string[] }> {
   const { data: book } = await service.from("books").select("name, brief, craft_notes, craft_overrides").eq("id", bookId).maybeSingle();
   const b = book as { name?: string; brief?: Brief; craft_notes?: Record<string, string> | null; craft_overrides?: Record<string, string> | null } | null;
   const { data: rows } = await service
@@ -256,7 +257,15 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
   // pollution the Task-discipline paragraph then has to fight. Now: a concrete ask OMITS it entirely; an
   // empty ask or the explicit "Next" nudge (followObjective) injects it. AUTO always injects — there the
   // objective IS the work queue, and omitting it would break a full-book build.
-  const injectObjective = auto || followObjective || !authorAsk.trim();
+  // …plus the INTERVIEW rung, always. The guard above exists to stop the objective competing with a
+  // CONCRETE typed ask ("render scene 14") — but the interview has no typed asks: the author is just
+  // talking, and the interview playbook IS how to handle that talking. Omitting it there meant the agent
+  // improvised the whole interview from SYSTEM_THREAD with no rung guidance at all, which is exactly why it
+  // would interview forever — nothing ever told it the interview HAS a finish. Measured 2026-08-02:
+  // `<current_objective>` was absent from every request of an author-present premise run.
+  const inInterview = stageSubsteps("premise", liveNodes, b?.brief ?? null)
+    .find((s) => s.key === "interview")?.status === "now";
+  const injectObjective = auto || followObjective || !authorAsk.trim() || inInterview;
   // Skill briefs (the injection channel of agent-skills.ts): playbooks whose triggers match the ask.
   // Ask matches always win outright: a concrete ask must not drag in skills for a rung it's steering
   // away from. Only fall back to matching the objective's text — an objective-driven premise turn gets
@@ -364,7 +373,9 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
   for (const s of effectiveSkills) groundingLabels.push(`Loaded the ${s.name} playbook.`);
   for (const n of [...focusNodes, ...mentioned]) groundingLabels.push(`Loaded ${n.kind} “${nodeHandle(n.content)}” in full.`);
 
-  return { instructions: `${SYSTEM_THREAD}${effortLine}${autoLine}`, bookState: blocks.join("\n\n"), groundingLabels };
+  // The A/B seam goes LAST so it can override anything above it. variantSuffix("") for an unset variant,
+  // so production prompt bytes are unchanged — see variants.ts.
+  return { instructions: `${SYSTEM_THREAD}${effortLine}${autoLine}${variantSuffix(variant)}`, bookState: blocks.join("\n\n"), groundingLabels };
 }
 
 

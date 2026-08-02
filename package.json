@@ -41,6 +41,8 @@
     "bridge:restart": "bash scripts/restart-local-bridge.sh",
     "dna:dryrun": "tsx --tsconfig scripts/harness/tsconfig.json scripts/agent-build-dryrun.mts",
     "dna:run": "tsx --tsconfig scripts/harness/tsconfig.json scripts/agent-build-run.mts",
-    "dna:grade": "tsx --tsconfig scripts/harness/tsconfig.json scripts/eval-premise.mts"
+    "dna:grade": "tsx --tsconfig scripts/harness/tsconfig.json scripts/eval-premise.mts",
+    "dna:suite": "tsx --tsconfig scripts/harness/tsconfig.json scripts/eval-suite.mts",
+    "dna:pairwise": "tsx --tsconfig scripts/harness/tsconfig.json scripts/eval-pairwise.mts"
   }
 }

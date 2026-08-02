@@ -26,6 +26,7 @@ import { nextAutoAction } from "@/features/dna/lib/autoAccept";
 import { answerAgent, applyAgentProposal, continueAgent, discardAgentProposal, sendAgentMessage, type AgentProposal } from "@/features/dna/lib/agentThread";
 import { chooseNodeProposal } from "@/features/dna/lib/dnaProposals";
 import { Author, type ScriptedAuthor } from "./harness/author.ts";
+import { LlmAuthor, factsFrom } from "./harness/llmAuthor.ts";
 import { OWNER, rest } from "./harness/env.ts";
 import { describe, errText, ladder, loadBrief, loadNodes, loadThread, premiseProgress, waitForQuiescent } from "./harness/thread.ts";
 
@@ -43,6 +44,13 @@ const AUTO = args.includes("--auto");
 // leaves the thread idle with nothing staged — a human would simply reply. The driver does the same, but
 // bounded: an agent that keeps talking without ever staging a change must not loop forever.
 const MAX_CHAT_REPLIES = Number(argVal("--max-chat", "8"));
+// The author defaults to the LLM implementation: regex rules are coupled to how an agent PHRASES its
+// questions, so they are not variant-neutral (a variant can win by matching patterns better). `--author
+// regex` keeps the deterministic implementation for debugging a fixture.
+const AUTHOR_KIND = argVal("--author", "llm");
+// The A/B arm (book-agent/variants.ts). Set on the thread ROW rather than passed through the client, so
+// the seam is entirely server-side and the browser path is untouched. Unset = production behaviour.
+const VARIANT = argVal("--variant") ?? null;
 const MAX_STEPS = Number(argVal("--max-steps", "60"));
 const TASK_ID = argVal("--task");
 const BOOK_ARG = Number(argVal("--book", "0"));
@@ -82,14 +90,19 @@ async function main() {
   const bookId = BOOK_ARG || (task ? await createScratchBook(task) : 0);
   if (!bookId) throw new Error("need --book <id> or --task <id>");
 
-  const author = new Author(task?.author ?? { default: "Use your judgement and keep going." });
+  const script: ScriptedAuthor = task?.author ?? { default: "Use your judgement and keep going." };
+  const author = AUTHOR_KIND === "regex"
+    ? new Author(script)
+    // Facts are derived from the SAME keyed answers the regex author uses — one source of truth for what
+    // the author knows, so the two implementations can never disagree about the fixture.
+    : new LlmAuthor({ facts: factsFrom(script), pushAfter: script.pushAfter, push: script.push });
   const startedAt = Date.now();
   const actions: { step: number; kind: string; detail: string }[] = [];
 
   let brief = await loadBrief(bookId);
   let nodes = await loadNodes(bookId);
   let progress = premiseProgress(nodes, brief);
-  log(`book ${bookId} · ${ladder(nodes)}`);
+  log(`book ${bookId} · author=${AUTHOR_KIND}${VARIANT ? ` · variant=${VARIANT}` : ""} · ${ladder(nodes)}`);
   log(`premise: ${progress.line}`);
 
   // Kick the thread off if there isn't one yet. `auto: true` arms autonomous mode server-side (the agent
@@ -101,6 +114,13 @@ async function main() {
     log(`starting thread — "${opening}" (auto=${AUTO})`);
     await sendAgentMessage(bookId, opening, undefined, undefined, AUTO);
     row = await waitForQuiescent(bookId);
+    // Stamp the arm AFTER the thread exists — advance.ts reads it fresh each turn, so the very first turn
+    // of a brand-new thread runs unstamped. Acceptable for the interview rung (turn 1 is the greeting), but
+    // it is a real caveat for any variant meant to change the opening move.
+    if (VARIANT) {
+      await rest(`book_agent_runs?id=eq.${row!.id}`, { method: "PATCH", body: JSON.stringify({ context_variant: VARIANT }) });
+      log(`variant arm: ${VARIANT}`);
+    }
   }
 
   const claimed = new Set<string>();
@@ -130,7 +150,7 @@ async function main() {
       const spoke = [...(row.steps ?? [])].reverse().find((s) => s.t === "note")?.label ?? "";
       if (spoke && chatReplies < MAX_CHAT_REPLIES) {
         chatReplies++;
-        const reply = author.answer(spoke);
+        const reply = await author.answer(spoke);
         log(`${String(step + 1).padStart(2)}. agent spoke — replying as author (${chatReplies}/${MAX_CHAT_REPLIES})   [${progress.line}]`);
         log(`    ↳ agent: ${spoke.replace(/\s+/g, " ").slice(0, 140)}`);
         log(`    ↳ author: ${reply.slice(0, 140)}`);
@@ -150,7 +170,7 @@ async function main() {
 
     claimed.add(action.key);
     if (action.kind === "answer") {
-      const reply = author.answer(action.question);
+      const reply = await author.answer(action.question);
       log(`    ↳ author: ${reply.slice(0, 120)}`);
       await answerAgent(row.id, reply);
     } else if (action.kind === "apply") {
@@ -176,7 +196,7 @@ async function main() {
   progress = premiseProgress(nodes, await loadBrief(bookId));
   const finalRow = await loadThread(bookId);
   const result = {
-    bookId, taskId: task?.id ?? null, dry: DRY, auto: AUTO,
+    bookId, taskId: task?.id ?? null, dry: DRY, auto: AUTO, authorKind: AUTHOR_KIND, variant: VARIANT,
     stopReason, steps: step, chatReplies, wallClockMs: Date.now() - startedAt,
     turns: finalRow?.turns ?? null,
     premise: { complete: progress.complete, substeps: progress.substeps },
@@ -193,6 +213,9 @@ async function main() {
   const out = join(here, `.agent-run-${bookId}.json`);
   writeFileSync(out, JSON.stringify(result, null, 2));
   log(`wrote ${out}`);
+  // Machine-readable handoff for the suite runner (scripts/eval-suite.mts) — parsing human log lines for
+  // the book id would break the first time the wording changed.
+  console.log(`RESULT_JSON=${out}`);
 
   if (task && !KEEP && !DRY) log(`scratch book ${bookId} kept for grading — delete manually or re-run with a fresh --task`);
 }

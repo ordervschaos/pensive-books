@@ -18,6 +18,198 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-02 — The journey playbook was never reaching the agent in conversation `[ship]`
+- **The finding.** `context.ts` gated the guided-flow objective on
+  `injectObjective = auto || followObjective || !authorAsk.trim()`. In author-present mode all three are
+  false — the author ALWAYS has an ask — so `<current_objective>` was **never injected**, and with it the
+  whole of `STEP_RECIPE`. **The agent has been improvising every interview from `SYSTEM_THREAD` alone, with
+  no rung guidance at all.** That is the actual reason it never converged: nothing ever told it the
+  interview HAS a finish. Verified by probing the live request payload for book 1351 —
+  `current_objective` absent from the entire body.
+- **How it was caught, which is the transferable part.** The convergence wording was patched and deployed
+  first; the comparison run got *worse* (3 pushes → 4, 586s → 2498s). Instead of assuming weak wording, the
+  next check was whether the text ever reached the model. It hadn't. **Measuring the request, not the
+  behaviour, is what separated "instruction ignored" from "instruction never delivered"** — two failures
+  that look identical from the outside and have completely different fixes.
+- **The fix, scoped narrowly.** The guard exists for a real bug (a standing "do the next rung" instruction
+  competing with a concrete typed ask — "asked to render a scene, went and fixed lints"), so it was not
+  weakened. Instead: inject during the INTERVIEW rung specifically, because the interview has no typed
+  asks — the author is just talking and the playbook IS how to handle that talking.
+  `book-agent` deployed; verified live on book 1352: `current_objective` / `CONVERGE` /
+  `INTERVIEW the author` all PRESENT for the first time.
+- **Result so far — an observation, NOT a verdict.** Behaviour visibly changed: at exchange 8 the agent said
+  "I think we've actually reached the signal" and summarized instead of asking again. But it then summarized
+  a SECOND time rather than calling `update_vision(compiled:true)` — offering to finish rather than
+  finishing — so a push still fired. **n=1, and the noise is large** (586s vs 2498s on identical config).
+  `pnpm dna:suite --trials N` + the `no_converge` control arm exist to settle it; that has NOT been run.
+- **Pairwise judge shipped (`scripts/harness/pairwise.ts`).** Every pair judged in BOTH orders; a pair counts
+  as decided only when the orders agree, otherwise it is reported as a tie with `agreed:false` and counted
+  in `positionFlips` — "the judge couldn't tell them apart" is a finding, and averaging it away would
+  manufacture a winner out of position bias. Validated on two controls: a lopsided pair won in both orders
+  with substantive reasoning; **identical text on both sides returned `tie` both ways** rather than
+  inventing a preference.
+- **Files:** `supabase/functions/book-agent/{context,advance,variants,variants.test}.ts` ·
+  `_shared/dna-journey.ts` + web twin `dnaJourney.ts` (parity green, 804) ·
+  `supabase/migrations/20260802190000_agent_context_variant.sql` ·
+  `scripts/harness/{pairwise,llmAuthor,llm,env}.ts` · `scripts/agent-build-run.mts` (`--variant`).
+- **PM impact:** none re-ranked. The injectObjective finding is a **product** issue worth its own line at
+  next `/pm` — it plausibly affects every conversational turn at every rung, not just the interview, and
+  the narrow fix deliberately leaves that larger question open.
+
+## 2026-08-02 — Cache ratio diagnosed; convergence trigger deployed; A/B variant seam `[ship]`
+- **The 43% cache-read is NOT a bug — diagnosed and closed.** Method: diff consecutive `book-agent` request
+  payloads index by index. The arrays are **identical for 374 of 375 messages** (449,471 chars ≈ 112k tok)
+  and `cacheRead` = 109,440 — the cache captures exactly what it can. Divergence is at msg 374: it was
+  109,164 chars in the earlier request (carrying `<book_state>`) and 420 in the later one (the digest moved
+  to the new last message). Ruled out: system-prompt drift (1 distinct prompt over 60 calls, byte-identical);
+  stale state persisted into history (**nearly reported this as a bug** — 128 messages mention
+  `<book_state>` but 127 are inside `tool_result` blocks echoing the tag; exactly ONE true injection exists,
+  so `withBookState` works as documented); breakpoints (irrelevant — `cache_control` is dropped on
+  OpenAI-compatible hosts, DeepSeek does automatic prefix caching, well).
+  **Cost:** 158 calls · 11.9M uncached · 9.3M cached · **75,463 uncached tok/call** ≈ **$3.60/book** at list
+  (10× miss-vs-hit spread). Driver = the `<book_state>` digest, **108,702 chars (~27k tok)**, re-sent every
+  turn. **Cannot be fixed by moving it** — fresh content at the end always lands where the previous turn's
+  fresh content was, so the divergence index is identical wherever it goes. **The only lever is sending
+  less**; the agent already has `read_node`/`search_nodes`, so preloading the whole tree *and* giving it
+  read tools pays twice (the JIT-over-preloading point from the standards research, as a measurable bill).
+  Options in `eval-harness-status.md` §5a; note the trade against `readsPerAiCall`, which the harness reports.
+- **Convergence trigger — root cause found and DEPLOYED.** `STEP_RECIPE.interview` gated compilation on
+  *"the author signals they're ready"*; nothing let the AGENT decide it had enough. Rewritten so finishing is
+  the agent's job, with explicit stop conditions (answers stop adding material / author hedges / ≥6
+  exchanges) and "asking another round when the core is covered is a FAILURE, not thoroughness". Both twins,
+  parity green (804). `book-agent` deployed. Pre-fix baseline on the LLM author: gate reached but only after
+  **3 pushes**, 13 steps, 586s. Post-fix comparison run **in flight — no result yet**.
+- **A/B variant seam (`context_variant`).** Migration pushed; `book-agent/variants.ts` + wiring in
+  `context.ts`/`advance.ts`; first arm `no_converge` restores the pre-fix interview as a control, so both
+  arms live in ONE deploy and trials can interleave (sequential deploys are time-confounded). **The
+  load-bearing property is that it is inert in production** — `variantSuffix(null) === ""`, unknown names
+  are no-ops rather than errors (a typo in an eval script must not break a real author's turn) — locked by
+  3 Deno tests. ⚠️ **NOT yet deployed** (the deploy above predates it); prompt bytes are unchanged when
+  unset, so deploying is safe whenever. Caveat in code: the harness stamps the arm AFTER the thread exists,
+  so turn 1 runs unstamped — fine for the interview rung, wrong for a variant that changes the opening move.
+- **LLM author shipped (task 1) — the A/B blocker is gone.** `supabase/functions/.env` has the keys; my
+  earlier "no LLM key reaches Node" was wrong (I only checked `.env.local`). Fact-sheet + temp 0, facts
+  derived from the SAME fixture `keyed` answers so the two authors can't disagree. Handles all four cases
+  regex failed, incl. refusing to invent ("I haven't decided she has a dog at all"). On the baseline run:
+  **0 repeats, 0 ambiguous** — both regex failure modes gone.
+- **`pnpm dna:suite --trials N` (task 3):** N trials × M fixtures, sequential by default (concurrent runs
+  contend for the provider and corrupt the latency metrics), reports mean ± sd.
+- **Two more author-contamination bugs:** replies truncated at `max_tokens=400` mid-sentence — a truncated
+  author reply is CORRUPTED, not shorter, and the agent reasons from the dangling clause (raised to 600, a
+  backstop; the prompt controls length). And a stale `cd` made `pnpm dna:run` resolve `apps/web`, which has
+  no such script.
+- **PM impact:** STATE's eval-harness row should gain the variant seam + cache finding at next `/pm`.
+  ROADMAP not re-ranked. Now #1's two bars are now not just measurable but *explained*.
+
+## 2026-08-02 — Eval harness: LLM author unblocks the A/B; trials suite for variance `[wip]`
+- **What:** Harness lane only (convergence trigger + cache-read are a separate session). Two pieces.
+- **1 · The A/B blocker was never real.** I had recorded "no LLM key reaches Node" — wrong, I never checked:
+  `supabase/functions/.env` is a local file, and `harness/env.ts` already exposes it as `fnEnv`. So the
+  **LLM-backed author** is live and is now the default (`--author llm`, `regex` kept for fixture debugging).
+  It reads a FACT SHEET derived from the same fixture answers the regex author uses — one ground truth,
+  two implementations — so it is phrasing-independent and treats both arms identically. That was the whole
+  reason the regex author could not be trusted for an A/B.
+  Verified on the cases that matter: answered "Who's inside?" (the exact question the regex author missed);
+  refused to invent a favourite meal / dog's name that the facts don't contain; and on `quiet-literary`,
+  pushed back when the agent fished for a thriller — *"that's the book I'm trying not to write."*
+- **2 · `pnpm dna:suite --trials N [--tasks a,b] [--label x]`** — N trials × M fixtures, reporting **mean
+  ±sd** so a difference can be judged against the noise it must beat. Sequential by default on purpose:
+  trajectory metrics include latency, and concurrent books contend for the same provider, which reads as
+  the agent being slower when it is only being crowded (`--concurrency` when elapsed time matters more).
+- **Bug I re-committed and then fixed:** the LLM author's covered/uncovered signal was inferred by
+  **regexing the model's own prose**, so a reply that answered and then hedged on a sub-part scored as a
+  fixture gap — the same match-a-regex-against-free-text mistake this author exists to eliminate. Now the
+  model emits an explicit `[covered]`/`[uncovered]` marker (stated, not inferred), plus a `markerMisses`
+  counter so silent under-reporting is visible.
+- **Also:** consolidated to ONE Node LLM client (`harness/llm.ts`) rather than letting the author and the
+  coming pairwise judge each grow their own fetch; the author gains 3 retries it lacked (a single transient
+  5xx previously aborted a whole run and read as an agent failure). Added a `finish_reason:"length"` warning
+  — a truncated author reply hands the agent half a sentence. Driver now prints `RESULT_JSON=<path>` so the
+  suite never has to parse human log lines for the book id.
+- **Files:** new `scripts/harness/llm.ts`, `scripts/eval-suite.mts`; `scripts/harness/llmAuthor.ts`
+  (refactored onto the shared client + marker classification); `scripts/agent-build-run.mts`,
+  `package.json` (`dna:suite`), `.gitignore`.
+- **3 · `pnpm dna:pairwise --a <label> --b <label>`** — the preference judge, built because the measured
+  judge variance (4.75 vs 5.0 on identical text) is the size of the effect an A/B hunts for. **Position
+  bias is cancelled by running BOTH orders, not by randomising:** randomising spreads the bias and hopes it
+  averages out; both-orders cancels it deterministically AND makes it measurable — if the winner follows
+  the SLOT rather than the text, that pair is reported as `TIE(position)` instead of banking a false win.
+  The judge also sees the author's interview facts, not just the written brief, so a package that ignored
+  what the author said can lose for that reason.
+- **Robustness fix from the smoke run:** the driver died after ~15 min on an unhandled `ECONNRESET`. Added
+  transport-level retry (3×, backoff) in the harness supabase client's custom `fetch` — the one place every
+  supabase call passes through. Retries the TRANSPORT only, never a non-2xx (status is semantic, caller's
+  business). Honest caveat recorded in-code: an ECONNRESET while reading a response is ambiguous for
+  non-idempotent verbs, so mutating retries log loudly; DNA writes are id-keyed upserts (safe), a thread
+  message could double. Losing a 15-minute run to one reset is the worse trade.
+- **Suite usability fix:** it buffered child output until exit, so a 15-min run was indistinguishable from a
+  hang — exactly the question you have at minute twelve. Now streams child lines prefixed, and prints an
+  up-front elapsed-time estimate (~15 min/run with the LLM author; a 3×3 sweep is ~2h sequentially).
+- **Smoke result:** suite plumbing verified — the one run failed on the ECONNRESET above, and the suite
+  correctly recorded it as a `failure` row and still produced a report rather than dying with it.
+- **Noticed, NOT chased (other session's lane):** book 1348 now reads `Seed ·` while its gate reads
+  COMPLETE. Consistent with the product's own definitions (`stageComplete` needs seed TEXT; the substep
+  also needs it ACCEPTED) but it showed all-✓ earlier today, and the empty-nodes work touches
+  `novelDna.ts`. Flagging because that gate is this harness's halt predicate.
+- **PM impact:** none yet — `wip`. No multi-trial numbers yet; no A/B run. Remaining in this lane:
+  `context_variant` on `book_agent_runs` so both arms ship in ONE deploy and trials can be interleaved
+  (sequential deploy-A-then-B is confounded by provider drift).
+
+## 2026-08-02 — Empty-nodes P1: dna-expand routed through `liveNodes`; bible blocks extracted + golden-locked `[wip]`
+- **What:** The prompt-context half of the dense-tree work (`doc_1785673597000.md` §5a) — the owner's stated
+  #1 concern. Three parts.
+  (1) **Two named views of the tree in `dna-expand`.** The design doc's "one line: `const nodes =
+  liveNodes(rawNodes)`" was **wrong and would have broken generation** — `nodes` feeds `byId`, `byId` walks
+  the ancestor chain, and the target of a generation call *is by definition the empty node being filled*, so
+  a live-filtered `byId` loses it and the walk terminates early, silently dropping every ancestor
+  constraint. Correct shape shipped instead: `nodes` = STRUCTURAL (raw, shape-walking only), `live` =
+  READ (placeholders hidden, everything shown to the model). Doc amended in place.
+  (2) **Per-kind rule applied.** 9 entity registries + the ancestor chain now read `live`; the ARC and the
+  sibling-beat plan stay raw and MARK unwritten members (`— NOT YET WRITTEN`), because acts/beats are
+  sibling *sequences* where dropping empties makes an author who wrote only Act 2 look like they wrote a
+  one-act book. Also routed: scene ledger, prose digest, `scenesInOrder`, beat-sheet lint materialization.
+  (3) **Blocks made testable by MOVING them** (not copying — copies are the drift this repo keeps paying
+  for) into new `supabase/functions/_shared/dna-context.ts`. Arrays stayed at the call site, so all
+  downstream uses were untouched (`threads` alone has 36); only the pure renderers moved. Net −50 lines in
+  `index.ts`.
+- **Files/commits:** NEW `supabase/functions/_shared/dna-context.ts`; NEW
+  `apps/web/src/features/dna/lib/dnaContext.golden.test.ts` (7 tests); `supabase/functions/dna-expand/index.ts`
+  (137 lines changed, mostly deletions); `novelDna.ts` + `_shared/novel-dna.ts` (fold generalized to a
+  `FillNode` structural minimum, since edge fns select partial rows). Uncommitted.
+- **Verified:** full web suite 1332 pass (7 new golden tests); `tsc -p tsconfig.app.json` clean; `deno check`
+  clean on both new/changed shared modules (the 2 `EdgeRuntime` errors in `_shared/task.ts` are pre-existing —
+  confirmed by stashing). **Refactor safety checked separately from the golden test:** diffed all 9 moved
+  block-header literals against `HEAD` — byte-identical; the 10th (scene-scoped "WORLD RULES in play this
+  scene") correctly stayed in `index.ts`.
+- **Not done / next:** `dna-expand` is one of ~8 read paths. `book-agent` alone has ~15 raw `book_nodes`
+  selects (`exec-tools.ts`, `context.ts`, `proposals.ts`, `verify.ts`) still unrouted, plus `novelDnaRender`,
+  the lints, and the obligation ledger. **No edge fn deployed** — changes are local only.
+- **PM impact:** none. Still `wip`, still no Now-slot movement, still awaiting owner ratification of the
+  overall design; P2–P4 (materializer, ascent, doors) untouched.
+
+## 2026-08-02 — Empty-nodes P0: the fill fold + `liveNodes` chokepoint `[wip]`
+- **What:** First phase of the dense-tree redesign (`doc_1785673597000.md`). Added `hasOwnContent` ·
+  `FillState`/`Fill` · `fillMap` · `fillRatio` · `isEmptySubtree` · `liveNodes` to **both** novelDna twins,
+  parity-locked. Pure, zero behaviour change — the tree is still sparse, so `liveNodes` is currently the
+  identity (there's a test asserting exactly that; it's the tripwire for P1).
+  Three decisions made while building. (1) **The fold needs no schema**, so it lives in `novelDna.ts` rather
+  than a new module: emptiness scans the content keys a node *actually carries* minus judge outputs, which
+  needs only `OUTPUT_FIELDS` (already there) — no import cycle, rides the existing parity lock free.
+  (2) **`prose` counts as content, `observed_*` does not** — this was a real bug avoided: `prose` is not a
+  dnaSchema field, and `importEpub` locks user prose onto scenes with *no plan fields*, so a schema-driven
+  emptiness test would have called those scenes empty and `liveNodes` would have **stripped written prose out
+  of the render**. Locked with a test. (3) **`liveNodes` fails closed** (a node the fold misses is kept) and
+  **provably never orphans** — `empty` implies all descendants empty, so a kept node's ancestors are kept;
+  asserted, not just commented.
+- **Files/commits:** `apps/web/src/features/dna/lib/novelDna.ts` (+91), `supabase/functions/_shared/novel-dna.ts`
+  (+90), `novelDna.test.ts` (+92, 12 new tests), `novelDna.parity.test.ts` (+33: `fillMap`/`liveNodes` cases,
+  a `denseBook` fixture, a no-op-fixture guard). Uncommitted.
+- **Verified:** 127 + 804 tests pass (fill tests confirmed running by name, not skipped);
+  `tsc -p tsconfig.app.json` clean; `deno check` on the edge twin clean.
+- **PM impact:** none — **still no Now slot movement, feature not user-visible.** P1–P4 remain
+  (`doc_1785673597000.md` §7); the underlying design is still awaiting owner ratification. Next is P1:
+  `liveNodes` at `dna-expand/index.ts:349` + the golden prompt test (§5a), then the other six read paths.
+
 ## 2026-08-02 — Premise eval harness lands; first successful graded run `[ship]`
 - **What:** Committed `96c7edf` (harness) + `b3ec4a3` (sequential judges + results); summary doc
   `eval-harness-status.md`. Steps 1–5 of `doc_1785672823780.md` §7 all built, exercised, and green.

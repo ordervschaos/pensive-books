@@ -100,8 +100,7 @@ strict. This is the precondition for trusting anything else.
 reads/turn 3.53 · applied 69 · discarded 5 · 8 errors · 339 ai calls · 6891s model time
 tokens in 12,475,339 · cache-read 9,518,208 = 43% of prefill
 ```
-> ⚠️ **Cache-read is 43% of prefill.** Now #1's bar is "cache-read ≫ input." This is close to the inverse.
-> Measured, not diagnosed — worth its own investigation, independent of the eval work.
+> ⚠️ **Cache-read is 43% of prefill.** Now #1's bar is "cache-read ≫ input." **Now diagnosed — see §5a.**
 
 **Run 1347 (author-present, author only ANSWERS):** gate not reached, 6/10, `applied 0`, `asks 0`. The
 agent interviewed for 12 exchanges and staged nothing.
@@ -125,6 +124,58 @@ The logline it produced:
 
 Every distinctive element there came from the **interview** — the brief said only "something about a
 lighthouse." That is the `thin-brief` fixture doing exactly its job, and the agent passing it.
+
+## 5a. The 43% cache-read ratio — diagnosed
+
+**The cache is working correctly. This is a measured cost of a deliberate design, not a defect.**
+
+Method: for two consecutive `book-agent` requests on book 1278, diff the message arrays index by index.
+
+```
+earlier request: 375 messages, prefill 246,908
+later request:   377 messages, prefill 248,066, cacheRead 109,440
+
+identical for the first 374 of 375 messages — 449,471 chars ≈ 112k tokens
+cacheRead 109,440 ≈ that identical prefix.        ← the cache captures exactly what it can
+```
+
+**Where it diverges, and why it must.** `withBookState` appends the live tree digest as the final block of
+the *latest* user message, and never persists it (by design — so the model can't ground on a stale tree).
+So message 374 was 109,164 chars in the earlier request (it carried the digest) and 420 chars in the later
+one (the digest moved to the new last message). The prefix can only match up to 373.
+
+Things checked and **ruled out**:
+- *System prompt drift* — 1 distinct system prompt across 60 calls, byte-identical (9,944 chars).
+- *Stale state persisted into history* — 128 messages mention `<book_state>`, but 127 of those are inside
+  `tool_result` blocks that merely echo the tag. Exactly **one** true injection exists, on the last
+  message. `withCacheBreakpoints` deep-copies and `withBookState` appends to that copy, as documented.
+- *Explicit cache breakpoints failing* — irrelevant on this path: `cache_control` is dropped for
+  OpenAI-compatible hosts, so DeepSeek is doing automatic prefix caching, and doing it well.
+
+**The measured cost**
+```
+158 book-agent/deepseek calls · 11,923,306 uncached · 9,276,288 cached (44%)
+average 75,463 UNCACHED tokens per call
+≈ $3.60 per book at DeepSeek list (miss $0.28/Mtok, hit $0.028/Mtok — a 10× spread)
+```
+The single largest contributor is the `<book_state>` digest: **108,702 chars (~27k tokens)** on a 30-scene
+book, re-sent uncached every turn, and the biggest message in the array by an order of magnitude.
+
+**Why it can't be fixed by moving the block.** Fresh content at the end always sits where the *previous*
+turn's fresh content was, so the divergence index is the same wherever you put it. Moving it to the front
+would cache it but make it stale — which is the exact failure the design set out to prevent.
+
+**The real lever is sending less.** The agent already has `read_node` / `search_nodes` / `get_schema` — it
+can pull what it needs. Preloading a 27k-token whole-tree digest *and* giving it read tools is paying twice.
+Current 2026 practice is explicit here: prefer just-in-time retrieval over preloading, keeping lightweight
+identifiers in context and loading detail on demand. Options, cheapest first:
+1. **Shrink the digest as the tree grows** — full detail for the working set, one-line handles for the rest.
+2. **Send a delta** — the tree changed by one node; send that, not all 30 scenes.
+3. **Drop to handles entirely** past a size threshold and lean on the read tools.
+
+Worth noting this cuts against `readsPerAiCall` — fewer preloaded tokens means more read round-trips. That
+trade is exactly what Now #1's two bars measure, and the harness now reports both, so it can be tuned
+against evidence rather than argued.
 
 ### ⚠️ Judge variance, measured
 
