@@ -18,6 +18,27 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-03 — Fold-on-read: the agent loop gets a durable memory `[ship]`
+- **What:** Gave the agent's reads a backing store, so compaction stops meaning amnesia. New
+  `record_findings` tool (non-terminal, batches with reads → zero extra round-trips) banks the model's
+  own distillation of a read into a `t:"finding"` AgentStep. `steps` is never pruned, so `findingsBlock()`
+  renders the ledger back into `<book_state>` every turn — request-time, after the cache breakpoints, so
+  a growing ledger is cache-neutral (capped at 60, newest kept). A `[record-findings]` sentinel nudges at
+  6 unbanked reads. The load-bearing detail: that nudge runs on `unrecordedReadRun`, a SEPARATE counter
+  from the watchdog's `trailingReadRun`, because letting a `finding` reset the watchdog would let a run
+  read→record→read→record forever with the backstop permanently re-armed. `FORCE_COMMIT_AFTER_READS = 15`
+  is unchanged and still the backstop. Also fixed a standing TS2353: server `AgentStep` lacked `nodeId`
+  while `advance.ts:355` wrote it (the client's mirror always had it).
+- **Files/commits:** uncommitted. `book-agent/{tools,exec-tools,transcript,shared,advance,context,prompts}.ts`,
+  new `book-agent/transcript.test.ts` (8 invariant tests), `features/dna/lib/agentThread.ts` +
+  `components/agentRail/StepBubble.tsx`. Design doc `doc_1785773301000.md` (§5 stamped with what shipped).
+  Verified: 8/8 deno tests, web suite 1376 passed, `tsc -p tsconfig.app.json` clean, `deno check` clean
+  except pre-existing EdgeRuntime ambient noise. **Deployed** (`functions deploy book-agent`).
+- **PM impact:** none promoted — this is an enabler for Now-1, not a Now item itself. Two things for the
+  author: (a) Now-1's live full-book build is now the exercise that proves this, and its evidence bar
+  should gain "same node never read twice in one run" + "`trailingReadRun` never reaches 15"; (b) the
+  worklist/driven-cursor half of the design (doc §3c) is still unbuilt and unranked. Proposed, not applied.
+
 ## 2026-08-03 — Doc fix: "one-shot ≠ context-free" in the context-engineering essay `[chore]`
 - **What:** Reader question — does any context actually pass from the agent to a render, or are
   the generators genuinely context-free? Answer: the `RenderBrief` (focus/mustHonor/avoid) is the

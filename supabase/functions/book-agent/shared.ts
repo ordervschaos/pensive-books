@@ -8,7 +8,13 @@ import dnaSchema from "../_shared/dna-schema.json" with { type: "json" };
 // 'decision' = an auto-mode creative fork the agent journaled via ask_author (question in `label`,
 // its stated options in `options`, `at` = when) — kept in the feed so the author can revisit forks
 // after an autonomous run (state change, not erasure — NORTH_STAR §6 rule 8).
-interface AgentStep { t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done" | "decision"; label: string; options?: string[]; at?: string }
+// 'finding' = fold-on-read: what the model DISTILLED from reads it has done, in `findings` (the label
+// is just the feed line). This is the run's durable memory — `steps` is never pruned, whereas the raw
+// read results in `transcript` are (compactTranscript). See findingsBlock in transcript.ts.
+interface Finding { ref: string; finding: string }
+// `nodeId` rides on the 'plan' step propose_options writes (advance.ts) — the client's mirror of this
+// interface has always declared it; this one hadn't, so that write was a standing type error.
+interface AgentStep { t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done" | "decision" | "finding"; label: string; options?: string[]; at?: string; nodeId?: string; findings?: Finding[] }
 interface Pending {
   tool_use_id: string;
   question: string;
@@ -96,4 +102,4 @@ function schemaFor(kinds: string[]): string {
 }
 
 export { ROW_COLS, ALL_NODE_KINDS, nodeHandle, CONTENT_SCHEMAS, SCHEMA_BY_KIND, schemaFor };
-export type { AgentStep, Pending, NewSubtree, NodeOp, RenderBrief, AgentProposal, RunRow, DnaNodeRow };
+export type { AgentStep, Finding, Pending, NewSubtree, NodeOp, RenderBrief, AgentProposal, RunRow, DnaNodeRow };

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { BookOpen, Sparkles, ArrowRight } from "lucide-react";
+import { BookOpen, NotebookPen, Sparkles, ArrowRight } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { humanizeNodeRefs } from "@/features/dna/lib/dnaChat";
@@ -42,6 +42,28 @@ export function StepBubble({ step, nodes, onJump }: { step: AgentStep; nodes: Dn
       <p className="inline-flex items-center gap-1.5 pv-serif text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">
         <BookOpen className="h-3 w-3" /> {step.label}
       </p>
+    );
+  }
+  // finding — fold-on-read: what the agent banked from its reads. Shown because it's the honest record of
+  // what the run actually LEARNED (the 'read' lines above only say it looked), and because a wrong finding
+  // explains a later wrong edit. Muted like a read line: activity, not conversation.
+  if (step.t === "finding") {
+    const items = step.findings ?? [];
+    if (!items.length) return null;
+    return (
+      <div className="flex flex-col gap-1">
+        <p className="inline-flex items-center gap-1.5 pv-mono text-[9.5px] uppercase tracking-[0.12em] text-[hsl(var(--pv-text-faint))]">
+          <NotebookPen className="h-3 w-3" /> noted
+        </p>
+        <div className="flex flex-col gap-1 border-l border-[hsl(var(--pv-border))] pl-2.5">
+          {items.map((f, i) => (
+            <p key={i} className="pv-serif text-[12.5px] leading-[1.45] text-[hsl(var(--pv-text-faint))]">
+              {f.ref && <span className="text-[hsl(var(--pv-text-muted))]">{humanizeNodeRefs(f.ref, index)} — </span>}
+              {humanizeNodeRefs(f.finding, index)}
+            </p>
+          ))}
+        </div>
+      </div>
     );
   }
   if (step.t === "applied" || step.t === "discarded") return <ResolvedCard step={step} nodes={nodes} />;

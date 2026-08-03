@@ -11,7 +11,7 @@ import { callLLM, textFromLLM } from "../_shared/llm.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
 import { renderResearch, researchCraft } from "../_shared/research.ts";
 import { VISION_RUBRIC } from "../_shared/vision-craft.ts";
-import { nodeHandle, schemaFor, SCHEMA_BY_KIND, type AgentStep } from "./shared.ts";
+import { nodeHandle, schemaFor, SCHEMA_BY_KIND, type AgentStep, type Finding } from "./shared.ts";
 import { planConformanceSummary } from "./verify.ts";
 
 // Execute a turn's non-terminal tool calls (read_node/get_schema/search_nodes/check_against_contract;
@@ -115,6 +115,29 @@ async function execTool(
       result: {
         type: "tool_result", tool_use_id: t.id,
         content: `ok — vision updated (sections: ${what})` + (compiled ? ". The interview is now marked complete; the journey advances to the seed on its own." : ""),
+      },
+    };
+  }
+  // Fold-on-read (transcript.ts): the model's distillation of reads it has already done. Pure
+  // bookkeeping — nothing is written to the book. The value is entirely in the STEP, which lands in
+  // book_agent_runs.steps (never pruned) and is rendered back into <book_state> every turn by
+  // findingsBlock; that's what makes compaction safe to prune the raw reads behind it.
+  if (t.name === "record_findings") {
+    const raw = Array.isArray((t.input as { findings?: unknown })?.findings) ? (t.input as { findings: unknown[] }).findings : [];
+    const findings: Finding[] = raw
+      .map((f) => {
+        const o = (f ?? {}) as { ref?: unknown; finding?: unknown };
+        return { ref: String(o.ref ?? "").trim().slice(0, 80), finding: String(o.finding ?? "").trim().slice(0, 400) };
+      })
+      .filter((f) => f.finding);
+    if (!findings.length) {
+      return { result: { type: "tool_result", tool_use_id: t.id, content: "Nothing recorded — pass at least one finding with a non-empty `finding`.", is_error: true } };
+    }
+    return {
+      step: { t: "finding", label: `Recorded ${findings.length} finding${findings.length === 1 ? "" : "s"}.`, findings },
+      result: {
+        type: "tool_result", tool_use_id: t.id,
+        content: `ok — ${findings.length} finding${findings.length === 1 ? "" : "s"} banked. They now ride in the <findings> block of every following turn, so you can act on them after the raw reads are pruned. Don't re-read these nodes for what you just recorded.`,
       },
     };
   }

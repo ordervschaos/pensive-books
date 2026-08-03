@@ -68,6 +68,28 @@ const SHARED_TOOLS = [
     },
   },
   {
+    name: "record_findings",
+    description: "Bank what you LEARNED from reads you've already done, in one line each. Do this as soon as you've read something you'll need later — the raw read results are pruned out of this conversation once it grows (you'll see '[PRUNED …]' where they were), but findings recorded here survive the whole run and are shown back to you every turn in the <findings> block. This is how you build up a picture of the book WITHOUT re-reading: distill now, while the content is still in front of you. Write findings a future you could act on — the concrete observation, not 'I read scene 14' (e.g. 'scene 14 — no controlling metaphor; opens mid-dialogue; Mara still has the keyring'). Include what's FINE as well as what's broken, so you don't re-check it. It's a read: batch it in the SAME turn as your other reads and your next action — it does NOT end your turn and costs you nothing extra.",
+    input_schema: {
+      type: "object",
+      properties: {
+        findings: {
+          type: "array",
+          description: "One entry per thing you learned. Keep each to a line or two.",
+          items: {
+            type: "object",
+            properties: {
+              ref: { type: "string", description: "What it's about — the node id, or a human handle like 'scene 14' / 'the brief'." },
+              finding: { type: "string", description: "The concrete thing you learned, in your own words — specific enough to act on later without re-reading." },
+            },
+            required: ["ref", "finding"],
+          },
+        },
+      },
+      required: ["findings"],
+    },
+  },
+  {
     name: "read_skill",
     description: `Load one of the specialized playbooks listed in the system prompt's Skills index (${AGENT_SKILLS.map((s) => s.name).join(", ")}) — the full technique for that job. Call it when your turn involves that job and its body is NOT already injected in the latest message's <skill_briefs>. It's a read: batch it in the SAME turn as your read_node/search_nodes calls.`,
     input_schema: {

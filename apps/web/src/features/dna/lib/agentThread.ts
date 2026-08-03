@@ -14,10 +14,13 @@ export interface AgentStep {
   // user = the author's message · note = the agent's reply/narration · read = a node it read ·
   // ask = a creative question · answer = the author's answer to one · plan = a proposed change ·
   // applied/discarded = a resolved proposal kept in the feed as a collapsed card (carries its ops) ·
-  // decision = an auto-mode creative fork the agent journaled (question in label, its options + when).
-  t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done" | "applied" | "discarded" | "decision";
+  // decision = an auto-mode creative fork the agent journaled (question in label, its options + when) ·
+  // finding = fold-on-read: what the agent distilled from its reads (in `findings`). This is the run's
+  // durable memory — steps are never pruned, whereas the raw reads in the transcript are.
+  t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done" | "applied" | "discarded" | "decision" | "finding";
   label: string;
   options?: string[]; // present on decision steps — the choices the agent weighed (its pick stated in-text)
+  findings?: { ref: string; finding: string }[]; // present on 'finding' steps — the banked distillations
   nodeId?: string; // present on 'plan' steps that staged options ON a node — the node whose picker to jump to
 
   at?: string; // present on decision steps — ISO timestamp of the fork

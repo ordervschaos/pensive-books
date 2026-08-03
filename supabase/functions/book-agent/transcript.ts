@@ -1,6 +1,6 @@
 // book-agent transcript helpers: pure functions over the stored message array — context compaction,
 // the auto-continue / force-commit sentinels, and the request-time cache-breakpoint + book-state shaping.
-import { type AgentStep } from "./shared.ts";
+import { type AgentStep, type Finding } from "./shared.ts";
 import { VERIFY_SENTINEL } from "./verify.ts";
 
 // ── Context compaction ──
@@ -39,7 +39,7 @@ function compactTranscript(transcript: unknown[]): unknown[] {
       if (b?.type !== "tool_result" || typeof b.content !== "string" || b.content.length <= STUB_OVER) return b;
       if (b.content.includes("[PRUNED")) return b; // already stubbed on a prior pass
       msgChanged = true;
-      return { ...b, content: `${b.content.slice(0, 80)}… [PRUNED — an older full read, removed to keep context small. The live tree is in <book_state>; read_node/search_nodes again if you need this content.]` };
+      return { ...b, content: `${b.content.slice(0, 80)}… [PRUNED — an older full read, removed to keep context small. What you DISTILLED from it survives in <findings>; the live tree is in <book_state>. Only read_node/search_nodes again if you need detail neither carries.]` };
     });
     if (!msgChanged) return m;
     changed = true;
@@ -62,18 +62,73 @@ const AUTO_CONTINUE_SENTINEL = "[auto-continue]";
 const FORCE_COMMIT_AFTER_READS = 15;
 const FORCE_COMMIT_SENTINEL = "[force-commit]";
 
-// Trailing 'read' steps since the last commit-shaped step (plan/done/decision/answer/ask/user) —
-// 'note' steps (a turn's own "let me look at X" narration) don't reset the count.
+// ── Fold-on-read (doc_1785773301000.md) ──
+// The backstop above treats the symptom; the CAUSE is that the transcript is the run's only working
+// memory and also the one buffer we must prune — so a read's content has nowhere durable to live and
+// compaction is amnesia. record_findings gives it a home: the model distills a read WHILE the content
+// is still in context, and the distillation lands in `steps` (never pruned) as a 'finding' step.
+// Compaction then costs nothing it needed. Same move as node.authoring.prose_digest on the continuity
+// axis: fold, don't accumulate.
+//
+// The ledger rides in <book_state> (request-time, never persisted), so it does NOT break the cached
+// prefix — that block is already paid uncached every turn. Capped so a very long run can't turn the
+// cure into the disease; the newest findings win because they describe the part of the book in play.
+const FINDINGS_CAP = 60;
+
+// Every finding recorded this run, oldest first, as a <findings> block for withBookState — or "" when
+// nothing has been recorded yet (so an unused ledger costs zero prompt bytes).
+function findingsBlock(steps: AgentStep[]): string {
+  const all: Finding[] = [];
+  for (const s of steps) {
+    if (s.t !== "finding" || !Array.isArray(s.findings)) continue;
+    for (const f of s.findings) {
+      const ref = String(f?.ref ?? "").trim();
+      const finding = String(f?.finding ?? "").trim();
+      if (finding) all.push({ ref, finding });
+    }
+  }
+  if (!all.length) return "";
+  const kept = all.slice(-FINDINGS_CAP);
+  const dropped = all.length - kept.length;
+  const lines = kept.map((f) => (f.ref ? `${f.ref} — ${f.finding}` : f.finding));
+  const note = dropped ? ` (${dropped} older finding${dropped === 1 ? "" : "s"} dropped)` : "";
+  return `<findings note="what YOU already learned from reads this run${note} — the raw reads behind these may have been pruned from the messages above, but this survives. TRUST IT: do not re-read a node just to recover something recorded here.">\n${lines.join("\n")}\n</findings>`;
+}
+
+// Trailing 'read' steps since the last commit-shaped step (plan/done/decision/answer/ask/user) — this
+// feeds the force-commit watchdog, so 'finding' must NOT reset it: recording what you read is not
+// committing a change, and treating it as one would let a run read→record→read→record forever with the
+// watchdog permanently re-armed. 'note' (a turn's own narration) doesn't reset it either.
 function trailingReadRun(steps: AgentStep[]): number {
   let n = 0;
   for (let i = steps.length - 1; i >= 0; i--) {
     const t = steps[i].t;
     if (t === "read") { n++; continue; }
-    if (t === "note") continue;
+    if (t === "note" || t === "finding") continue;
     break;
   }
   return n;
 }
+
+// Trailing 'read' steps whose content has NOT been distilled yet — same walk, but a 'finding' step
+// resets it. Deliberately a SEPARATE counter from trailingReadRun (which only commits reset), so the
+// record nudge and the force-commit watchdog can't cancel each other out.
+function unrecordedReadRun(steps: AgentStep[]): number {
+  let n = 0;
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const t = steps[i].t;
+    if (t === "read") { n++; continue; }
+    if (t === "note") continue;
+    break; // 'finding' included: everything before it is already distilled
+  }
+  return n;
+}
+
+// Nudge threshold for the ledger. Well under FORCE_COMMIT_AFTER_READS so the sequence is
+// read…→ "record what you learned" → read…→ forced commit: the run banks its findings BEFORE the
+// watchdog makes it commit under amnesia.
+const RECORD_FINDINGS_AFTER_READS = 6;
+const RECORD_FINDINGS_SENTINEL = "[record-findings]";
 
 // Request-time cache breakpoints (never stored in the row, so they don't accumulate past the API's
 // limit of 4): one on the big first user message, one on the last block of the latest message —
@@ -108,7 +163,7 @@ function latestAuthorAsk(transcript: unknown[]): string {
     const texts = m.content
       .filter((b) => (b as { type?: string })?.type === "text")
       .map((b) => String((b as { text?: unknown }).text ?? "").trim())
-      .filter((t) => t && !t.startsWith(AUTO_CONTINUE_SENTINEL) && !t.startsWith(FORCE_COMMIT_SENTINEL) && !t.startsWith(VERIFY_SENTINEL));
+      .filter((t) => t && !t.startsWith(AUTO_CONTINUE_SENTINEL) && !t.startsWith(FORCE_COMMIT_SENTINEL) && !t.startsWith(RECORD_FINDINGS_SENTINEL) && !t.startsWith(VERIFY_SENTINEL));
     if (texts.length) return texts.join("\n").trim();
   }
   return "";
@@ -138,4 +193,4 @@ function withBookState(msgs: unknown[], state: string, task = ""): unknown[] {
   return msgs;
 }
 
-export { AUTO_CONTINUE_SENTINEL, FORCE_COMMIT_AFTER_READS, FORCE_COMMIT_SENTINEL, compactTranscript, latestAuthorAsk, trailingReadRun, withBookState, withCacheBreakpoints };
+export { AUTO_CONTINUE_SENTINEL, FORCE_COMMIT_AFTER_READS, FORCE_COMMIT_SENTINEL, RECORD_FINDINGS_AFTER_READS, RECORD_FINDINGS_SENTINEL, compactTranscript, findingsBlock, latestAuthorAsk, trailingReadRun, unrecordedReadRun, withBookState, withCacheBreakpoints };

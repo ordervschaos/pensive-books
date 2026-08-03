@@ -16,7 +16,7 @@ import { maybeInjectRenderVerify } from "./verify.ts";
 import { threadSystem } from "./context.ts";
 import { proposeExpansion, proposeNodeOps, proposeOptions, proposeProseRender } from "./proposals.ts";
 import { maybeEagerAck, maybeTitleThread } from "./ack.ts";
-import { AUTO_CONTINUE_SENTINEL, FORCE_COMMIT_AFTER_READS, FORCE_COMMIT_SENTINEL, compactTranscript, latestAuthorAsk, trailingReadRun, withBookState, withCacheBreakpoints } from "./transcript.ts";
+import { AUTO_CONTINUE_SENTINEL, FORCE_COMMIT_AFTER_READS, FORCE_COMMIT_SENTINEL, RECORD_FINDINGS_AFTER_READS, RECORD_FINDINGS_SENTINEL, compactTranscript, findingsBlock, latestAuthorAsk, trailingReadRun, unrecordedReadRun, withBookState, withCacheBreakpoints } from "./transcript.ts";
 
 const MAX_TURNS = 20;          // model calls per run — the runaway guard
 // Result-blind tools: their result is ALWAYS "ok" and can never inform the reply, so a turn that
@@ -209,7 +209,10 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
         output_config: { effort: "medium" },
         system: [{ type: "text", text: instructions, cache_control: { type: "ephemeral" } }],
         tools,
-        messages: withBookState(withCacheBreakpoints(baseTranscript), bookState, authorAsk),
+        // The findings ledger rides WITH bookState (request-time, appended after the cache breakpoints)
+        // — so this run's durable memory reaches the model every turn without invalidating the cached
+        // prefix, and without living in the transcript where compaction would eventually prune it.
+        messages: withBookState(withCacheBreakpoints(baseTranscript), [bookState, findingsBlock(baseSteps)].filter(Boolean).join("\n\n"), authorAsk),
       }, {
         fn: "book-agent",
         bookId: row.book_id,
@@ -426,6 +429,20 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
       const results = await toolResults(service, row.book_id, toolUses, steps, {}, auto);
       transcript.push({ role: "user", content: results });
       const readRun = trailingReadRun(steps);
+      // Fold-on-read nudge (doc_1785773301000.md): reads have piled up with nothing distilled, so the
+      // next compaction pass would throw them away un-banked. Prompt the model to fold them into the
+      // durable ledger BEFORE that happens. Fires below FORCE_COMMIT_AFTER_READS on its own counter, so
+      // it can never displace the watchdog — a run that ignores this still gets forced to commit.
+      const unrecorded = unrecordedReadRun(steps);
+      if (auto && unrecorded >= RECORD_FINDINGS_AFTER_READS && readRun < FORCE_COMMIT_AFTER_READS) {
+        transcript.push({
+          role: "user",
+          content: [{
+            type: "text",
+            text: `${RECORD_FINDINGS_SENTINEL} You've done ${unrecorded} reads without banking anything. Call record_findings NOW with one line per thing you learned — the raw read results above get pruned as this conversation grows, and anything you haven't recorded is lost (that's what makes a run re-read the same nodes forever). Batch it with your next action in the same turn; it doesn't cost you a turn.`,
+          }],
+        });
+      }
       if (auto && readRun >= FORCE_COMMIT_AFTER_READS) {
         transcript.push({
           role: "user",
