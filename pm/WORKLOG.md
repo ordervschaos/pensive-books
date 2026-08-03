@@ -18,6 +18,51 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-03 — Pairwise judge actually runs; three faults found by running it `[ship]`
+- **What:** `5b563b7`. The pairwise comparator had been written, typechecked, and never executed. Running
+  it once found three faults — consistent with the day's pattern that untested harness code is where the
+  bugs are.
+- **1 · It could not consume its own suite's output.** Pairwise took two suite LABELS, but the suite had
+  since gained interleaved multi-arm support writing both arms to ONE file — so the statistically sound
+  mode produced output the comparator couldn't read. Added `--suite <label>` (splits arms out of one
+  report); `--a/--b` still works for two separate runs.
+- **2 · The judge returned empty content.** The pinned tier is a REASONING model and reasoning counts
+  inside `max_tokens` on DeepSeek's own API, so a 300-token budget was spent thinking. Raising the cap
+  chases the symptom (2000 also failed — 9432 chars of reasoning); `harnessLlm` now sends
+  `reasoning_effort` (default `"low"`), which is also cheaper and faster.
+- **3 · That failure read as "the model returned nothing."** Now detected explicitly: empty `content`
+  alongside non-empty `reasoning_content` reports *"max_tokens was consumed by reasoning (it counts inside
+  max_tokens on this host)"*. That diagnostic is what found fault 2 on the very next run.
+- **Also:** pairwise refuses to judge runs flagged with schema violations — comparing artifacts the judge
+  cannot read measures a broken field, not the writing.
+- **First real verdict (converge-ab, n=1):** `order1:B order2:B → B` — the same candidate won in BOTH slot
+  positions, which is the both-orders design working; a winner that follows the slot is reported as
+  `TIE(position)` instead. Reason given was substantive ("Package One introduces an 'answering' light not
+  in the brief").
+- **Correction to yesterday's caveat:** the `movements` regression does **not** invalidate a pairwise
+  verdict. Pairwise compares only logline + dramatic question; `movements` is not in its input — it was
+  `read-premise` that went blind. The only limit on this result is n=1.
+- **PM impact:** none — the A/B still needs a balanced multi-trial rerun (and the movements fix, for the
+  `read-premise` family specifically).
+
+## 2026-08-03 — "why no digest today?" traced to the unscheduled pg_cron tick `[chore]`
+- **What:** Diagnosis only, no code change. Owner didn't receive an issue; cause is the one-time
+  `digest-tick` pg_cron job that was never created (already a known open row in STATE). Verified the
+  rest of the chain is green: DNS now resolves `76.76.21.21`, `POST /api/cron/tick` returns 401 on a
+  bad secret (route deployed + reachable), `CRON_SECRET` present in Vercel prod, no `crons` in
+  `vercel.json`. Could NOT verify `cron.job` itself — no DB password locally, and the pinned Vercel
+  CLI 54.1.0 pulls encrypted values as `""` so the secret can't be read from here either. Handed the
+  owner ready-to-run SQL + the `net._http_response` vs `cron.job_run_details` distinction (pg_net is
+  fire-and-forget, so the job logs `succeeded` even on a 500).
+- **Files/commits:** no source changes. `doc_1785733674000.md`,
+  `learning_1785733674000_digest-cron.md`. Read-only over `apps/digest/{README,SETUP}.md` +
+  `app/api/cron/tick/route.ts`. (The uncommitted DNA tree/skeleton/dna-context working set is
+  separate in-flight work, untouched by this task.)
+- **PM impact:** STATE §Morning Digest — corrected the stale DNS note on the Deployment row and
+  added the 2026-08-03 verification + fix recipe to the `digest-tick` row. No re-ranking; proposed
+  (not applied) a dead-man's-switch follow-up — alert when the newest `digest_issues` row is >26h
+  old, since a missing scheduler is silent by construction.
+
 ## 2026-08-03 — Schema conformance becomes a grader family `[ship]`
 - **What:** `279b8b3` (author token cap 400→900, after the truncation guard caught a real cut-off reply the
   AGENT then had to reason around) and `ea40ba9` (schema conformance in the grader).
