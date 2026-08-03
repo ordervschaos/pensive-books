@@ -148,6 +148,21 @@ The one real limit is a **capability boundary, not a scope boundary**: the agent
 
 Prose rendering, structural expansion, and the judges are **one-shot calls**. Nothing accumulates, so nothing needs evicting. The entire discipline is assembly — reconstructing, in one prompt, enough of a book to write the next page of it without contradicting the previous three hundred.
 
+### One-shot is not context-free
+
+Worth separating, because the two get fused: *stateless* is a claim about accumulation, not about payload. A render inherits no conversation, but it is not handed nothing — and one of the things it's handed comes from the agent.
+
+Almost everything in a render prompt is **re-derived from the tree at call time**: both sides read the same store, so no handoff is needed. But the agent's turn contains something the store doesn't have — what the author just said, and what the agent found by reading and grepping. That crosses the boundary through exactly one typed channel, the **editor's brief** (`focus` · `mustHonor[]` · `avoid[]`), described to the agent as: *the pipeline already has the voice, the mandate, and a digest of every prior page — your job is to add what it can't compute.*
+
+Four properties make it a channel rather than a leak:
+
+- **Serialized, not shared.** It's stored on the proposal, so it survives the author's review gate and a process hop — the agent's turn is over and the render runs in the browser.
+- **Additive, never substitutive.** It's injected *on top of* the computed context, and ranked explicitly below the mandate and locked facts. The agent buys salience, not authority.
+- **Bounded at the trust boundary.** Trimmed, focus capped, lists sliced — the agent is an untrusted producer of context.
+- **Not prose-only.** A sketch or a beat-sheet expansion is steerable the same way.
+
+The cost is honest: the author's message reaches the render *only* as whatever the agent distilled. That's a lossy compression channel with a model in the middle, and nothing downstream can detect an under-curated brief — which is why the brief is shown in the proposal card before Apply.
+
 ### Scope by what the plan names
 
 The single biggest move: a render target gets a **scoped bible**, not the whole book.

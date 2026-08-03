@@ -18,6 +18,48 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-03 — Doc fix: "one-shot ≠ context-free" in the context-engineering essay `[chore]`
+- **What:** Reader question — does any context actually pass from the agent to a render, or are
+  the generators genuinely context-free? Answer: the `RenderBrief` (focus/mustHonor/avoid) is the
+  one message-passed channel across an otherwise blackboard architecture. The essay listed it in
+  the prompt stack but never explained it as a cross-boundary handoff, so it read as "no context."
+  Added a section to both hand-mirrored twins covering the channel's four properties (serialized
+  past the Apply gate, additive-not-substitutive, sanitized trust boundary, target-agnostic) and
+  its honest cost: the author's raw ask reaches the render only as the agent's distillation —
+  a lossy compression channel no downstream check can audit.
+- **Files/commits:** `docs/dna-context-engineering.md` (§2 intro), `apps/web/src/pages/docs/content/context-engineering.mdx` (new "One-shot is not context-free"); `doc_1785773556000.md`. Uncommitted.
+- **PM impact:** none — doc clarification, no behaviour change.
+
+## 2026-08-03 — Would planning fix the agent's gather-forever loop? `[wip]`
+- **What:** Design analysis, no code. Diagnosed the compaction/force-commit pair as symptoms of a
+  missing *backing store* — the transcript is the agent's only working memory and also the one buffer
+  the harness must prune, so findings have nowhere durable to live. Recommendation: (1) **fold-on-read** —
+  make each read tool require a model-authored distillation, stored on the never-pruned `AgentStep`
+  journal and rendered into `<book_state>` (cache-neutral, since that block already rides after the
+  cache breakpoints); same prefix-fold move already used by `node.authoring.prose_digest`. (2) A
+  harness-owned **worklist** for lint sweeps, where the hit list is already enumerable — makes the bad
+  state unreachable rather than interrupted. (3) Keep `FORCE_COMMIT_AFTER_READS` as the watchdog.
+- **Files/commits:** analysis only — `doc_1785773301000.md` (gitignored). Read, not changed:
+  `supabase/functions/book-agent/transcript.ts`, `advance.ts:428`, `shared.ts:11`.
+- **PM impact:** none promoted. Two things for the author to rule on: whether fold-on-read gets a Now
+  slot, and whether Now-1's evidence bar gains "same node never read twice in one run" + "`trailingReadRun`
+  never reaches 15" alongside the existing read-round-trip count. Proposed, not applied.
+
+## 2026-08-03 — Explicit agent "focus": design note, not yet ratified `[wip]`
+- **What:** Author asked whether the agent should have an explicit, user-settable focus (stage / task /
+  scene) driving context, tools, and ambient info — and how much of that is fencing vs anchoring.
+  Key finding: **the mode already exists** — derived by `dna-journey` stages, already branching agent
+  behaviour via the `discovering` / `inInterview` / three-state-objective predicates in `context.ts`,
+  and `threadToolsFor()` already takes no args (seam pre-cut). So the proposal is *promote an implicit
+  mode to an explicit one*, not build a new system. Verdict: ~80% anchoring, 20% affordance narrowing,
+  0% of the deleted scope-fence — provided visibility + write axes are written down as invariants.
+  Proposed 3 slices (legibility → ambient lens → tool menu) and the reachability test that decides
+  each case. Also shipped earlier in the session: the `/docs/context-engineering` store page.
+- **Files/commits:** `doc_1785772959000.md` (new, uncommitted); docs page + repo companion in `3e2f82e`.
+- **PM impact:** none yet — proposal awaiting the author's ratification (AI proposes, author owns). If
+  ratified, it becomes a ROADMAP candidate plus one DECISIONS line on the anchor/fence invariant.
+
+
 ## 2026-08-03 — `/docs/the-agent` rebuilt as a progressive "card house" `[chore]`
 - **What:** Rewrote the author-facing agent doc so the reader's mental model accretes one concept at
   a time — Card 0 (`You ⇄ Agent ⇄ DNA tree`), then 9 cards each opened by a problem the prior model

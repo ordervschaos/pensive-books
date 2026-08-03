@@ -244,6 +244,25 @@ physically can't drive it. So it *requests* a render (`propose_prose_render`); t
 One-shot calls. Nothing accumulates, so nothing needs evicting — the entire discipline is
 *assembly*.
 
+**One-shot ≠ context-free.** Stateless is a claim about accumulation, not payload. Almost every
+block below is re-derived from `book_nodes` at call time — blackboard, not handoff. The exception is
+the **editor's brief** (`RenderBrief { focus, mustHonor[], avoid[] }`), the one channel carrying the
+agent's chat-only knowledge (the author's ask this turn + what the agent retrieved via
+`read_node`/`search_nodes`) across the boundary:
+
+- authored by the agent via `propose_prose_render` / `propose_expansion` (`book-agent/tools.ts:95`);
+- **serialized** onto the proposal (`agentThread.ts:59`), so it survives the Apply gate and the hop
+  to the browser — the agent's turn is over by the time the render runs;
+- **additive, never substitutive** — `dna-expand/index.ts:618` injects it *on top of* the computed
+  context and ranks it below MANDATE and LOCKED;
+- **sanitized at the trust boundary** — `sanitizeBrief` trims, caps `focus` at 400 chars, slices
+  lists to 12;
+- **any target may carry one** — a sketch or beat-sheet expansion is steerable the same way.
+
+Known cost: the author's message reaches the render *only* as the agent's distillation. A lossy
+compression channel with a model in the middle, undetectable downstream when under-curated — hence
+the brief being visible in `ProposalCard` before Apply.
+
 ### 2.1 Prose render (`dna-expand`, target `prose`)
 
 The context array (`index.ts:643`), in order:
