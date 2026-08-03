@@ -18,9 +18,19 @@ export function harnessLlmAvailable(): boolean {
   return !!fnEnv.DEEPSEEK_API_KEY;
 }
 
-export interface LlmOpts { system: string; user: string; maxTokens?: number; model?: string }
+export interface LlmOpts {
+  system: string; user: string; maxTokens?: number; model?: string;
+  /**
+   * Bounds how much the model thinks BEFORE answering. The pinned tier is a reasoning model and reasoning
+   * counts inside max_tokens on DeepSeek's own API, so an unbounded thinker can spend the entire allowance
+   * and return empty content. Raising max_tokens chases that; bounding the reasoning fixes it — and it is
+   * cheaper and faster. "low" is right for the harness: both callers do a short, well-specified judgement,
+   * not open research.
+   */
+  reasoningEffort?: "low" | "medium" | "high";
+}
 
-export async function harnessLlm({ system, user, maxTokens = 400, model = MODEL }: LlmOpts): Promise<string> {
+export async function harnessLlm({ system, user, maxTokens = 400, model = MODEL, reasoningEffort = "low" }: LlmOpts): Promise<string> {
   const key = fnEnv.DEEPSEEK_API_KEY;
   if (!key) throw new Error("DEEPSEEK_API_KEY not in supabase/functions/.env — needed for the LLM author");
   let lastErr = "";
@@ -34,6 +44,7 @@ export async function harnessLlm({ system, user, maxTokens = 400, model = MODEL 
         // host allows, so it contributes as little variance as possible on top of the agent's own.
         temperature: 0,
         max_tokens: maxTokens,
+        reasoning_effort: reasoningEffort,
         messages: [{ role: "system", content: system }, { role: "user", content: user }],
       }),
       signal: AbortSignal.timeout(90_000),
@@ -51,7 +62,14 @@ export async function harnessLlm({ system, user, maxTokens = 400, model = MODEL 
         }
         return text.trim();
       }
-      lastErr = `empty completion: ${JSON.stringify(data).slice(0, 200)}`;
+      // An empty `content` alongside a non-empty `reasoning_content` is the signature of the reasoning
+      // budget eating the whole allowance: on DeepSeek's own API, reasoning counts INSIDE max_tokens. The
+      // raw payload makes this look like "the model returned nothing", which sends you debugging the
+      // prompt instead of the budget.
+      const reasoned = String(choice?.message?.reasoning_content ?? "").length;
+      lastErr = reasoned
+        ? `empty content but ${reasoned} chars of reasoning — max_tokens=${maxTokens} was consumed by reasoning (it counts inside max_tokens on this host). Raise it.`
+        : `empty completion: ${JSON.stringify(data).slice(0, 200)}`;
     } else if (res) {
       lastErr = `${res.status} ${(await res.text()).slice(0, 200)}`;
     }
