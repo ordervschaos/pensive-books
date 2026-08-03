@@ -18,6 +18,20 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-03 — converge-ab2: 5 of 6 runs lost; no A/B verdict `[wip]`
+- **Result: a write-off.** 4.3 hours, 6 jobs, **1 surviving run** — and it was the `no_converge` arm, so
+  the production arm finished with **n=0**. There is no comparison, not even a weak one. Every loss was a
+  connect timeout, i.e. environmental, not harness logic.
+- **One real signal did come out of it:** the surviving run scored **premise 5.00** (vs 2.29/2.71 on
+  2026-08-02). That corroborates the `movements` regression being fixed — `read-premise` can read the
+  field again. Also `checks 1.00`, `logline 5.00`, `gate` reached.
+- **Fix (committed):** 3 retries with 1s/2s backoff spans ~3 seconds of outage, which is not what flaky
+  connectivity looks like. All three network paths now retry **5×** with exponential backoff (~30s).
+- **Estimate corrected:** the suite advertised ~15 min/run; measured reality is **~45 min**, which made a
+  4-hour sweep look like a 90-minute one. Now states 45 and reports hours.
+- **PM impact:** none — still no A/B verdict. The harness is not the blocker; connectivity is. Rerun
+  needs a stable window, and at ~45 min/run a 3×2 sweep is ~4.5h.
+
 ## 2026-08-03 — The eval entry scripts were never typechecked `[ship]` + degraded A/B attempt `[wip]`
 - **What (`71c64ac`):** `scripts/harness/tsconfig.json` had no `include`, so tsc's default (`**/*` relative
   to the tsconfig's OWN directory) covered `scripts/harness/*.ts` and nothing else. Every driver, grader,
