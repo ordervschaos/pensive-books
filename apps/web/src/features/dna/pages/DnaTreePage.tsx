@@ -26,6 +26,7 @@ import { useTheme } from "@/components/theme/ThemeProvider";
 import { AppearanceMenu } from "@/components/navigation/AppearanceMenu";
 import { DecomposeButton } from "@/features/dna/components/tree/DecomposeButton";
 import { ScaffoldButton } from "@/features/dna/components/tree/ScaffoldButton";
+import { AscendButton } from "@/features/dna/components/tree/AscendButton";
 import { nodeTitle } from "@/features/dna/components/tree/nodeDisplay";
 import { buildSearchPattern, SearchPanel, searchDna } from "@/features/dna/components/tree/search";
 import { indexProposal } from "@/features/dna/components/tree/proposalOverlay";
@@ -943,6 +944,7 @@ export default function DnaTreePage() {
             <>
               <DecomposeButton bookId={bookId} nodes={nodes} />
               <ScaffoldButton bookId={bookId} nodes={nodes} />
+              <AscendButton bookId={bookId} nodes={nodes} />
               <button onClick={expandAll} style={smallBtnStyle}>expand all</button>
               <button onClick={collapseAll} style={smallBtnStyle}>collapse all</button>
               <QuickToggle active={timelineOpen} accent={T.accent} icon="▦" label="Timeline" onClick={() => setTimelineOpen((v) => !v)} />

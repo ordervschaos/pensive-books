@@ -20,6 +20,8 @@ import { craftBody, PREMISE_JUDGE_CRITERIA } from "../_shared/craft-kb.ts";
 import { canonicalizeKey, entityRegistryBlock, fillMap, hasOwnContent, ledgerAt, ledgerText, liveNodes, structureForBook, validate, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneLedger } from "../_shared/novel-dna.ts";
 import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
 import { actBlock as renderArc, hungerBlock, castBlock as renderCast, cName, gamesBlock as renderGames, gName, locationBlock as renderLocations, locName, palette, precondBlock as renderPreconds, statePreconditions, tentpoleBlock as renderTentpoles, threadBlock as renderThreads, tName, tpGuidance, tpName, voiceBlock as renderVoice, wfName, worldRulesBlock as renderWorldRules } from "../_shared/dna-context.ts";
+import { buildAscentAsk, ascentPrompt } from "../_shared/dna-ascend.ts";
+import { type TopRead } from "../_shared/dna-decompose-core.ts";
 import { isChainCall } from "../_shared/self-chain.ts";
 import { serviceClient, userClient as createUserClient } from "../_shared/task.ts";
 
@@ -665,6 +667,34 @@ Deno.serve(async (req: Request) => {
       hungerBlock(nodes, fillMap(nodes)),
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");
+
+    // ── ASCENT (P3, doc_1785673597000.md §4c) — the INDUCTIVE direction ─────────────────────────────────
+    // Every other target here DEDUCES (a parent constrains its children, top-down from the brief). This one
+    // runs the other way: the author wrote a character, a world, a "what if" — infer the rungs above it.
+    // That is what makes the six doors real; without it a dense tree lets you START anywhere but never
+    // carries what you started with upward into a story.
+    // The ask, the prompt and the write-back are all PURE and shared (_shared/dna-ascend.ts +
+    // dna-decompose-core's topOps): this branch only supplies the model call, so the whole decision of what
+    // to ask for and how to apply it stays unit-tested off the network.
+    if (target === "ascend") {
+      const ask = buildAscentAsk(nodes as unknown as DnaNode[]);
+      if (!ask) return json({ error: "Nothing to infer — every rung above your written material is already filled." }, 400);
+      const system = "You are a story editor with a rare skill: reading unfinished material and naming the story it is already trying to be. You infer UPWARD from what exists. You never overwrite the author's work and you never invent a premise the evidence does not support.";
+      const data = await callLLM({ model, max_tokens: 3000, thinking: { type: "adaptive" }, output_config: { effort: "medium" },
+        system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: `${briefContext(brief, { scope: "full", success: true, vision: true, none: "(no brief)", empty: "(empty)" })}\n\n${ascentPrompt(ask)}` }] }, meta, { signal: req.signal });
+      let ascent: TopRead;
+      try { ascent = JSON.parse(extractJsonBlock(textFromLLM(data))) as TopRead; }
+      catch { return json({ error: "The inference came back unparseable — try again." }, 502); }
+      // Only ever hand back rungs that were actually ASKED for: a model that volunteers a pillar we didn't
+      // request must not silently overwrite one the author already wrote.
+      const wanted = new Set(ask.targets.map((t) => t.kind));
+      const scoped: TopRead = {};
+      if (wanted.has("seed") && ascent.seed) scoped.seed = ascent.seed;
+      if (wanted.has("premise") && ascent.premise) scoped.premise = ascent.premise;
+      if (wanted.has("pillar") && ascent.pillar) scoped.pillar = ascent.pillar;
+      return json({ ascent: scoped, targets: ask.targets, callId: meta.loggedCallId ?? null });
+    }
 
     if (target === "logline") {
       // Seed → logline: forge the author's RAW idea (brief.idea) into a polished LOGLINE. A logline is NOT

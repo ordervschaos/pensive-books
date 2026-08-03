@@ -18,6 +18,36 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-03 — Empty-nodes P3: ascent — the tree infers upward, and the six doors open `[ship]`
+- **What:** The inductive direction. Every other generation path DEDUCES (a parent constrains its children,
+  top-down from the brief); `dna-decompose` was the only inductive pass and it was hard-wired to imported
+  prose, so it could only run chapters→beats→acts→premise. Generalized into `_shared/dna-ascend.ts`:
+  given what the author wrote ANYWHERE, infer the rungs above it.
+  **The key realization: the fill fold already encodes the six doors.** A `stub` — empty rung with written
+  material beneath — is exactly "a parent is owed here". Write a character (which hangs off the pillar) and
+  pillar + premise + seed all become stubs in one stroke. That IS the character door, with **no
+  door-detection code and nothing to ask the author**; whichever rung they filled first, the frontier
+  between written and empty is the work list. Tests are written as the four doors (character / world /
+  situation / voice) because they're the spec.
+  Pure by construction: `owedRungs` / `ascentEvidence` / `buildAscentAsk` / `ascentPrompt` decide what to ask,
+  `dna-decompose`'s existing `topOps` writes back — so ascent adds **no new write path**, which was the point
+  of generalizing that module instead of writing a parallel one. The edge branch only supplies the model call.
+- **Two things the tests caught, both kept visible rather than papered over:** (1) writing a beat also owes
+  its **act** — the chain is as long as it needs to be, not a fixed three; (2) `topOps` resolves a rung by
+  KIND, so it can only write the singletons — the ASK is therefore scoped to seed/premise/pillar, with acts
+  (plural, positional; needs spine segmentation like `actOps`) deferred as its own pass and asserted in a test.
+- **Guards:** the answer is scoped server-side to the rungs actually requested (a volunteered pillar can't
+  overwrite one the author wrote), and re-scoped client-side against a FRESH tree read after the call — an
+  induced answer must never clobber the ground truth it was inferred from. Evidence never inlines prose (a
+  scene contributes its plan) and is capped per kind, so one bloated registry can't crowd out the rest.
+- **Files/commits:** NEW `supabase/functions/_shared/dna-ascend.ts`, NEW `dnaAscend.test.ts` (18 tests, the
+  doors), NEW `components/tree/AscendButton.tsx`, `dna-expand/index.ts` (`target: "ascend"`), `dnaExpand.ts`
+  (`runAscent` + `ascentAsk` re-export so UI doesn't reach across the deploy boundary), `DnaTreePage.tsx`.
+- **Verified:** 1376 tests pass; `tsc` clean; `deno check` at baseline. **`dna-expand` deployed.**
+- **PM impact:** P0–P3 done — the dense tree now both accepts a start anywhere and carries it upward. **Not
+  yet exercised on a live book** (the button appears only once a stub exists; owner should write a character
+  into a scaffolded book and press ↑ INFER). Remaining: P4 entry buttons, and act-spine ascent.
+
 ## 2026-08-03 — Pairwise judge actually runs; three faults found by running it `[ship]`
 - **What:** `5b563b7`. The pairwise comparator had been written, typechecked, and never executed. Running
   it once found three faults — consistent with the day's pattern that untested harness code is where the
@@ -45,23 +75,47 @@
 - **PM impact:** none — the A/B still needs a balanced multi-trial rerun (and the movements fix, for the
   `read-premise` family specifically).
 
-## 2026-08-03 — "why no digest today?" traced to the unscheduled pg_cron tick `[chore]`
-- **What:** Diagnosis only, no code change. Owner didn't receive an issue; cause is the one-time
-  `digest-tick` pg_cron job that was never created (already a known open row in STATE). Verified the
-  rest of the chain is green: DNS now resolves `76.76.21.21`, `POST /api/cron/tick` returns 401 on a
-  bad secret (route deployed + reachable), `CRON_SECRET` present in Vercel prod, no `crons` in
-  `vercel.json`. Could NOT verify `cron.job` itself — no DB password locally, and the pinned Vercel
-  CLI 54.1.0 pulls encrypted values as `""` so the secret can't be read from here either. Handed the
-  owner ready-to-run SQL + the `net._http_response` vs `cron.job_run_details` distinction (pg_net is
-  fire-and-forget, so the job logs `succeeded` even on a 500).
-- **Files/commits:** no source changes. `doc_1785733674000.md`,
-  `learning_1785733674000_digest-cron.md`. Read-only over `apps/digest/{README,SETUP}.md` +
-  `app/api/cron/tick/route.ts`. (The uncommitted DNA tree/skeleton/dna-context working set is
-  separate in-flight work, untouched by this task.)
-- **PM impact:** STATE §Morning Digest — corrected the stale DNS note on the Deployment row and
-  added the 2026-08-03 verification + fix recipe to the `digest-tick` row. No re-ranking; proposed
-  (not applied) a dead-man's-switch follow-up — alert when the newest `digest_issues` row is >26h
-  old, since a missing scheduler is silent by construction.
+## 2026-08-03 — the digest now delivers on its own: cron + timeout + a lease `[ship]`
+- **What (final):** All three defects closed and verified end-to-end. (1) `digest-tick` scheduled
+  `*/15`. (2) `net.http_post`'s default `timeout_milliseconds` **5000** was killing ticks against a
+  cold serverless function — both failed ticks read `error_msg "Timeout was reached"` while
+  `cron.job_run_details` said `succeeded`; raised to 300000, next tick 200. (3) Claim-as-lock without
+  a lease → migration `20260803180000` (watchdog + retry predicate + reclaim), exercised live on a
+  fake 2020-01-01 date then cleaned up. **Live delivery proven**: tick temporarily at `* * * * *`,
+  `deliver_at` moved into the past, issue 23 claimed→built→Mailgun-2xx in ~30s on attempt 1
+  (`item_count 3`, `delivered_at 06:05:11Z`). Restored `*/15`; `deliver_at` now 03:00 IST per owner;
+  `due_digests()` → 0 rows, no double-send. Remaining: dead-man's switch (unbuilt), fix (c) decouple
+  tick from build (deferred, now survivable because the lease hands the day back).
+- **PM impact (final):** STATE §Morning Digest — `digest-tick` row flipped to **shipped**, plus a new
+  row for the watchdog. Detail in `doc_1785733674000.md` (3 addenda).
+
+<details><summary>Earlier in-progress entry for this task</summary>
+
+## 2026-08-03 — digest tick scheduled; first tick failed; found a latent day-losing bug `[wip]`
+- **What:** Owner didn't receive an issue. Cause was the one-time `digest-tick` pg_cron job that was
+  never created (a known open STATE row). Everything else checked out — DNS resolves, route
+  reachable, no `crons` in `vercel.json`. Rotated `CRON_SECRET` in Vercel prod + `vercel redeploy`
+  (env vars only apply to NEW deployments — same trap that killed the first forwarded newsletter),
+  verified `200 {"due":0}` on the new secret / `401` on a wrong one, owner ran the SQL →
+  `jobid 3, */15, active`. **First tick then failed**: one `net._http_response` row, `status_code`
+  and `content` both NULL = no HTTP reply ever came back, while the same endpoint answers in ~1–1.8s
+  from a laptop. Hypothesis: `net.http_post`'s default `timeout_milliseconds` is **5000** and 05:30
+  hit a cold start; awaiting `timed_out`/`error_msg`. **Bigger find while checking:** the tick awaits
+  `buildIssue` synchronously (`maxDuration 300`, LLM calls) but the claim is taken up-front and
+  `due_digests` excludes a date that has ANY issue row at ANY status — so one interrupted build
+  strands a `building` row and **silently loses that day forever**, with no watchdog (the DNA side
+  has `revive_stalled_chains`; this has nothing). Claim-as-lock without a lease. Fixes ranked in the
+  doc: (a) raise the cron timeout, (b) stale-issue watchdog, (c) decouple tick from build.
+- **Files/commits:** no source changes. `doc_1785733674000.md` (+ addendum),
+  `learning_1785733674000_digest-cron.md`; `apps/digest/SETUP.md` checklist corrected. Read-only over
+  `app/api/cron/tick/route.ts`, `lib/digest/build.ts`, `20260801120000_digest_schema.sql`. (The
+  uncommitted DNA tree/skeleton/dna-context working set is separate in-flight work, untouched.)
+- **PM impact:** STATE §Morning Digest — Deployment row's stale DNS note corrected; `digest-tick` row
+  now reads `scheduled 2026-08-03 (first tick unverified)`. Awaiting owner's pick among (a)/(b)/(c)
+  before any code lands; the dead-man's switch on `digest_issues` age is re-proposed as the
+  highest-value item, since every failure mode here collapses into that one observable.
+
+</details>
 
 ## 2026-08-03 — Schema conformance becomes a grader family `[ship]`
 - **What:** `279b8b3` (author token cap 400→900, after the truncation guard caught a real cut-off reply the

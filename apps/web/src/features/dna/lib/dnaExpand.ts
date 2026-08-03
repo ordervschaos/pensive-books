@@ -3,8 +3,10 @@
 // accepted); a scene gets its prose. The author then edits / regenerates / locks. See novel-dna-spec.md §6.
 import { supabase, SUPABASE_ANON_KEY } from "@/integrations/supabase/client";
 import { functionUrl, invokeFn } from "@/lib/localFn";
+import { buildAscentAsk } from "../../../../../../supabase/functions/_shared/dna-ascend.ts";
+import { topOps, type TopRead } from "../../../../../../supabase/functions/_shared/dna-decompose-core.ts";
 import { deleteNode, loadTree, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
-import { byId, deepMergeContent, emptyNode, gameTwins, newId, PARENT_KIND, pillarOf, stampInput, stampProse, stampSketch, type ActContent, type BeatContent, type DnaNode, type GameContent, type MeterContent, type NodeContent, type NodeKind, type RenderBrief, type SceneContent, type SceneSketch, type TentpoleContent, type ThreadContent, type ThreadRef, type VoiceContent } from "@/features/dna/lib/novelDna";
+import { byId, deepMergeContent, editContent, emptyNode, gameTwins, newId, PARENT_KIND, pillarOf, stampInput, stampProse, stampSketch, type ActContent, type BeatContent, type DnaNode, type GameContent, type MeterContent, type NodeContent, type NodeKind, type RenderBrief, type SceneContent, type SceneSketch, type TentpoleContent, type ThreadContent, type ThreadRef, type VoiceContent } from "@/features/dna/lib/novelDna";
 import { stageGeneratedProposal, type AgentProposal } from "@/features/dna/lib/agentThread";
 import type { NewSubtree, NodeOp } from "@/features/dna/lib/dnaChat";
 
@@ -610,4 +612,42 @@ export async function proposeGeneration(bookId: number, node: DnaNode, target: s
   const { ops, summary } = await generateExpansionOps(bookId, node, target);
   const proposal: AgentProposal = { id: newId(), layer: "dna", summary, ops };
   await stageGeneratedProposal(bookId, proposal);
+}
+
+// ── ASCENT (P3, doc_1785673597000.md §4c) ─────────────────────────────────────────────────────────────────
+// The inductive direction: the author wrote a character / a world / a "what if", and the rungs above it are
+// now owed. Everything decisive is pure and shared — `buildAscentAsk` picks the targets (a `stub` in the
+// fill fold IS "a parent is owed", so the door is detected rather than asked), and `topOps` writes back
+// through dna-decompose's existing vocabulary. This function is only the round trip.
+/** What ascent would ask for, given the current tree — null when nothing is owed. Re-exported here so UI
+ *  components import from the feature rather than reaching across the deploy boundary into the edge share. */
+export function ascentAsk(nodes: DnaNode[]) { return buildAscentAsk(nodes); }
+
+export async function runAscent(bookId: number, signal?: AbortSignal): Promise<{ applied: number; callId: number | null }> {
+  const nodes = await loadTree(bookId);
+  const ask = buildAscentAsk(nodes);
+  if (!ask) return { applied: 0, callId: null };
+  // Any node id serves as the call's anchor (the edge branch re-derives the ask server-side from the live
+  // tree); the highest owed rung is the honest one to attribute it to.
+  const res = await invokeWithRetry({ bookId, nodeId: ask.targets[0].id, target: "ascend" }, signal);
+  const ascent = (res as { ascent?: TopRead }).ascent;
+  if (!ascent) return { applied: 0, callId: res.callId ?? null };
+  // Re-read before applying: the inference took a while, and the author may have written one of these rungs
+  // by hand in the meantime. topOps only edits rungs that exist, and we drop any the author has since filled
+  // — an induced answer must never clobber the ground truth it was inferred FROM.
+  const fresh = await loadTree(bookId);
+  const stillOwed = new Set(buildAscentAsk(fresh)?.targets.map((t) => t.kind) ?? []);
+  const scoped: TopRead = {};
+  if (stillOwed.has("seed") && ascent.seed) scoped.seed = ascent.seed;
+  if (stillOwed.has("premise") && ascent.premise) scoped.premise = ascent.premise;
+  if (stillOwed.has("pillar") && ascent.pillar) scoped.pillar = ascent.pillar;
+  const ops = topOps(fresh, scoped);
+  const byId = new Map(fresh.map((n) => [n.id, n]));
+  const writes = ops.flatMap((op) => {
+    if (op.op !== "edit") return []; // topOps only ever emits edits for these rungs; narrow for the compiler
+    const node = byId.get(op.id);
+    return node ? [editContent(node, op.content)] : [];
+  });
+  if (writes.length) await saveNodes(writes);
+  return { applied: writes.length, callId: res.callId ?? null };
 }
