@@ -154,7 +154,12 @@
   session's `apps/digest/SETUP.md` + `pm/STATE.md` deliberately left out). Deployed **dna-expand**,
   **book-agent**, and **dna-decompose** — the third because `_shared/novel-dna.ts` is bundled per-function,
   so the waived-slots lint change would have gone stale there. No other fn imports that twin (verified).
-- **PM impact:** P0–P2 of the redesign are now complete and coherent: the fold, the read-path routing, the
+- **PM impact (promoted 2026-08-03):** STATE.md "DNA tree editor" row updated — the 2026-07-12 ghost-preview
+  line is now half-superseded (preview before scaffolding, real rows after), so the dense-tree ship is
+  recorded there rather than as a new board row. **ROADMAP unchanged on purpose:** this frees no Now slot
+  (Now #1 live full-book build, Now #2 monetization rails both stand) — re-ranking is the owner's call, and
+  P3 ascent is a candidate for Next, not a self-promotion.
+- **Original P0–P2 impact note:** P0–P2 of the redesign are now complete and coherent: the fold, the read-path routing, the
   hunger channel, and the materializer that finally makes them do something. **Still not deployed** — the
   edge twins changed (`waived_slots` lint), so a deploy is now genuinely meaningful rather than a no-op;
   worth doing once the owner has exercised the scaffold on a live book. Remaining: P3 (generalize
