@@ -179,7 +179,7 @@ for (const taskId of taskIds) for (let t = 1; t <= TRIALS; t++) for (const varia
 log(`${taskIds.length} fixture(s) × ${TRIALS} trial(s) = ${jobs.length} runs · author=${AUTHOR} · concurrency=${CONCURRENCY}`);
 // A premise run is ~15 min with the LLM author (it adds a model round-trip per conversational turn), so a
 // full 3×3 sweep is a couple of hours sequentially. Say so up front rather than letting it be a surprise.
-log(`~15 min per run → rough estimate ${Math.round((jobs.length * 15) / CONCURRENCY)} min`);
+log(`~45 min per run (measured, not the optimistic 15) → rough estimate ${Math.round((jobs.length * 45) / CONCURRENCY / 60 * 10) / 10} h`);
 const started = Date.now();
 const results: Trial[] = [];
 let cursor = 0;

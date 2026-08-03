@@ -34,7 +34,7 @@ export async function harnessLlm({ system, user, maxTokens = 400, model = MODEL,
   const key = fnEnv.DEEPSEEK_API_KEY;
   if (!key) throw new Error("DEEPSEEK_API_KEY not in supabase/functions/.env — needed for the LLM author");
   let lastErr = "";
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 5; attempt++) {
     const res = await fetch(ENDPOINT, {
       method: "POST",
       headers: { "content-type": "application/json", Authorization: `Bearer ${key}` },
@@ -73,7 +73,7 @@ export async function harnessLlm({ system, user, maxTokens = 400, model = MODEL,
     } else if (res) {
       lastErr = `${res.status} ${(await res.text()).slice(0, 200)}`;
     }
-    if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1500));
+    if (attempt < 5) await new Promise((r) => setTimeout(r, 2 ** (attempt - 1) * 1500));
   }
-  throw new Error(`harnessLlm failed after 3 attempts: ${lastErr}`);
+  throw new Error(`harnessLlm failed after 5 attempts: ${lastErr}`);
 }

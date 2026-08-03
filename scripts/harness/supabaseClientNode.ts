@@ -44,17 +44,17 @@ export const supabase = createClient(SUPABASE_URL, ANON_KEY, {
       // node id (safe), but a thread message could double. Retrying is still the better trade against
       // losing the run, so mutating retries are logged loudly enough to spot a duplicate afterwards.
       let lastErr: unknown;
-      for (let attempt = 1; attempt <= 3; attempt++) {
+      for (let attempt = 1; attempt <= 5; attempt++) {
         try {
           return await fetch(input, { ...init, headers });
         } catch (e) {
           lastErr = e;
-          if (attempt === 3) break;
+          if (attempt === 5) break;
           const url = typeof input === "string" ? input : (input as Request).url ?? String(input);
           if (method !== "GET" && method !== "HEAD") {
             console.warn(`[harness] retrying ${method} after transport error (may duplicate): ${url.slice(0, 120)}`);
           }
-          await new Promise((r) => setTimeout(r, attempt * 1000));
+          await new Promise((r) => setTimeout(r, 2 ** (attempt - 1) * 1000));
         }
       }
       throw lastErr;

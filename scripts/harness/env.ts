@@ -51,7 +51,7 @@ const svc = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` };
  */
 export async function rest<T = unknown>(path: string, opts: RequestInit = {}): Promise<T> {
   let lastErr: unknown;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 5; attempt++) {
     try {
       const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
         ...opts,
@@ -64,7 +64,7 @@ export async function rest<T = unknown>(path: string, opts: RequestInit = {}): P
       // Only a transport failure is worth retrying; an HTTP error is the server's considered answer.
       if (e instanceof Error && e.message.startsWith(`REST ${path}:`)) throw e;
       lastErr = e;
-      if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
+      if (attempt < 5) await new Promise((r) => setTimeout(r, 2 ** (attempt - 1) * 1000));
     }
   }
   throw lastErr;
