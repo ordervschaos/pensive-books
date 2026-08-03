@@ -18,6 +18,32 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-03 — The eval entry scripts were never typechecked `[ship]` + degraded A/B attempt `[wip]`
+- **What (`71c64ac`):** `scripts/harness/tsconfig.json` had no `include`, so tsc's default (`**/*` relative
+  to the tsconfig's OWN directory) covered `scripts/harness/*.ts` and nothing else. Every driver, grader,
+  suite and pairwise file sat outside it. **Every "typecheck ok" reported during this work was checking
+  less than it appeared to** — that is how a duplicate top-level `const ARMS` reached runtime past a green
+  check and failed only in esbuild.
+- **Three real bugs it had been hiding:**
+  · `agent-build-run.mts` declared **`author` twice** — once as the IMPLEMENTATION (string), once as the
+    metrics OBJECT. Last key wins, so which author produced a run was silently absent from every result
+    file; an A/B has to record that. Renamed to `authorKind`.
+  · `eval-suite.mts` declared `variantVerified` twice (same value — redundant, but the same shape of bug).
+  · `eval-premise.mts` computed reads-per-turn against an untyped `turns` off the thread row.
+- **Also:** a grade failure is no longer fatal to a run. A driver run costs ~10 min; the grade is seconds of
+  reads. Discarding the former because the latter hit a transient connect timeout is the most expensive
+  possible response — and it happened. Grading retries once, then records `gradeFailure` separately from
+  `failure`, keeping the run's trajectory/author metrics and printing the exact re-grade command.
+- **A/B attempt `converge-ab2` (3 trials × 2 arms) is DEGRADED, not a result.** 6 jobs → 4 books →
+  1 confirmed `premise-complete`; 6 transport failures in the log. Cause is environmental network
+  instability, not harness logic. Also: real runs take ~45 min, not the ~15 the suite estimates — the
+  estimate needs correcting.
+- **Two mistakes I made reading the run, corrected in-flight:** claimed the final child was hung for 5.5
+  hours (misread `ELAPSED 05:16` as hours, and compared UTC log stamps against local `date` — it was 5
+  minutes old and healthy); and earlier claimed the movements regression made a pairwise verdict moot,
+  when pairwise never reads `movements` (only `read-premise` does).
+- **PM impact:** none — no A/B verdict. Rerun when the network is stable.
+
 ## 2026-08-03 — Empty-nodes P3: ascent — the tree infers upward, and the six doors open `[ship]`
 - **What:** The inductive direction. Every other generation path DEDUCES (a parent constrains its children,
   top-down from the brief); `dna-decompose` was the only inductive pass and it was hard-wired to imported
