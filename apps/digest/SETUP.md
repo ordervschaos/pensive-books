@@ -137,7 +137,8 @@ sends nothing and marks nothing seen, so this is free to repeat.
       during the broken window is gone and must be re-sent. Verified end-to-end 2026-08-01 by POSTing a
       locally-signed synthetic message: `{"ok":true,"digest_id":1}`, row inserted, adapter picked it up,
       test row deleted.
-- [ ] **`digest.pensive.me` DNS.** The domain is attached to the project but unconfigured — `pensive.me`
+- [x] **`digest.pensive.me` DNS** — done; verified resolving `76.76.21.21` on 2026-08-03. (Original note:)
+      The domain is attached to the project but unconfigured — `pensive.me`
       runs on Squarespace/NS1 nameservers, so add this at your DNS host:
       `A  digest  76.76.21.21`. Vercel verifies automatically and emails you.
 - [ ] **Preview env vars were NOT set** — the pinned Vercel CLI (54.1.0) loops on `git_branch_required` even
@@ -147,8 +148,16 @@ sends nothing and marks nothing seen, so this is free to repeat.
       code. Nothing breaks in the meantime: the new column is nullable-with-default and the new table is
       unreferenced by the deployed build. **The deploy above was a CLI upload, not a git-connected build** —
       connect the repo in the dashboard if you want push-to-deploy.
-- [ ] The pg_cron `digest-tick` job (README §Scheduling) is **still not scheduled** — unchanged by this work,
-      but it's the reason nothing arrives at 6am on its own yet.
+- [x] The pg_cron `digest-tick` job (README §Scheduling) is **scheduled** as of 2026-08-03 —
+      `jobid 3`, `*/15 * * * *`, active. It was the reason nothing arrived at 6am. Getting there also
+      required rotating `CRON_SECRET` and **redeploying** (`vercel redeploy`) so the running build
+      carried the new value; the endpoint then answered `200 {"due":0,...}` on the new secret and `401`
+      on a wrong one. Note `vercel env pull` will NOT give the secret back (CLI 54.1.0 returns encrypted
+      values as `""`) — rotate again rather than hunt for it.
+- [ ] **Confirm a real tick lands.** Scheduling is not delivery. `cron.job_run_details` says `succeeded`
+      when the request was merely *queued* (pg_net is fire-and-forget), so read `net._http_response`
+      for the app's actual `status_code` — a `401` there means Vault and `CRON_SECRET` have drifted.
+      A green tick with no email means nothing was **due**: check `select * from due_digests();`.
 
 ---
 

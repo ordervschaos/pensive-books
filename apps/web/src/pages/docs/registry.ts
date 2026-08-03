@@ -9,6 +9,7 @@ import HowItWorks from "./content/how-it-works.mdx";
 import TheAgent from "./content/the-agent.mdx";
 import AgentInternals from "./content/agent-internals.mdx";
 import AgentTreeDoc from "./content/agent-tree.mdx";
+import ContextEngineering from "./content/context-engineering.mdx";
 import type { ComponentType } from "react";
 
 export type Doc = {
@@ -37,7 +38,7 @@ export const DOCS: Doc[] = [
   {
     slug: "the-agent",
     title: "The AI Editor Agent",
-    summary: "The one AI collaborator that proposes changes and never touches the manuscript without you.",
+    summary: "Built one card at a time: start at you ⇄ agent ⇄ tree, then add each concept as the fix for a problem the model before it can't solve.",
     category: "The method",
     content: TheAgent,
   },
@@ -54,6 +55,13 @@ export const DOCS: Doc[] = [
     summary: "The same architecture as a collapsible, self-similar Q&A tree — read to any depth for a coherent picture at that altitude.",
     category: "Under the hood",
     content: AgentTreeDoc,
+  },
+  {
+    slug: "context-engineering",
+    title: "Context Engineering — the Agent and Its Generators",
+    summary: "What goes in front of the model on every call, and why: digests, just-in-time hydration, compaction for the agent; scoping, folds, and grounding for the prose generators.",
+    category: "Under the hood",
+    content: ContextEngineering,
   },
 ];
 

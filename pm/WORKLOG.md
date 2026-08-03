@@ -18,6 +18,30 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-03 — `/docs/the-agent` rebuilt as a progressive "card house" `[chore]`
+- **What:** Rewrote the author-facing agent doc so the reader's mental model accretes one concept at
+  a time — Card 0 (`You ⇄ Agent ⇄ DNA tree`), then 9 cards each opened by a problem the prior model
+  can't solve (proposals → automated gate → digest+drill-down → intent hydration → brief-as-contract
+  → delegation → durable row → generate/verify → mechanical backstops). Every card closes with a
+  running "Your model now" line and is truth-complete at its own altitude, so stopping early leaves
+  a coarser but not wrong picture. Docs now read as an altitude ladder: the-agent (author) →
+  agent-internals (builder) → agent-tree (self-similar Q&A).
+- **Files/commits:** `apps/web/src/pages/docs/content/the-agent.mdx` (rewrite),
+  `apps/web/src/pages/docs/registry.ts` (summary). Uncommitted. Verified live on :8080 — 4 mermaid
+  diagrams render, no syntax errors.
+- **PM impact:** none — docs polish, no product surface changed.
+
+## 2026-08-03 — Context-engineering map for the DNA agent + its generators `[chore]`
+- **What:** Wrote the missing reference for *what goes into each AI call's window and why* — read off
+  the real code, not generic advice. Splits the agent (long-lived tool loop: cache-prefix discipline,
+  tree digest, hydration channels, conditional injection, compaction/force-commit) from the subagents
+  (one-shot assembly: scoped bible, disclosure budget, seam, hash-chained digest fold, prepare/stream
+  split, the agent's curated brief as a layer *on top of* the deterministic floor). Ends with eight
+  cross-cutting principles and a checklist for adding a new context block.
+- **Files/commits:** `docs/dna-context-engineering.md` (new, uncommitted).
+- **PM impact:** none — documentation of shipped behaviour; no scope, priority, or state change.
+
+
 ## 2026-08-03 — converge-ab2: 5 of 6 runs lost; no A/B verdict `[wip]`
 - **Result: a write-off.** 4.3 hours, 6 jobs, **1 surviving run** — and it was the `no_converge` arm, so
   the production arm finished with **n=0**. There is no comparison, not even a weak one. Every loss was a
