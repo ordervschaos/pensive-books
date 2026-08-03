@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { deleteNode, saveNode, saveNodes } from "@/features/dna/lib/bookNodes";
 import { backlinkIndex, beatsInOrder, byId, childrenOf, isEntityKind, newId, pillarOf, refsOf, scenesInOrder, type BookSettings, type DnaIssue, type DnaNode } from "@/features/dna/lib/novelDna";
 import { ensureSeed } from "@/features/dna/lib/dnaExpand";
-import { ghostBeatsForAct, ghostFromPremise, ghostFromSeed } from "@/features/dna/lib/dnaSkeleton";
+import { ghostBeatsForAct, ghostFromPremise, ghostFromSeed, waiveSlot } from "@/features/dna/lib/dnaSkeleton";
 import { KIND_LEVEL } from "@/features/dna/lib/dnaSchema";
 import type { Brief } from "@/lib/brief";
 import { AgentRail } from "@/features/dna/components/AgentRail";
@@ -25,6 +25,7 @@ import { PanelLeft } from "lucide-react";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { AppearanceMenu } from "@/components/navigation/AppearanceMenu";
 import { DecomposeButton } from "@/features/dna/components/tree/DecomposeButton";
+import { ScaffoldButton } from "@/features/dna/components/tree/ScaffoldButton";
 import { nodeTitle } from "@/features/dna/components/tree/nodeDisplay";
 import { buildSearchPattern, SearchPanel, searchDna } from "@/features/dna/components/tree/search";
 import { indexProposal } from "@/features/dna/components/tree/proposalOverlay";
@@ -412,8 +413,26 @@ export default function DnaTreePage() {
     const refWarn = inbound.length
       ? `\n\n⚠ ${inbound.length} node(s) reference this — they'll be left with a dangling link:\n${inbound.slice(0, 8).map((n) => `• ${n.kind}: ${nodeTitle(n) || n.id}`).join("\n")}${inbound.length > 8 ? `\n…and ${inbound.length - 8} more` : ""}`
       : "";
-    if (!window.confirm(`Delete ${node.kind} "${label}"${kids ? ` and its ${kids} child node(s)` : ""}?${refWarn}\n\nThis cannot be undone.`)) return;
-    void deleteNode(node.id).catch((e) => alert(`Delete failed: ${(e as Error).message}`));
+    // TOMBSTONE (owner decision 2026-08-02; doc_1785673597000.md §9.2). Deleting a materialized structure
+    // slot is an authorial STATEMENT — "this book has no inciting incident" — not an accident. Record it on
+    // the pillar so neither the linter nags for it again nor the seeder re-mints it. Say so in the prompt,
+    // because "delete" and "decline permanently" are different promises and the author should know which
+    // one they're making.
+    const declining = String(node.authoring?.scaffold?.slot ?? "").trim();
+    const declineNote = declining
+      ? `\n\nThis is a structure slot the book's template asked for. Deleting it records it as DELIBERATELY DECLINED: it won't be re-added, and it will stop being reported as missing.`
+      : "";
+    if (!window.confirm(`Delete ${node.kind} "${label}"${kids ? ` and its ${kids} child node(s)` : ""}?${refWarn}${declineNote}\n\nThis cannot be undone.`)) return;
+    void (async () => {
+      try {
+        if (declining) {
+          const pillar = waiveSlot(nodes, declining);
+          if (pillar) await saveNode(pillar); // record the waiver BEFORE the delete, so a failure here
+          // leaves the slot in place rather than silently deleting it and letting the seeder mint it back.
+        }
+        await deleteNode(node.id);
+      } catch (e) { alert(`Delete failed: ${(e as Error).message}`); }
+    })();
   }, [nodes]);
 
   // #5 — drag-to-reorder. Move the dragged node before/after `target` within their shared sibling group,
@@ -923,6 +942,7 @@ export default function DnaTreePage() {
           right={
             <>
               <DecomposeButton bookId={bookId} nodes={nodes} />
+              <ScaffoldButton bookId={bookId} nodes={nodes} />
               <button onClick={expandAll} style={smallBtnStyle}>expand all</button>
               <button onClick={collapseAll} style={smallBtnStyle}>collapse all</button>
               <QuickToggle active={timelineOpen} accent={T.accent} icon="▦" label="Timeline" onClick={() => setTimelineOpen((v) => !v)} />

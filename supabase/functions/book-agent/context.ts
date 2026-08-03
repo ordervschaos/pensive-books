@@ -7,7 +7,8 @@ import { SYSTEM_THREAD } from "./prompts.ts";
 import { variantSuffix } from "./variants.ts";
 import { type Brief, briefContext } from "../_shared/brief.ts";
 import { currentObjective, nextDraftTarget, stageSubsteps } from "../_shared/dna-journey.ts";
-import { analysisText, ledgerText, lintConfigForBrief, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind } from "../_shared/novel-dna.ts";
+import { analysisText, fillMap, ledgerText, lintConfigForBrief, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind } from "../_shared/novel-dna.ts";
+import { hungerBlock, treeDigestLines } from "../_shared/dna-context.ts";
 import { AGENT_SKILLS, matchSkills } from "../_shared/agent-skills.ts";
 import { craftOverrideBlock } from "../_shared/craft-kb.ts";
 
@@ -154,7 +155,16 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
     else if (n.kind === "scene") sceneNo.set(n.id, sceneNo.size + 1);
   }
   const seqOf = (n: DnaNodeRow) => n.kind === "beat" ? beatNo.get(n.id) : n.kind === "scene" ? sceneNo.get(n.id) : undefined;
-  const tree = sorted.map((n) => serialize(n, seqOf(n))).join("\n");
+
+  // Empty subtrees are COLLAPSED, not filtered (doc_1785673597000.md §5a). The tree is going dense — every
+  // template slot becomes a real row with `content: {}` — and the agent is the one consumer that must still
+  // SEE those placeholders, because they are its work queue and it fills a slot by targeting that id. The
+  // renderer + its rationale live in _shared/dna-context.ts (testable); numbering stays computed above over
+  // the FULL list, so "beat 7" means the same node here, in the tree UI, and in the render.
+  const byIdRow = new Map(nodes.map((n) => [n.id, n]));
+  const treeFills = fillMap(nodes);
+  const tree = treeDigestLines(sorted, treeFills, (n) => serialize(n, seqOf(n)), seqOf).join("\n");
+  const hunger = hungerBlock(nodes, treeFills);
 
   // The context tray, HYDRATED: the author attached these nodes to work on, so we inline their FULL content
   // right here (not a bare pointer) — the agent doesn't need a read_node round-trip for the nodes it was
@@ -162,7 +172,6 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
   // only carried for scene nodes — no other kind holds prose, and it's the bulk of the tokens, so we strip a
   // stray `prose` key from anything else. This block is rebuilt every turn from the live tree, so it can
   // never go stale the way the old glued-to-the-message "Focus —" prefix did.
-  const byIdRow = new Map(nodes.map((n) => [n.id, n]));
   const focusNodes = (attachedIds ?? []).map((id) => byIdRow.get(id)).filter((n): n is DnaNodeRow => !!n);
   const focus = focusNodes.map((n) => {
     const content: Record<string, unknown> = { ...(n.content ?? {}) };
@@ -317,6 +326,10 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
   // misinterpretation when a prompt mixes instructions, context, and a large structured document).
   const blocks = [
     `<book_name>${b?.name ?? ""}</book_name>`,
+    // HUNGER (doc_1785673597000.md §5a-bis): the tree's appetite, stated in its own voice. The per-node view
+    // is in the digest above; this is the one-line aggregate so "how much book is still owed" is legible
+    // without counting rows.
+    hunger ? `<unwritten>${hunger}</unwritten>` : "",
     // The brief, WITH the interview's vision document (the one v1 call site that opts in — every other
     // briefContext caller keeps byte-identical prompts).
     `<brief note="binding voice contract">\n${briefContext(b?.brief ?? null, { scope: "full", success: true, none: "(no brief)", empty: "(empty)", vision: true })}\n</brief>`,

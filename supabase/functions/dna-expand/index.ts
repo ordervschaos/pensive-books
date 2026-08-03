@@ -17,8 +17,9 @@ import { extractJsonBlock } from "../_shared/json.ts";
 import { craftBody, PREMISE_JUDGE_CRITERIA } from "../_shared/craft-kb.ts";
 // The shared engine's beat-native lints, run over the just-generated beat sheet so a silently-degraded sheet
 // gets one bounded repair turn instead of shipping the damage (docs/agent-improvement-plan.md P2.1).
-import { canonicalizeKey, entityRegistryBlock, ledgerAt, ledgerText, structureForBook, validate, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneLedger } from "../_shared/novel-dna.ts";
+import { canonicalizeKey, entityRegistryBlock, fillMap, hasOwnContent, ledgerAt, ledgerText, liveNodes, structureForBook, validate, type AuthoringStatus, type DnaNode, type NodeContent, type NodeKind, type SceneLedger } from "../_shared/novel-dna.ts";
 import { type Brief, briefContext, mandateContext } from "../_shared/brief.ts";
+import { actBlock as renderArc, hungerBlock, castBlock as renderCast, cName, gamesBlock as renderGames, gName, locationBlock as renderLocations, locName, palette, precondBlock as renderPreconds, statePreconditions, tentpoleBlock as renderTentpoles, threadBlock as renderThreads, tName, tpGuidance, tpName, voiceBlock as renderVoice, wfName, worldRulesBlock as renderWorldRules } from "../_shared/dna-context.ts";
 import { isChainCall } from "../_shared/self-chain.ts";
 import { serviceClient, userClient as createUserClient } from "../_shared/task.ts";
 
@@ -346,75 +347,53 @@ Deno.serve(async (req: Request) => {
     const craftOver = (book?.craft_overrides ?? null) as Record<string, string> | null;
     const brief = book?.brief as Brief | null;
     const mandate = mandateContext(brief);
+    // TWO VIEWS OF THE TREE (doc_1785673597000.md §5a). The tree is going DENSE — every slot the structure
+    // template knows about is a real row with `content: {}` — so "a row exists" no longer means "there is
+    // something to say about it". Every `xs.length ? block : ""` guard below would flip true on placeholders
+    // and emit `- [?] {}`, which reads to the model as ASSERTED absence ("this character has no want") and
+    // poisons the block's implicit few-shot besides.
+    //   • `nodes` — STRUCTURAL. Raw, every row. Only for walking the shape (byId/ancestry). It MUST stay raw:
+    //     the target of a generation call is by definition the empty node we're filling, so a live-filtered
+    //     byId would lose it and the ancestor walk would terminate early.
+    //   • `live`  — READ. Placeholders hidden. Everything that puts CONTENT in front of the model.
+    // The one exception is `acts` (below), which reads raw on purpose — see the note there.
     const byId = new Map(nodes.map((n) => [n.id, n]));
-    // Ancestor chain (root → parent), locked ones flagged as hard constraints.
+    const live = liveNodes(nodes);
+    // Ancestor chain (root → parent), locked ones flagged as hard constraints. Walked over the raw tree (so
+    // it can't terminate early), then emptied rungs are dropped: an ancestor with no content states no
+    // constraint, and `[premise] {}` would assert there ISN'T one. Positional context isn't lost the way it
+    // would be for a sibling sequence — each rung appears at most once, so a gap can't mislead about scope.
     const chain: Node[] = [];
-    for (let p = node.parent_id; p; p = byId.get(p)?.parent_id ?? null) { const a = byId.get(p); if (a) chain.unshift(a); }
+    for (let p = node.parent_id; p; p = byId.get(p)?.parent_id ?? null) { const a = byId.get(p); if (a && hasOwnContent(a)) chain.unshift(a); }
     // The cast/world registry hangs off the pillar (not the ancestor chain) — feed it in so generation
     // is character- and world-aware (scenes know who exists; relationships pair real characters by name).
     const pillar = node.kind === "pillar" ? node : chain.find((a) => a.kind === "pillar");
-    const entities = pillar ? nodes.filter((n) => n.parent_id === pillar.id && (n.kind === "character" || n.kind === "world_fact" || n.kind === "relationship")) : [];
+    const entities = pillar ? live.filter((n) => n.parent_id === pillar.id && (n.kind === "character" || n.kind === "world_fact" || n.kind === "relationship")) : [];
     const chars = entities.filter((e) => e.kind === "character");
-    const cName = (e: Node) => String((e.content as { name?: string }).name ?? "").trim();
-    const entityBlock = entities.length
-      ? "CAST & WORLD (reference characters BY NAME):\n" +
-        chars.map((c) => `- ${cName(c)} [${(c.content as { role?: string }).role ?? "?"}] ${JSON.stringify(c.content)}`).join("\n") +
-        entities.filter((e) => e.kind === "world_fact").map((w) => `\n- WORLD: ${(w.content as { rule?: string }).rule ?? ""}`).join("")
-      : "";
+    const entityBlock = renderCast(entities);
     // The promise registry + the arc — fed so beats/scenes anchor real threads (by name) and threads
     // generation can place payoffs across the whole act sequence (schema §4.5/§6).
-    const threads = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "thread") : [];
-    const tName = (e: Node) => String((e.content as { name?: string }).name ?? "").trim();
-    const threadBlock = threads.length
-      ? "THREADS — the promise registry (reference BY NAME):\n" +
-        threads.map((t) => `- ${tName(t)}: ${(t.content as { promise?: string }).promise ?? ""} → ${(t.content as { payoff?: string }).payoff ?? ""}`).join("\n")
-      : "";
+    const threads = pillar ? live.filter((n) => n.parent_id === pillar.id && n.kind === "thread") : [];
+    const threadBlock = renderThreads(threads);
+    // THE ONE RAW READ (doc_1785673597000.md §5a). Acts are a SIBLING SEQUENCE, so unlike the entity
+    // registries above, silence is not neutral here: drop the empty acts and a book whose author has only
+    // written Act 2 reads as a one-act book, and the model writes the middle as if it were the whole story —
+    // breaking exactly the start-anywhere case this redesign exists for. So empty acts stay, explicitly
+    // MARKED. ~20 tokens each, and they buy "you are writing the middle of a three-act book".
     const acts = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "act").sort((a, b) => (a.position ?? 0) - (b.position ?? 0)) : [];
-    const actBlock = acts.length
-      ? "THE ARC (acts in order — place promises across these):\n" +
-        // The value line grounds the "act's value shift is the MACRO trend" rule below — the model can't
-        // oscillate within (or land) a trend it never sees.
-        acts.map((m) => {
-          const c = m.content as { title?: string; turning_point?: string; value?: { name?: string; from?: string; to?: string; polarity?: string } };
-          const v = c.value && (c.value.name || c.value.from || c.value.to)
-            ? ` | value ${c.value.name ?? ""}: ${c.value.from ?? "?"} → ${c.value.to ?? "?"}${c.value.polarity ? ` (lands ${c.value.polarity})` : ""}`
-            : "";
-          return `- [${c.title ?? ""}] turn: ${c.turning_point ?? ""}${v}`;
-        }).join("\n")
-      : "";
+    const actBlock = renderArc(acts);
     // The tentpole registry — emotional/scene GUIDANCE the beat sheet must place (each pinned tentpole → a
     // beat that embodies its feel). Reference tentpoles BY NAME (like threads/games/world_facts) — the
     // `guidance` text is not a line to quote back, so identity can't ride on reproducing it verbatim.
-    const tentpoles = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "tentpole" && (n.authoring?.locked || n.authoring?.status === "accepted")) : [];
-    const tpName = (e: Node) => {
-      const c = e.content as { name?: string; summary?: string };
-      const n = String(c.name ?? "").trim();
-      // legacy tentpoles authored before the `name` field existed: derive a short handle from the guidance
-      // text so old data still resolves.
-      return n || String(c.summary ?? "").trim().split(/\s+/).slice(0, 6).join(" ");
-    };
-    const tpGuidance = (e: Node) => String((e.content as { summary?: string }).summary ?? "").trim();
-    const tentpoleBlock = tentpoles.length
-      ? "TENTPOLES — emotional/scene guidance to honor (each is a feel or turn the story builds toward, not a line to quote; reference it BY NAME in \"realizes\"):\n" +
-        tentpoles.map((t) => `- ${tpName(t)}: ${tpGuidance(t)}`).join("\n")
-      : "";
+    const tentpoles = pillar ? live.filter((n) => n.parent_id === pillar.id && n.kind === "tentpole" && (n.authoring?.locked || n.authoring?.status === "accepted")) : [];
+    const tentpoleBlock = renderTentpoles(tentpoles);
     // The world RULES (name + mechanism) — so turning points (esp. the climax) can be GROUNDED in a rule.
-    const worldFacts = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "world_fact") : [];
-    const wfName = (e: Node) => String((e.content as { name?: string; rule?: string }).name ?? (e.content as { rule?: string }).rule ?? "").trim();
-    const worldRulesBlock = worldFacts.length
-      ? "WORLD RULES (the mechanisms a turning point can fire — reference BY NAME in grounds_in):\n" +
-        worldFacts.map((w) => `- ${wfName(w)}: ${(w.content as { mechanism?: string; rule?: string }).mechanism ?? (w.content as { rule?: string }).rule ?? ""}`).join("\n")
-      : "";
+    const worldFacts = pillar ? live.filter((n) => n.parent_id === pillar.id && n.kind === "world_fact") : [];
+    const worldRulesBlock = renderWorldRules(worldFacts);
     // The LOCATIONS registry (name + persistent sensory palette) — so scenes reference real places BY NAME in
     // `loc` and the same place reads consistently across every scene set there (continuity; aim 1).
-    const locations = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "location") : [];
-    const locName = (e: Node) => String((e.content as { name?: string }).name ?? "").trim();
-    const palette = (c: { sight?: string; sound?: string; smell?: string; texture?: string; mood?: string }) =>
-      [c.sight && `sight: ${c.sight}`, c.sound && `sound: ${c.sound}`, c.smell && `smell: ${c.smell}`, c.texture && `texture: ${c.texture}`, c.mood && `mood: ${c.mood}`].filter(Boolean).join(" · ");
-    const locationBlock = locations.length
-      ? "LOCATIONS — places with a fixed sensory palette (reference BY NAME in loc; render the SAME palette every time):\n" +
-        locations.map((l) => `- ${locName(l)}: ${palette(l.content as Record<string, string>) || "(no palette yet)"}`).join("\n")
-      : "";
+    const locations = pillar ? live.filter((n) => n.parent_id === pillar.id && n.kind === "location") : [];
+    const locationBlock = renderLocations(locations);
     // When THIS node is a scene, resolve its loc → the location's full palette so the prose grounds itself in
     // the established setting rather than re-inventing it. loc may be a node id (new) or free text (legacy).
     const sceneLoc = node.kind === "scene" ? (node.content as { loc?: string }).loc : undefined;
@@ -426,13 +405,13 @@ Deno.serve(async (req: Request) => {
     // path for BOTH the entry-state block and the disclosure budget below — the generator now sees the same
     // deterministic snapshot the agent/verify loop do, instead of each surface assembling it ad hoc. Pure; the
     // `nodeId` not being a scene ⇒ null ⇒ both blocks empty (degradation: today's behaviour unchanged).
-    const sceneLedger: SceneLedger | null = node.kind === "scene" ? ledgerAt(nodes as unknown as DnaNode[], nodeId) : null;
+    const sceneLedger: SceneLedger | null = node.kind === "scene" ? ledgerAt(live as unknown as DnaNode[], nodeId) : null;
     const nameOf = (id: string) => String((byId.get(id)?.content as { name?: string })?.name ?? id);
     // ENTRY STATE — the plan-side state entering this scene the prose writer otherwise can't see: promises still
     // OPEN (reader pressure) + where each character was LAST seen (so the scene doesn't teleport someone or
     // forget an open loop). Rendered by the shared `ledgerText`, so the generator sees the SAME snapshot the
     // agent's tree digest does (docs/scene-ledger.md §3.2). Empty text → block dropped (degradation unchanged).
-    const entryText = node.kind === "scene" ? ledgerText(nodes as unknown as DnaNode[], nodeId) : "";
+    const entryText = node.kind === "scene" ? ledgerText(live as unknown as DnaNode[], nodeId) : "";
     const entryStateBlock = entryText
       ? "ENTRY STATE (the deterministic story state ENTERING this scene — honor it; don't contradict where people are or forget an open promise):\n" + entryText
       : "";
@@ -465,30 +444,15 @@ Deno.serve(async (req: Request) => {
       ? `THIS SCENE'S REGISTER (keep the voice profile's signature, but bend it toward this for THIS scene only — vary sentence length, pace, and narrative distance accordingly; do NOT carry it into the next scene): ${sceneRegister}`
       : "";
     // The voice profile — governs all prose. Injected into ctx so every generation step can reference it.
-    const voiceProfileNode = pillar ? nodes.find((n) => n.parent_id === pillar.id && n.kind === "voice_profile") : null;
+    const voiceProfileNode = pillar ? live.find((n) => n.parent_id === pillar.id && n.kind === "voice_profile") : null;
     const vp = voiceProfileNode?.content as { pov?: string; tense?: string; style?: string; constraints?: string[]; sample?: string } | undefined;
-    const voiceBlock = vp
-      ? "VOICE PROFILE (every word of prose must conform to this):\n" +
-        [vp.pov ? `- POV: ${vp.pov}` : "", vp.tense ? `- Tense: ${vp.tense}` : "", vp.style ? `- Style: ${vp.style}` : ""].filter(Boolean).join("\n") +
-        (vp.constraints?.length ? `\n- Rules:\n${vp.constraints.map((c) => `  • ${c}`).join("\n")}` : "") +
-        (vp.sample ? `\n- Reference sample (match this voice exactly):\n${vp.sample}` : "")
-      : "";
+    const voiceBlock = renderVoice(vp);
     // The GAMES (the contests + their win/lose poles) — so beats can PLAY them and a beat RESOLVES each.
-    const games = pillar ? nodes.filter((n) => n.parent_id === pillar.id && n.kind === "game") : [];
-    const gName = (e: Node) => String((e.content as { name?: string }).name ?? "").trim();
-    const gamesBlock = games.length
-      ? "GAMES (the contests — reference BY NAME in plays/resolves; WIN vs LOSE):\n" +
-        games.map((g) => { const c = g.content as { win_condition?: string; lose_condition?: string }; return `- ${gName(g)}: WIN = ${c.win_condition ?? "?"} | LOSE = ${c.lose_condition ?? "?"}`; }).join("\n")
-      : "";
+    const games = pillar ? live.filter((n) => n.parent_id === pillar.id && n.kind === "game") : [];
+    const gamesBlock = renderGames(games);
     // [EXP:preconditions] the STATE preconditions each game's win spends — the beat sheet must establish each.
-    const statePreconds = EXP_PRECONDITIONS
-      ? games.flatMap((g) => ((g.content as { win_requires?: { type?: string; what?: string; key?: string }[] }).win_requires ?? [])
-          .filter((r) => r.type === "state" && r.key).map((r) => ({ key: r.key as string, what: r.what ?? "", game: gName(g) })))
-      : [];
-    const precondBlock = statePreconds.length
-      ? "STATE PRECONDITIONS (each must be ESTABLISHED by an earlier beat — list its key in that beat's `establishes` — BEFORE the beat that resolves its game):\n" +
-        statePreconds.map((p) => `- ${p.key} (${p.game}): ${p.what}`).join("\n")
-      : "";
+    const statePreconds = EXP_PRECONDITIONS ? statePreconditions(games) : [];
+    const precondBlock = renderPreconds(statePreconds);
     // PRIOR SCENES — structured continuity block for scene planning, mirroring what prose gen gets via the
     // digest: entry state (where the story stands NOW), polarity rhythm, used locations. Formatted with
     // instructive XML tags so the model understands HOW to use each piece, not just what's there.
@@ -509,7 +473,7 @@ Deno.serve(async (req: Request) => {
       if (!priorBeats.length) return rules;
       // All prior scenes in order (beats that had scenes planned)
       const allPriorScenes = priorBeats.flatMap((b) =>
-        nodes.filter((n) => n.parent_id === b.id && n.kind === "scene").sort((a, b2) => (a.position ?? 0) - (b2.position ?? 0))
+        live.filter((n) => n.parent_id === b.id && n.kind === "scene").sort((a, b2) => (a.position ?? 0) - (b2.position ?? 0))
           .map((s) => ({ beat: b, scene: s }))
       );
       if (!allPriorScenes.length) return "";
@@ -570,7 +534,7 @@ Deno.serve(async (req: Request) => {
     // anti-repetition polish for speed; fine for a draft-to-check, not for the canonical book build.
     const prevProseBlock = light ? ""
       : (target === "prose" || target === "sketch" || (!target && node.kind === "scene"))
-      ? await buildProseDigest(DIGEST_MODEL, nodes, nodeId, bookId, meta, req.signal)
+      ? await buildProseDigest(DIGEST_MODEL, live, nodeId, bookId, meta, req.signal)
       : "";
     // Beat neighbourhood — the sibling beats of the scene's parent beat, in act order.
     // Prose generation only sees its direct ancestor chain (parent beat + act + …), so it never
@@ -588,10 +552,13 @@ Deno.serve(async (req: Request) => {
         .filter((n) => n.parent_id === actId && n.kind === "beat")
         .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
       if (siblingBeats.length <= 1) return "";
+      // Positional sequence, so the same rule as THE ARC: an unplanned neighbour is MARKED, not dropped and
+      // not blank-serialized — the scene needs to know a beat sits there even when nobody has written it.
       const lines = siblingBeats.map((b) => {
         const isCurrent = b.id === parentBeat.id;
         const summary = String((b.content as { summary?: string }).summary ?? "").trim();
-        return `  ${isCurrent ? "▶ " : "  "}[beat pos=${b.position}${isCurrent ? " ← THIS SCENE'S BEAT" : ""}] ${summary}`;
+        const body = hasOwnContent(b) ? summary : "— NOT YET PLANNED";
+        return `  ${isCurrent ? "▶ " : "  "}[beat pos=${b.position}${isCurrent ? " ← THIS SCENE'S BEAT" : ""}] ${body}`;
       });
       return `BEAT PLAN — all beats in this act, in order (honour any specific facts, names, numbers, or objects established here):\n${lines.join("\n")}`;
     })();
@@ -607,7 +574,7 @@ Deno.serve(async (req: Request) => {
     // even the `light` path — continuity is the whole point of the ask. Empty for scene 1 / non-render.
     const seamBlock = (() => {
       if (!renderTarget) return "";
-      const orderedScenes = scenesInOrder(nodes);
+      const orderedScenes = scenesInOrder(live);
       const myIdx = orderedScenes.findIndex((s) => s.id === nodeId);
       const prevScene = myIdx > 0 ? orderedScenes[myIdx - 1] : undefined;
       const prevExit = prevScene ? sceneExitText(prevScene) : "";
@@ -691,6 +658,11 @@ Deno.serve(async (req: Request) => {
       briefBlock, // the agent's curated, verbatim guidance for THIS page (empty for non-render / no-brief calls)
       seamBlock, // the continuity handshake to the previous scene (WHERE the story stands + how to join it)
       prevProseBlock,
+      // HUNGER (doc_1785673597000.md §5a-bis). The registries above omit placeholders so no blank row reads
+      // as an asserted fact; this states the same emptiness ONCE, in its own voice, so omission can't be
+      // mistaken for completeness — a generator that can't see the unwritten remainder starts wrapping the
+      // book up early. Aggregated counts, never ids: this is orientation, not a work order.
+      hungerBlock(nodes, fillMap(nodes)),
       `THIS NODE [${node.kind}]: ${JSON.stringify(node.content)}`,
     ].filter(Boolean).join("\n\n");
 
@@ -1011,7 +983,7 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
         "slot_missing", "slot_misplaced", "slot_misordered", "slot_duplicate", "slot_unknown"]);
       // Existing accepted tree, minus any prior beats/scenes (the sheet REPLACES all beats; scenes don't exist
       // yet) — the causal/game context the beat lints validate against.
-      const otherNodes: DnaNode[] = nodes.filter((n) => n.kind !== "beat" && n.kind !== "scene").map((n) => ({
+      const otherNodes: DnaNode[] = live.filter((n) => n.kind !== "beat" && n.kind !== "scene").map((n) => ({
         id: n.id, book_id: bookId, parent_id: n.parent_id, level: 0, kind: n.kind as NodeKind, position: n.position ?? 0,
         // The pillar gets the RESOLVED structure key stamped on: structureLints activate on an explicit
         // declaration (fail-quiet for legacy trees), but THIS pass definitely asked for the template — a
@@ -1080,8 +1052,8 @@ Output JSON ONLY: { ${mintThreads ? `"threads": [ { "name": "...", "promise": ".
       if (!pillar) return json({ error: "accept the pillar before compiling the contract" }, 400);
       // ALL existing tentpoles here (the outer `tentpoles` filters to accepted/locked — a draft one still
       // covers its genre promise for dedupe purposes), plus meter names + current voice constraints.
-      const allTentpoles = nodes.filter((n) => n.parent_id === pillar.id && n.kind === "tentpole");
-      const meterNodes = nodes.filter((n) => n.parent_id === pillar.id && n.kind === "meter");
+      const allTentpoles = live.filter((n) => n.parent_id === pillar.id && n.kind === "tentpole");
+      const meterNodes = live.filter((n) => n.parent_id === pillar.id && n.kind === "meter");
       const mName = (e: Node) => String((e.content as { name?: string }).name ?? "").trim();
       const existingBlock = [
         allTentpoles.length ? `Tentpoles already declared (do NOT re-emit a promise these cover):\n${allTentpoles.map((t) => `- ${tpName(t)}`).join("\n")}` : "",

@@ -5,7 +5,7 @@ import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { type Brief, type BriefVision, VISION_SECTIONS } from "../_shared/brief.ts";
 import { getRoleModels } from "../_shared/model-config.ts";
 import { AGENT_SKILLS } from "../_shared/agent-skills.ts";
-import { type DnaNode, type SceneContent, buildShapeReadInput, chapters, entityRegistryBlock, ledgerBefore } from "../_shared/novel-dna.ts";
+import { type DnaNode, type SceneContent, buildShapeReadInput, chapters, entityRegistryBlock, hasOwnContent, ledgerBefore, liveNodes } from "../_shared/novel-dna.ts";
 import { judgeProse } from "../_shared/mandate-gate.ts";
 import { callLLM, textFromLLM } from "../_shared/llm.ts";
 import { extractJsonBlock } from "../_shared/json.ts";
@@ -69,7 +69,10 @@ async function execTool(
       parts.unshift(`${cur.kind} “${nodeHandle(cur.content)}”`);
       if (parts.length > 10) break; // cycle guard
     }
-    const childLines = kids.map((k) => `  - [${k.id}] ${k.kind}: ${nodeHandle(k.content)}`).join("\n");
+    // NOT filtered (doc_1785673597000.md §5a class 3): read_node is how the agent inspects a slot it is
+    // about to fill, so a placeholder must resolve. Only the LABEL changes — an empty child says so plainly
+    // instead of trailing a blank handle the model would read as a nameless node.
+    const childLines = kids.map((k) => `  - [${k.id}] ${k.kind}: ${hasOwnContent(k) ? nodeHandle(k.content) : "(empty — nothing written here yet)"}`).join("\n");
     const schema = schemaFor([n.kind]); // hand back the kind's field schema so an edit uses the right keys
     return {
       step: { t: "read", label: `Read ${n.kind} “${nodeHandle(n.content)}” in full.` },
@@ -225,7 +228,9 @@ async function execTool(
   // no write-back to book_nodes (the UI panels own writing observed_* fields).
   if (t.name === "read_shape") {
     const { data: rows } = await service.from("book_nodes").select("id, parent_id, kind, position, content").eq("book_id", bookId);
-    const nodes = (rows ?? []) as DnaNode[];
+    // liveNodes (doc_1785673597000.md §5a): a read judges what the book SAYS. An unwritten act would
+    // otherwise count against the shape it was never given a chance to deliver.
+    const nodes = liveNodes((rows ?? []) as DnaNode[]);
     const input = buildShapeReadInput(nodes);
     if (!input) {
       return { result: { type: "tool_result", tool_use_id: t.id, content: "Not enough structure yet to read shape — need a premise with movements and at least one act with beats.", is_error: true } };
@@ -268,7 +273,9 @@ async function execTool(
   if (t.name === "read_facts") {
     const id = String((t.input as { id?: string })?.id ?? "");
     const { data: rows } = await service.from("book_nodes").select("id, parent_id, kind, position, content").eq("book_id", bookId);
-    const nodes = (rows ?? []) as DnaNode[];
+    // liveNodes: the canon ledger + entity registry below must not carry blank rows. Safe for the target —
+    // this tool refuses a scene without prose, and prose counts as content.
+    const nodes = liveNodes((rows ?? []) as DnaNode[]);
     const scene = nodes.find((n) => n.id === id);
     if (!scene || scene.kind !== "scene") {
       return { result: { type: "tool_result", tool_use_id: t.id, content: `No scene with id ${id} in this book.`, is_error: true } };
@@ -322,7 +329,8 @@ async function execTool(
   }
   if (t.name === "read_confusion") {
     const { data: rows } = await service.from("book_nodes").select("id, parent_id, kind, position, content").eq("book_id", bookId);
-    const nodes = (rows ?? []) as DnaNode[];
+    // liveNodes: chapters() over a dense tree would mint empty chapters for unwritten beats.
+    const nodes = liveNodes((rows ?? []) as DnaNode[]);
     const byNodeId = new Map(nodes.map((n) => [n.id, n]));
     const hasProse = (id: string) => !!((byNodeId.get(id)?.content as SceneContent | undefined)?.prose?.text ?? "").trim();
     const eligible = chapters(nodes).filter((ch) => ch.sceneIds.some(hasProse));
@@ -402,7 +410,8 @@ async function execTool(
       return { result: { type: "tool_result", tool_use_id: t.id, content: "(no vision captured — run the interview or update_vision first)", is_error: true } };
     }
     const visionText = filled.map(([k, label]) => `- ${label}: ${(vision![k] as string).trim()}`).join("\n");
-    const nodes = (rows ?? []) as { id: string; parent_id: string | null; kind: string; content: Record<string, unknown> | null }[];
+    // liveNodes: the audit asks what the book has COMMITTED to; a placeholder has committed to nothing.
+    const nodes = liveNodes((rows ?? []) as { id: string; parent_id: string | null; kind: string; content: Record<string, unknown> | null }[]);
     const of = (k: string) => nodes.filter((n) => n.kind === k);
     const pick = (c: Record<string, unknown> | null, keys: string[]) =>
       JSON.stringify(Object.fromEntries(keys.flatMap((key) => c?.[key] != null && c[key] !== "" ? [[key, c[key]]] : [])));

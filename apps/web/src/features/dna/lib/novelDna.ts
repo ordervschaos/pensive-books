@@ -44,10 +44,23 @@ export const isAuthored = (k: NodeKind): boolean => AUTHORSHIP[k] === "authored"
 export type AuthoringSource = "user" | "ai" | "ai_then_user";
 export type AuthoringStatus = "empty" | "proposed" | "draft" | "accepted";
 
+// The TEMPLATE's plane, never the author's. A materialized placeholder carries its structure-template label
+// here — NOT in `content` — so `hasOwnContent` stays honest: a slot minted as "The Hook" must still read as
+// blank until somebody writes into it (doc_1785673597000.md §4b). `slot` also hands the slot_* lints the
+// identity they currently re-infer from beat position.
+export interface Scaffold { title?: string; hint?: string; slot?: string }
+
 export interface Authoring {
   source: AuthoringSource;
   locked: boolean;
   status: AuthoringStatus;
+  scaffold?: Scaffold;
+  // PILLAR ONLY — the tombstones. Structure slots the author DELETED on purpose ("this book has no inciting
+  // incident"). Deleting an empty slot is an authorial statement, so it (a) suppresses slot_missing for that
+  // key and (b) stops the one-shot materializer re-minting it. Lives on `authoring`, not `content`, for the
+  // same reason as `scaffold`: it is a fact about authorship, not a fact about the story — and putting it in
+  // content would make a pillar read as filled the moment somebody deleted a slot.
+  waived_slots?: string[];
   src_hash?: string; // hash of this node's INPUT SET when last generated/accepted
   prose_src_hash?: string; // scenes — hash of the scene plan the prose was written from
   sketch_src_hash?: string; // scenes — hash of the scene spec the SKETCH was written from
@@ -436,6 +449,102 @@ export function inputHash(node: DnaNode, index: Map<string, DnaNode>): string {
   const parent = node.parent_id ? index.get(node.parent_id) : null;
   const refs = refsOf(node).map((id) => planOf(index.get(id)?.content));
   return metaHash(stableStringify([planOf(parent?.content), ...refs]));
+}
+
+// ── FILL — the emptiness fold (doc_1785673597000.md) ─────────────────────────────────────────────────────
+// The tree is moving from SPARSE (a missing rung has no row) to DENSE (every slot the structure template
+// knows about is a real row with `content: {}`), so that any rung can be filled at any time and a story can
+// start from any door. That makes absence a VALUE rather than a SHAPE, which means absence now fails OPEN:
+// every read path that used to get "nothing" gets a placeholder unless it filters. This fold is the filter.
+//
+// Deliberately schema-FREE. Emptiness scans the content keys a node actually carries rather than the keys
+// dnaSchema declares, for two reasons: (a) it cannot drift as the schema grows, and (b) `prose` is NOT a
+// schema field, and an imported book locks user prose onto scenes that may carry no plan fields at all —
+// schema-driven emptiness would call those scenes empty and `liveNodes` would strip written prose out of
+// the render. Keeping it here (not in dnaSchema) also avoids an import cycle and rides the existing twin
+// parity lock for free.
+
+// Judge verdicts ABOUT a node are not content authored ON it: a read pass writing observed_craft must never
+// make an empty node look authored. `prose` is the one OUTPUT_FIELD that counts — see the note above.
+const NON_CONTENT_FIELDS = new Set<string>((OUTPUT_FIELDS as readonly string[]).filter((k) => k !== "prose"));
+
+/** Blank = absent, empty string, empty list, or an object whose every leaf is blank (`{}`, `{name:""}`). */
+function isBlankValue(v: unknown): boolean {
+  if (v == null || v === "") return true;
+  if (Array.isArray(v)) return v.length === 0;
+  if (typeof v === "object") return Object.values(v as Record<string, unknown>).every(isBlankValue);
+  return false;
+}
+
+// The structural MINIMUM the fold needs. Deliberately narrower than DnaNode: the edge functions select
+// partial rows (dna-expand takes no `level`/`book_id`, book-agent's tools take fewer still), and a
+// chokepoint only some call sites can type-check is a chokepoint people route around.
+export interface FillNode { id: string; parent_id: string | null; content?: unknown }
+
+/** Does this node carry content of its OWN — ignoring descendants and judge outputs? */
+export function hasOwnContent(node: FillNode): boolean {
+  const c = node.content as Record<string, unknown> | null | undefined;
+  if (!c) return false;
+  for (const k of Object.keys(c)) if (!NON_CONTENT_FIELDS.has(k) && !isBlankValue(c[k])) return true;
+  return false;
+}
+
+// empty  — nothing here, nothing below (the placeholder: safe to hide from every consumer)
+// stub   — nothing here, but something below IS written. THE multi-entry signal: a parent is owed, run
+//          ascent. Collapsing this into "non-empty" is what makes start-anywhere impossible to detect.
+// filled — this node carries its own content.
+export type FillState = "empty" | "stub" | "filled";
+export interface Fill {
+  state: FillState;
+  own: boolean;   // does the node itself carry content
+  filled: number; // nodes in this subtree (incl. self) with own content
+  total: number;  // nodes in this subtree (incl. self)
+}
+
+/** Fill ratio of a subtree in [0,1] — the progress projection the journey/health surfaces can read. */
+export const fillRatio = (f: Fill): number => (f.total ? f.filled / f.total : 0);
+
+/** One post-order fold over the whole tree — O(N), memoized by id. Compute ONCE per tree load and pass the
+ *  map down; calling this per React row is O(N²) on re-render. Orphans (parent_id pointing nowhere) are
+ *  treated as roots, and a parent cycle degrades to "empty" for the revisited node rather than hanging. */
+export function fillMap(nodes: FillNode[]): Map<string, Fill> {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const kids = new Map<string, FillNode[]>();
+  for (const n of nodes) {
+    const p = n.parent_id && byId.has(n.parent_id) ? n.parent_id : null;
+    if (p) (kids.get(p) ?? kids.set(p, []).get(p)!).push(n);
+  }
+  const out = new Map<string, Fill>();
+  const visiting = new Set<string>();
+  const walk = (n: FillNode): Fill => {
+    const memo = out.get(n.id);
+    if (memo) return memo;
+    if (visiting.has(n.id)) return { state: "empty", own: false, filled: 0, total: 0 }; // cycle guard
+    visiting.add(n.id);
+    const own = hasOwnContent(n);
+    let filled = own ? 1 : 0;
+    let total = 1;
+    for (const c of kids.get(n.id) ?? []) { const f = walk(c); filled += f.filled; total += f.total; }
+    visiting.delete(n.id);
+    const fill: Fill = { state: own ? "filled" : filled > 0 ? "stub" : "empty", own, filled, total };
+    out.set(n.id, fill);
+    return fill;
+  };
+  for (const n of nodes) walk(n);
+  return out;
+}
+
+/** The author's/agent's definition of empty: nothing here AND nothing below. */
+export const isEmptySubtree = (fills: Map<string, Fill>, id: string): boolean => fills.get(id)?.state === "empty";
+
+/** THE CHOKEPOINT. Strip empty subtrees so a dense tree reads to every consumer exactly as the sparse tree
+ *  did — prompts, render, lints, ledger, health, hashing. Every read path takes this; the tree EDITOR is the
+ *  only consumer allowed to see raw nodes (it has to render the placeholders you can type into).
+ *  Never orphans: `empty` implies every descendant is empty, so any kept node's ancestors are kept too.
+ *  Fails CLOSED — a node the fold somehow missed is kept, not dropped. */
+export function liveNodes<T extends FillNode>(nodes: T[]): T[] {
+  const fills = fillMap(nodes);
+  return nodes.filter((n) => (fills.get(n.id)?.state ?? "filled") !== "empty");
 }
 
 /** A node is stale iff its recorded src_hash no longer matches its current input set. Never stale before
@@ -2164,7 +2273,10 @@ function structureLints(nodes: DnaNode[]): DnaIssue[] {
   }
   for (const [key, list] of claimed) for (const dup of list.slice(1))
     issues.push({ rule: "slot_duplicate", severity: "warn", message: `"${byKey.get(key)!.label}" is claimed by ${list.length} beats — a structural slot is ONE beat's job`, nodeId: dup.id });
-  for (const slot of tpl.slots) if (!claimed.has(slot.key))
+  // Tombstones: a slot the author deliberately deleted is not "missing" — it is declined. (Owner decision
+  // 2026-08-02; doc_1785673597000.md §9.2.)
+  const waived = new Set((pillar?.authoring?.waived_slots ?? []).map((k) => String(k).trim()).filter(Boolean));
+  for (const slot of tpl.slots) if (!claimed.has(slot.key) && !waived.has(slot.key))
     issues.push({ rule: "slot_missing", severity: "warn", message: `no beat carries "${slot.label}" (~${Math.round(slot.at * 100)}% — ${slot.craft.split(" — ")[0]})`, nodeId: pillar?.id ?? beats[0].id });
   const halfStep = 0.5 / beats.length;
   let prevOrd = -1, prevLabel = "";

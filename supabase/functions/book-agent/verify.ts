@@ -2,7 +2,7 @@
 // payoffs to the last scene that carries them, and the auto-mode render→verify injection.
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { nodeHandle, type AgentStep, type RunRow } from "./shared.ts";
-import { scenesInOrder, type DnaNode, type SceneContent, type ThreadRef } from "../_shared/novel-dna.ts";
+import { liveNodes, scenesInOrder, type DnaNode, type SceneContent, type ThreadRef } from "../_shared/novel-dna.ts";
 import { judgeAgainstPlan, planHasContent, type PlanAxisVerdict, type ScenePlan } from "../_shared/plan-gate.ts";
 
 // §v1 fix (docs/agent-improvement-remaining.md): a beat's threads sometimes get minted verbatim onto EVERY
@@ -20,7 +20,9 @@ async function scopePayoffsToLatestScene(
     .select("id, book_id, parent_id, level, kind, position, content, authoring")
     .eq("book_id", bookId);
   if (!allNodes?.length) return threadRefs;
-  const order = scenesInOrder(allNodes as DnaNode[]);
+  // liveNodes: a materialized placeholder scene is not a later payoff site (doc_1785673597000.md §5a).
+  // Safe for the target scene itself — this path only runs on scenes that already have prose.
+  const order = scenesInOrder(liveNodes(allNodes as DnaNode[]));
   const selfIdx = order.findIndex((n) => n.id === sceneId);
   if (selfIdx < 0) return threadRefs;
   const laterHasPayoff = new Set<string>();

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { isProseStale, isStale, refsOf, type DnaIssue, type DnaNode } from "@/features/dna/lib/novelDna";
 import { KIND_EXPLAINER } from "@/features/dna/lib/dnaSchema";
 import { detailRowStyle, fieldRowStart, KIND_BG, KIND_COLOR, labelStyle, MONO, SERIF, spineX, T } from "./treeChrome";
-import { beatGlyph, beatSlot, hiddenFields, nodeTitle, type ProseRollup } from "./nodeDisplay";
+import { beatGlyph, beatSlot, hiddenFields, nodeTitle, scaffoldLabel, type ProseRollup } from "./nodeDisplay";
 import { type StaleActions } from "./staleActions";
 import { Highlighted } from "./search";
 
@@ -178,6 +178,7 @@ export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onTo
   const title = nodeTitle(node);
   const glyph = beatGlyph(node);
   const slot = beatSlot(node);
+  const scaffold = scaffoldLabel(node);
   const markColor = mark === "delete" ? T.bad : mark === "edit" ? T.accent : null;
   // Health glyph — a right-side ▲/△ on a different visual axis than the round stale dot, so they don't fight.
   const hasErr = issues?.some((i) => i.severity === "error") ?? false;
@@ -246,7 +247,12 @@ export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onTo
             textDecoration: mark === "delete" ? "line-through" : undefined,
           }}>
             {glyph && <span style={{ color: KIND_COLOR.beat, marginRight: 2, fontFamily: MONO, fontSize: 12 }}>{glyph}</span>}
-            <Highlighted text={title} pattern={searchPattern ?? null} />
+            {/* A MATERIALIZED slot (P2) has no content yet, so `title` is empty — show the template's label
+                in ghost styling instead: legible enough to invite a click, visibly not yet authored. The
+                label lives on authoring.scaffold, never content, so the fill fold still reads it as empty. */}
+            {title
+              ? <Highlighted text={title} pattern={searchPattern ?? null} />
+              : scaffold && <span style={{ color: T.faint, fontStyle: "italic" }} title={scaffold.hint}>{scaffold.title || scaffold.hint}</span>}
           </span>
         )}
 

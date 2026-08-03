@@ -8,7 +8,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { buildDoc } from "@/lib/inlineMarkdown";
 import { loadTree } from "@/features/dna/lib/bookNodes";
-import { renderPages, type RenderedPage } from "@/features/dna/lib/novelDna";
+import { liveNodes, renderPages, type RenderedPage } from "@/features/dna/lib/novelDna";
 
 export interface DnaRenderResult { created: number; updated: number; archived: number; pages: number }
 
@@ -27,7 +27,10 @@ const sig = (title: string, type: string, idx: number, content: unknown): string
 
 /** Render a book's DNA tree to its pages. The DNA owns the whole page list for a DNA-native book. */
 export async function reconcileDna(bookId: number): Promise<DnaRenderResult> {
-  const nodes = await loadTree(bookId);
+  // liveNodes (doc_1785673597000.md §5a): with the tree dense, every unwritten slot is a real row — and a
+  // placeholder beat would otherwise reconcile into a BLANK PAGE in the reader. The render is the sharpest
+  // consequence of absence-as-value, so it takes the chokepoint before anything else.
+  const nodes = liveNodes(await loadTree(bookId));
   const desired: RenderedPage[] = renderPages(nodes);
 
   const { data: pageData } = await supabase

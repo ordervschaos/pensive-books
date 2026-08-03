@@ -144,6 +144,12 @@
   failed waiver aborts before the delete). Uncommitted.
 - **Verified:** 1354 tests pass (13 new); `tsc -p tsconfig.app.json` clean; `deno check` at baseline
   (dna-expand 2, book-agent 9, `_shared` 0). `saveNodes` confirmed an upsert, so the seeder inserts.
+- **Fix (same day):** the Scaffold button was **invisible on a brand-new book** — `seedSkeleton` bailed
+  unless a `pillar` already existed, so a seed-only tree minted nothing and the button hid itself, in exactly
+  the state the feature exists for. Now anchors on the highest rung that DOES exist (mints premise → pillar
+  when missing) instead of demanding a specific one. First attempt over-corrected to requiring a *seed*,
+  which broke pillar-only/migrated books — caught by the existing tests. +4 regression tests (17 total),
+  incl. a no-orphans assertion on the minted spine.
 - **PM impact:** P0–P2 of the redesign are now complete and coherent: the fold, the read-path routing, the
   hunger channel, and the materializer that finally makes them do something. **Still not deployed** — the
   edge twins changed (`waived_slots` lint), so a deploy is now genuinely meaningful rather than a no-op;

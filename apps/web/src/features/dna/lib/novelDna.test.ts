@@ -6,6 +6,7 @@ import {
   validate, meterSeries, meterShape, isSerialMeter, meterTarget, targetGap, observedSeries, observedGap,
   ledgerBefore, ledgerFull, lintConfigForBrief, DEFAULT_LINT_CONFIG, proseLints,
   obligationLedger, openObligations, debtSettled,
+  hasOwnContent, fillMap, fillRatio, isEmptySubtree, liveNodes,
   type DnaNode, type NodeKind, type ThreadRef, type Obligation,
 } from "@/features/dna/lib/novelDna";
 
@@ -1213,5 +1214,96 @@ describe("structure lints (the plot-skeleton template)", () => {
   });
   it("flags an unknown slot key against the template", () => {
     expect(slotRules(skeleton((i) => (i === 0 ? "opening_image" : undefined)))).toContain("slot_unknown");
+  });
+});
+
+// ── FILL: the emptiness fold (doc_1785673597000.md) ───────────────────────────────────────────────────────
+// The tree is going DENSE — every slot the structure template knows about becomes a real row with
+// `content: {}` so any rung can be filled at any time. These lock the three things that makes safe:
+// what counts as content, the three-valued rollup, and the liveNodes chokepoint that hides placeholders
+// from every read path (prompts, render, lints) exactly as the sparse tree did.
+describe("fill fold", () => {
+  describe("hasOwnContent", () => {
+    it("a materialized placeholder has none", () => {
+      expect(hasOwnContent(mk("beat", { content: {} }))).toBe(false);
+    });
+    it("blank leaves don't count — empty strings, empty lists, all-blank objects", () => {
+      expect(hasOwnContent(mk("character", { content: { name: "", role: null, tag: undefined } }))).toBe(false);
+      expect(hasOwnContent(mk("premise", { content: { genre: [], shape: { name: "", movements: [] } } }))).toBe(false);
+    });
+    it("one real field is enough", () => {
+      expect(hasOwnContent(mk("character", { content: { name: "Mara" } }))).toBe(true);
+      expect(hasOwnContent(mk("premise", { content: { shape: { name: "", movements: ["fall"] } } }))).toBe(true);
+    });
+    it("PROSE counts — an imported scene locks user prose with no plan fields, and stripping it would drop written text from the render", () => {
+      expect(hasOwnContent(mk("scene", { content: { prose: "The ledger caught fast." } }))).toBe(true);
+    });
+    it("judge verdicts do NOT count — a read pass must never make an empty node look authored", () => {
+      expect(hasOwnContent(mk("beat", { content: { observed_readings: [{ axis: "heat", value: 3 }] } }))).toBe(false);
+      expect(hasOwnContent(mk("pillar", { content: { observed_craft: [{ axis: "boredom_risk", score: 2 }], observed_craft_hash: "abc" } }))).toBe(false);
+    });
+  });
+
+  // The author started in the middle: act 2 is blank but carries a written beat. That's a STUB, and it is
+  // the signal the multi-entry design runs on ("a parent is owed here — ascend"). Collapsing it into a
+  // boolean empty/non-empty is what makes start-anywhere impossible to detect.
+  const startedInTheMiddle = () => {
+    const pil = mk("pillar", { id: "p", content: {} });
+    const a1 = mk("act", { id: "a1", parent_id: "p", position: 0, content: {} });
+    const a2 = mk("act", { id: "a2", parent_id: "p", position: 1, content: {} });
+    const b1 = mk("beat", { id: "b1", parent_id: "a1", content: {} });
+    const b2 = mk("beat", { id: "b2", parent_id: "a2", content: { summary: "she burns the survey" } });
+    return [pil, a1, a2, b1, b2];
+  };
+
+  it("classifies empty / stub / filled", () => {
+    const f = fillMap(startedInTheMiddle());
+    expect(f.get("b2")!.state).toBe("filled");
+    expect(f.get("a2")!.state).toBe("stub");  // empty itself, written below
+    expect(f.get("p")!.state).toBe("stub");   // the whole chain up from the written beat
+    expect(f.get("a1")!.state).toBe("empty"); // nothing here, nothing below
+    expect(f.get("b1")!.state).toBe("empty");
+  });
+
+  it("rolls the subtree counts up — the progress projection", () => {
+    const f = fillMap(startedInTheMiddle());
+    expect(fillRatio(f.get("p")!)).toBeCloseTo(1 / 5);   // 1 written node out of 5
+    expect(fillRatio(f.get("a1")!)).toBe(0);
+    expect(fillRatio(f.get("a2")!)).toBeCloseTo(1 / 2);
+    expect(isEmptySubtree(f, "a1")).toBe(true);
+    expect(isEmptySubtree(f, "a2")).toBe(false);
+  });
+
+  describe("liveNodes — THE chokepoint", () => {
+    it("hides empty subtrees and keeps the ancestry of what's written", () => {
+      expect(liveNodes(startedInTheMiddle()).map((n) => n.id)).toEqual(["p", "a2", "b2"]);
+    });
+
+    it("NEVER orphans: every kept node's parent is kept too", () => {
+      const kept = liveNodes(startedInTheMiddle());
+      const ids = new Set(kept.map((n) => n.id));
+      for (const n of kept) if (n.parent_id) expect(ids.has(n.parent_id)).toBe(true);
+    });
+
+    // The whole point of P1: routing a read path through liveNodes must be a no-op until the tree goes
+    // dense. If this ever fails, the chokepoint is dropping real content.
+    it("is the identity on a sparse tree (no placeholders to hide)", () => {
+      const sparse = [mk("pillar", { id: "p", content: { controlling_idea: "Belonging is built." } }),
+        mk("act", { id: "a", parent_id: "p", content: { title: "Setup", goal: "commit" } })];
+      expect(liveNodes(sparse)).toEqual(sparse);
+    });
+
+    it("keeps a prose-only scene (imported user truth)", () => {
+      const nodes = [mk("beat", { id: "b", content: {} }), mk("scene", { id: "s", parent_id: "b", content: { prose: "Rain." } })];
+      expect(liveNodes(nodes).map((n) => n.id)).toEqual(["b", "s"]);
+    });
+
+    it("survives an orphan and a parent cycle rather than hanging", () => {
+      const orphan = mk("beat", { id: "o", parent_id: "gone", content: { summary: "adrift" } });
+      expect(liveNodes([orphan]).map((n) => n.id)).toEqual(["o"]);
+      const x = mk("act", { id: "x", parent_id: "y", content: {} });
+      const y = mk("act", { id: "y", parent_id: "x", content: {} });
+      expect(() => liveNodes([x, y])).not.toThrow();
+    });
   });
 });

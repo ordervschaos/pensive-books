@@ -335,6 +335,26 @@ function structureBook(): DnaNode[] {
     beat(0, "hook"), beat(1, "resolution"), beat(2, "midpoint"), beat(3, "midpoint"), beat(4, "opening_image"), beat(5)];
 }
 
+// A DENSE tree (doc_1785673597000.md): materialized placeholders alongside real content, plus the two cases
+// the fold has to get right — a STUB act (empty itself, one written beat below it: the author started in the
+// middle) and a prose-only scene (imported user prose, no plan fields — must NOT read as empty).
+function denseBook(): DnaNode[] {
+  const seed = mk("seed", { id: "d_seed", content: { logline: "A cartographer maps a city that rewrites itself." } });
+  const prem = mk("premise", { id: "d_prem", parent_id: "d_seed", content: {} });                    // empty rung, filled below
+  const pil = mk("pillar", { id: "d_pil", parent_id: "d_prem", content: {} });
+  const ghostChar = mk("character", { id: "d_ch0", parent_id: "d_pil", content: {} });               // placeholder cast
+  const realChar = mk("character", { id: "d_ch1", parent_id: "d_pil", content: { name: "Mara", role: "protagonist" } });
+  const blankChar = mk("character", { id: "d_ch2", parent_id: "d_pil", content: { name: "", role: "" } }); // blank strings = empty
+  const a1 = mk("act", { id: "d_a1", parent_id: "d_pil", position: 0, content: {} });                // wholly empty act
+  const a2 = mk("act", { id: "d_a2", parent_id: "d_pil", position: 1, content: {} });                // STUB — written beat below
+  const b1 = mk("beat", { id: "d_b1", parent_id: "d_a1", position: 0, content: {} });
+  const b2 = mk("beat", { id: "d_b2", parent_id: "d_a2", position: 0, content: { summary: "she burns the survey" } });
+  const s1 = mk("scene", { id: "d_s1", parent_id: "d_b2", position: 0, content: { prose: "The ledger caught fast." } });
+  // A judge verdict written onto an otherwise-empty node must NOT make it read as authored.
+  const judged = mk("beat", { id: "d_b3", parent_id: "d_a1", position: 1, content: { observed_readings: [{ axis: "heat", value: 3 }] } });
+  return [seed, prem, pil, ghostChar, realChar, blankChar, a1, a2, b1, b2, s1, judged];
+}
+
 const settings: BookSettings = { title: "The Folding City", author: "A. Nzal", word_target: 60000 };
 const j = (v: unknown) => JSON.stringify(v);
 
@@ -359,6 +379,10 @@ const cases: [string, (m: typeof web, n: DnaNode[]) => unknown][] = [
   ["ledgerAt", (m, n) => m.ledgerAt(n, "la_s4")],
   ["ledgerText", (m, n) => m.ledgerText(n, "la_s3")],
   ["traceDiff", (m, n) => m.traceDiff(n)],
+  // The FILL fold (doc_1785673597000.md): the dense-tree chokepoint runs on BOTH sides — the edge agent has
+  // to hide exactly the placeholders the browser hides, or the two disagree about what the book contains.
+  ["fillMap", (m, n) => [...m.fillMap(n).entries()].sort((a, b) => a[0].localeCompare(b[0]))],
+  ["liveNodes", (m, n) => m.liveNodes(n).map((x) => x.id)],
   ["scenesInOrder", (m, n) => m.scenesInOrder(n).map((x) => x.id)],
   ["beatsInOrder", (m, n) => m.beatsInOrder(n).map((x) => x.id)],
   ["chapters", (m, n) => m.chapters(n)],
@@ -381,7 +405,7 @@ const cases: [string, (m: typeof web, n: DnaNode[]) => unknown][] = [
 ];
 
 describe("novel-dna edge twin ↔ web engine parity", () => {
-  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)], ["craftFresh", stampCraft(true)], ["craftStale", stampCraft(false)], ["briefFitFresh", stampBriefFit(true)], ["briefFitStale", stampBriefFit(false)], ["loglineFitFresh", stampLoglineFit(true)], ["loglineFitStale", stampLoglineFit(false)], ["proseBook", proseBook()], ["cadenceBook", cadenceBook()], ["sketchBook", sketchBook()], ["endgameBook", endgameBook()], ["contractBook", contractBook()], ["structureBook", structureBook()]];
+  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)], ["craftFresh", stampCraft(true)], ["craftStale", stampCraft(false)], ["briefFitFresh", stampBriefFit(true)], ["briefFitStale", stampBriefFit(false)], ["loglineFitFresh", stampLoglineFit(true)], ["loglineFitStale", stampLoglineFit(false)], ["proseBook", proseBook()], ["cadenceBook", cadenceBook()], ["sketchBook", sketchBook()], ["endgameBook", endgameBook()], ["contractBook", contractBook()], ["structureBook", structureBook()], ["denseBook", denseBook()]];
   for (const [fxName, nodes] of fixtures) {
     for (const [fnName, fn] of cases) {
       it(`${fnName} agrees on ${fxName}`, () => {
@@ -392,6 +416,13 @@ describe("novel-dna edge twin ↔ web engine parity", () => {
 
   it("the broken fixture actually produces lints (guards against a no-op test)", () => {
     expect(web.validate(brokenBook()).length).toBeGreaterThan(0);
+  });
+
+  it("the dense fixture actually exercises all three fill states (guards against a no-op fixture)", () => {
+    const states = new Set([...web.fillMap(denseBook()).values()].map((f) => f.state));
+    expect([...states].sort()).toEqual(["empty", "filled", "stub"]);
+    // …and the chokepoint must actually hide something, or the parity case above proves nothing.
+    expect(web.liveNodes(denseBook()).length).toBeLessThan(denseBook().length);
   });
 
   it("the structure fixture trips every slot rule (guards against a no-op fixture)", () => {

@@ -1,6 +1,6 @@
 // Pure display derivations over DnaNode — titles, field display strings, and the
 // prose-completion rollup. No React, no IO; everything here is (nodes) => value.
-import { isProseStale, STRUCTURE_TEMPLATES, type BeatContent, type CausalityRow, type DnaNode, type SceneContent } from "@/features/dna/lib/novelDna";
+import { hasOwnContent, isProseStale, STRUCTURE_TEMPLATES, type BeatContent, type CausalityRow, type DnaNode, type SceneContent } from "@/features/dna/lib/novelDna";
 import { editSpecs, NODE_SCHEMA, type EditSpec } from "@/features/dna/lib/dnaSchema";
 
 // ── Title extraction per kind (first meaningful field) ───────────────────────
@@ -33,7 +33,9 @@ export function nodeTitle(n: DnaNode): string {
 const SLOT_INFO = new Map(Object.values(STRUCTURE_TEMPLATES).flatMap((t) => t.slots.map((s) => [s.key, s] as const)));
 export function beatSlot(n: DnaNode): { label: string; hint: string } | null {
   if (n.kind !== "beat") return null;
-  const key = String((n.content as BeatContent).slot ?? "").trim();
+  // A MATERIALIZED slot carries its key on the scaffold plane, not in content (it holds no content yet) —
+  // read both so a placeholder beat still shows the badge that says which structural job it is waiting for.
+  const key = String((n.content as BeatContent).slot ?? "").trim() || String(n.authoring?.scaffold?.slot ?? "").trim();
   if (!key) return null;
   const s = SLOT_INFO.get(key);
   return {
@@ -148,4 +150,18 @@ export function hiddenFields(node: DnaNode, index: Map<string, DnaNode>): Hidden
     out.push({ key, label: spec?.label ?? humanizeKey(key), note: spec?.note, value });
   }
   return out;
+}
+
+// ── Placeholder label (P2, doc_1785673597000.md §4b) ─────────────────────────
+// A materialized slot has no content by definition, so nodeTitle() is empty for it — but the row still has
+// to say WHAT slot it is, or the dense tree is a wall of blanks. That label lives on `authoring.scaffold`
+// (never content, or the fill fold would read the node as written), and the row renders it in ghost styling:
+// present enough to invite a click, visibly not yet authored. Returns null once anything real is written.
+export function scaffoldLabel(n: DnaNode): { title: string; hint: string } | null {
+  const sc = n.authoring?.scaffold;
+  if (!sc) return null;
+  if (hasOwnContent(n)) return null;
+  const title = String(sc.title ?? "").trim();
+  const hint = String(sc.hint ?? "").trim();
+  return title || hint ? { title, hint } : null;
 }

@@ -3,7 +3,8 @@
 // from the tree (nothing stored) — mirrors dnaJourney's derivation style. A rung ghosts ONLY while it is
 // entirely empty; the moment any real node lands there its ghost is gone for good, so a stale template guess
 // never sits next to content the author actually chose (no partial merge between real and ghost siblings).
-import { structureForBook, type DnaNode, type NodeKind } from "@/features/dna/lib/novelDna";
+import { emptyNode, structureForBook, type DnaNode, type NodeKind } from "@/features/dna/lib/novelDna";
+import { KIND_LEVEL } from "@/features/dna/lib/dnaSchema";
 
 export interface GhostItem { kind: NodeKind; title: string; hint?: string; children?: GhostItem[] }
 
@@ -64,4 +65,116 @@ export function ghostFromSeed(nodes: DnaNode[]): GhostItem[] {
 export function ghostFromPremise(nodes: DnaNode[]): GhostItem[] {
   if (nodes.some((n) => n.kind === "pillar")) return [];
   return [ghostPillarBranch(nodes)];
+}
+
+// ── THE SEEDER (P2, doc_1785673597000.md §6) ──────────────────────────────────────────────────────────────
+// The other half of this module's job. Everything above PREVIEWS the default shape as read-only ghost rows;
+// this MATERIALIZES it — the same GhostItem tree, minted as real `book_nodes` rows with `content: {}` — so
+// every slot has a stable id you can type into, attach to, or point the agent at. That is what makes
+// "start anywhere" possible: filling Act 2 first is just writing into a row that already exists.
+//
+// Three rules this obeys, and they are the whole design:
+//   1. ONE-SHOT, NOT A RECONCILER. Runs at book creation and on an explicit structure change — never in the
+//      background. If a reconciler re-minted slots, deleting a placeholder would silently come back and the
+//      author would be fighting the tool.
+//   2. IDEMPOTENT, keyed on `authoring.scaffold.slot` (beats) or kind+position (acts/cast). Re-running mints
+//      only what is genuinely absent.
+//   3. TEMPLATE TEXT LIVES IN `authoring.scaffold`, NEVER `content`. A slot minted as "The Hook" must still
+//      read as EMPTY to the fill fold, or the whole dense-tree contract collapses on its first row.
+//
+// Tombstones (owner decision 2026-08-02): a slot key in the pillar's `authoring.waived_slots` was deleted on
+// purpose. It is never re-minted, and `structureLints` already stops reporting it missing.
+
+/** Slot keys the author has explicitly declined (pillar tombstones). */
+export function waivedSlots(nodes: DnaNode[]): Set<string> {
+  const pillar = nodes.find((n) => n.kind === "pillar");
+  return new Set((pillar?.authoring?.waived_slots ?? []).map((k) => String(k).trim()).filter(Boolean));
+}
+
+/** Record a deleted slot as declined, so neither the linter nor the seeder asks for it again. Returns the
+ *  pillar to save, or null when there's nothing to record (no pillar, no slot, or already waived). */
+export function waiveSlot(nodes: DnaNode[], slot: string): DnaNode | null {
+  const key = slot.trim();
+  if (!key) return null;
+  const pillar = nodes.find((n) => n.kind === "pillar");
+  if (!pillar) return null;
+  const have = pillar.authoring?.waived_slots ?? [];
+  if (have.includes(key)) return null;
+  return { ...pillar, authoring: { ...pillar.authoring, waived_slots: [...have, key] } };
+}
+
+const mint = (bookId: number, kind: DnaNode["kind"], parentId: string | null, position: number, scaffold: { title?: string; hint?: string; slot?: string }): DnaNode => {
+  const n = emptyNode(bookId, kind, KIND_LEVEL[kind] ?? 5, parentId, position);
+  return { ...n, authoring: { ...n.authoring, source: "ai", scaffold } };
+};
+
+/** The rows a book is MISSING relative to its structure template — the seeder's plan. Pure: returns new
+ *  nodes to insert (parented to real ids), never mutates. Empty array = nothing to do (already seeded, or
+ *  the book opted out with structure "none").
+ *
+ *  Depth stops at BEAT on purpose (§4c): the template knows how many acts and which slotted beats, but it
+ *  does NOT know how many scenes a beat needs. Materialize exactly as deep as the template knows the shape. */
+export function seedSkeleton(nodes: DnaNode[], bookId: number): DnaNode[] {
+  const tpl = structureForBook(nodes);
+  if (!tpl) return []; // structure: "none" — deliberately skeleton-free
+  const waived = waivedSlots(nodes);
+  const out: DnaNode[] = [];
+
+  // The LADDER SPINE first, anchored on whatever rung the book ALREADY has. A book that is only a seed is
+  // the single most important case to scaffold — the fresh-book state, and where "start anywhere" has to
+  // work — but premise and pillar are the rungs everything below hangs from, so they must be mintable too
+  // (mirroring what ghostFromSeed previews). Anchoring on the highest EXISTING rung rather than demanding a
+  // specific one keeps this working for partially-built and migrated books alike; only a book with no
+  // ladder at all has nothing to attach to.
+  const seed = nodes.find((n) => n.kind === "seed");
+  let premise = nodes.find((n) => n.kind === "premise");
+  let pillar = nodes.find((n) => n.kind === "pillar");
+  if (!pillar) {
+    if (!premise && seed) {
+      premise = mint(bookId, "premise", seed.id, 0, { title: "Premise", hint: "the dramatic question" });
+      out.push(premise);
+    }
+    if (!premise) return out; // no seed and no premise — nothing to hang a pillar from
+    pillar = mint(bookId, "pillar", premise.id, 0, { title: "Pillar", hint: "controlling idea · ending" });
+    out.push(pillar);
+  }
+
+  // Cast floor — only while the book has NO characters at all; once the author has cast anyone by hand we
+  // stop guessing (same "no partial merge with real siblings" rule the ghost preview follows).
+  if (!nodes.some((n) => n.kind === "character")) {
+    CAST_MIN.forEach((c, i) => out.push(mint(bookId, "character", pillar.id, i, { title: c.title, hint: c.hint })));
+  }
+
+  // Acts: mint any the template declares and the book lacks, matched BY POSITION (an author-renamed act
+  // still counts as that act). Existing acts are left completely alone.
+  const acts = nodes.filter((n) => n.parent_id === pillar.id && n.kind === "act").sort((a, b) => a.position - b.position);
+  const actAt: (DnaNode | undefined)[] = tpl.acts.map((_, i) => acts[i]);
+  tpl.acts.forEach((a, i) => {
+    if (actAt[i]) return;
+    const node = mint(bookId, "act", pillar.id, i, { title: a.title, hint: `${Math.round(a.target_pct * 100)}% of the book · ${a.purpose}` });
+    actAt[i] = node;
+    out.push(node);
+  });
+
+  // Beats: one per template slot, under the act that slot belongs to. Skipped when a beat already CLAIMS
+  // that slot (content.slot) or already carries it as scaffold, and skipped for waived slots.
+  const claimed = new Set<string>();
+  for (const n of nodes) {
+    if (n.kind !== "beat") continue;
+    const c = String((n.content as { slot?: string }).slot ?? "").trim();
+    if (c) claimed.add(c);
+    const s = String(n.authoring?.scaffold?.slot ?? "").trim();
+    if (s) claimed.add(s);
+  }
+  const beatPos = new Map<string, number>();
+  for (const n of nodes) if (n.kind === "beat" && n.parent_id) beatPos.set(n.parent_id, Math.max(beatPos.get(n.parent_id) ?? -1, n.position) + 1);
+  for (const slot of tpl.slots) {
+    if (claimed.has(slot.key) || waived.has(slot.key)) continue;
+    const parent = actAt[slot.act - 1];
+    if (!parent) continue;
+    const pos = beatPos.get(parent.id) ?? 0;
+    beatPos.set(parent.id, pos + 1);
+    out.push(mint(bookId, "beat", parent.id, pos, { title: slot.label, hint: slot.craft, slot: slot.key }));
+  }
+  return out;
 }
