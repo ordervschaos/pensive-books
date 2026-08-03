@@ -51,6 +51,7 @@ const suite = JSON.parse(readFileSync(join(here, "eval-premise-tasks.json"), "ut
 const TASKS = (argVal("--tasks") ?? "").split(",").filter(Boolean);
 const taskIds = TASKS.length ? TASKS : suite.tasks.map((t) => t.id);
 
+const armLabel = (v: string | undefined) => v || "control";
 const stamp = () => new Date().toISOString().slice(11, 19);
 const log = (m: string) => console.log(`[${stamp()}] [suite] ${m}`);
 
@@ -89,7 +90,8 @@ interface Trial {
   pushes: number | null; fallbacks: number | null; nudges: number | null;
   schemaViolations?: number;
   variantRequested?: string | null; variantVerified?: boolean | null;
-  failure?: string;
+  failure?: string;      // the DRIVER failed — no run happened, nothing to salvage
+  gradeFailure?: string; // the run happened and is on disk; only the grade is missing
 }
 
 async function runOne(taskId: string, trial: number, variant: string): Promise<Trial> {
@@ -110,18 +112,29 @@ async function runOne(taskId: string, trial: number, variant: string): Promise<T
   const withRun: Trial = {
     ...base, bookId: r.bookId, stopReason: r.stopReason, wallClockMs: r.wallClockMs, turns: r.turns,
     pushes: r.author?.pushes ?? null, fallbacks: r.author?.fallbackUses ?? null, nudges: r.author?.nudges ?? null,
-    variantVerified: r.variantVerified ?? null,
     variantRequested: r.variantRequested ?? null, variantVerified: r.variantVerified ?? null,
   };
 
   log(`${taskId} trial ${trial} — book ${r.bookId} · ${r.stopReason} · grading…`);
   const gradeArgs = ["--tsconfig", TSCFG, join(here, "eval-premise.mts"), "--book", String(r.bookId), "--task", taskId];
   if (NO_JUDGES) gradeArgs.push("--no-judges");
-  const grade = await sh(TSX, gradeArgs, `${taskId}#${trial}${variant ? `·${variant}` : ""}·grade`);
+  // Grade with a retry, and NEVER discard the run if grading fails. A driver run costs ~10 minutes; the
+  // grade is a few seconds of reads. Throwing away the former because the latter hit a transient connect
+  // timeout is the most expensive possible response — and it happened. A grade failure is recorded as
+  // `gradeFailure` (distinct from `failure`), so the trial still contributes its trajectory and author
+  // metrics; only the judge/check columns go null, which stat() already skips.
   const evalPath = join(here, `.agent-eval-${r.bookId}.json`);
   let g: Record<string, never> | null = null;
-  try { g = JSON.parse(readFileSync(evalPath, "utf8")); } catch { /* fall through */ }
-  if (!g) return { ...withRun, failure: `grader produced no report (exit ${grade.code}): ${grade.out.trim().slice(-300)}` };
+  let grade = { code: 1, out: "" };
+  for (let attempt = 1; attempt <= 2 && !g; attempt++) {
+    if (attempt > 1) { log(`${taskId} trial ${trial} — grade failed, retrying in 15s`); await new Promise((res) => setTimeout(res, 15_000)); }
+    grade = await sh(TSX, gradeArgs, `${taskId}#${trial}${variant ? `·${variant}` : ""}·grade${attempt > 1 ? `(retry)` : ""}`);
+    try { g = JSON.parse(readFileSync(evalPath, "utf8")); } catch { /* retry or fall through */ }
+  }
+  if (!g) {
+    log(`${taskId} trial ${trial} — GRADE LOST (run kept; re-grade later with: pnpm dna:grade --book ${r.bookId} --task ${taskId})`);
+    return { ...withRun, gradeFailure: `grader produced no report (exit ${grade.code}): ${grade.out.trim().slice(-200)}` };
+  }
 
   const violations = (g as never as { schemaViolations?: unknown[] }).schemaViolations ?? [];
   const det = (g as never as { deterministic: { gate: boolean | null; checks: { pass: boolean }[] } }).deterministic;
@@ -273,6 +286,9 @@ if (dirty.length) {
 console.log(`\nmean ±sd across trials. With ${TRIALS} trials the sd is indicative only — it says how noisy,`);
 console.log(`not whether a difference is real. A gap smaller than the sd is not a result.`);
 for (const r of results.filter((x) => x.failure)) console.log(`  ✗ ${r.taskId} trial ${r.trial}: ${r.failure}`);
+for (const r of results.filter((x) => !x.failure && x.gradeFailure)) {
+  console.log(`  ⚠ ${r.taskId} trial ${r.trial} [${armLabel(r.variant)}] run OK, GRADE lost — re-grade: pnpm dna:grade --book ${r.bookId} --task ${r.taskId}`);
+}
 if (variantRuns.length && !armVerified) {
   console.log(`\n🛑 ARM NOT VERIFIED — the variant was set on the thread row but did NOT reach the model`);
   console.log(`   (${unverified.length}/${variantRuns.length} variant runs). Check that book-agent is deployed`);

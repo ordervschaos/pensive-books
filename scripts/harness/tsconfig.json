@@ -1,5 +1,5 @@
 {
-  "//": "tsx config for the headless agent harness. The `@/*` paths let a Node script import the real DNA lib graph from apps/web; the single explicit override ahead of it swaps the browser supabase client (createBrowserClient + cookies + window diagnostics) for a Node one. Order matters — the specific mapping must precede the wildcard.",
+  "//": "tsx config for the headless agent harness. The `@/*` paths let a Node script import the real DNA lib graph from apps/web; the single explicit override ahead of it swaps the browser supabase client (createBrowserClient + cookies + window diagnostics) for a Node one. Order matters \u2014 the specific mapping must precede the wildcard.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -8,11 +8,26 @@
     "noEmit": true,
     "strict": false,
     "skipLibCheck": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "baseUrl": "..",
     "paths": {
-      "@/integrations/supabase/client": ["./harness/supabaseClientNode.ts"],
-      "@/*": ["../apps/web/src/*"]
+      "@/integrations/supabase/client": [
+        "./harness/supabaseClientNode.ts"
+      ],
+      "@/*": [
+        "../apps/web/src/*"
+      ]
     }
-  }
+  },
+  "//include": "Entry scripts live in scripts/, not scripts/harness/. Without this, tsc's default (**/* relative to THIS file) covered only the harness modules \u2014 the drivers, grader, suite and pairwise were never typechecked at all, which is how a duplicate top-level declaration reached runtime past a green check.",
+  "include": [
+    "**/*.ts",
+    "../*.mts"
+  ],
+  "exclude": [
+    "../../node_modules",
+    "../../supabase"
+  ]
 }

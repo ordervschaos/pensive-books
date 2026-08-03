@@ -98,7 +98,7 @@ async function trajectory(bookId: number) {
 
   const sum = (k: keyof AiCall) => calls.reduce((a, c) => a + (Number(c[k]) || 0), 0);
   const input = sum("input_tokens"), cacheRead = sum("cache_read_tokens");
-  const turns = row?.turns ?? 0;
+  const turns = Number(row?.turns ?? 0);
 
   return {
     turns,

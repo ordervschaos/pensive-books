@@ -208,10 +208,10 @@ async function main() {
   progress = premiseProgress(nodes, await loadBrief(bookId));
   const finalRow = await loadThread(bookId);
   const result = {
-    bookId, taskId: task?.id ?? null, dry: DRY, auto: AUTO, author: AUTHOR_KIND,
-    // Read BACK from the row rather than echoing the flag: if the arm failed to stick, the report must say
-    // so, not repeat what was requested. A mislabelled arm silently invalidates the whole comparison.
-    author: AUTHOR_KIND,
+    bookId, taskId: task?.id ?? null, dry: DRY, auto: AUTO,
+    // `authorKind`, not `author` — the latter is the author's METRICS object below, and declaring both
+    // silently dropped which implementation was used (last key wins). An A/B report has to record that.
+    authorKind: AUTHOR_KIND,
     // Read the arm BACK from the row rather than echoing the flag. If it failed to stick, the report must
     // say so — a mislabelled arm silently invalidates the entire comparison, which is the one error this
     // whole seam exists to prevent.
