@@ -150,6 +150,10 @@
   when missing) instead of demanding a specific one. First attempt over-corrected to requiring a *seed*,
   which broke pillar-only/migrated books — caught by the existing tests. +4 regression tests (17 total),
   incl. a no-orphans assertion on the minted spine.
+- **Committed + DEPLOYED (2026-08-03):** `34f0bf9` on `digest-reader-render` (18 files; the concurrent
+  session's `apps/digest/SETUP.md` + `pm/STATE.md` deliberately left out). Deployed **dna-expand**,
+  **book-agent**, and **dna-decompose** — the third because `_shared/novel-dna.ts` is bundled per-function,
+  so the waived-slots lint change would have gone stale there. No other fn imports that twin (verified).
 - **PM impact:** P0–P2 of the redesign are now complete and coherent: the fold, the read-path routing, the
   hunger channel, and the materializer that finally makes them do something. **Still not deployed** — the
   edge twins changed (`waived_slots` lint), so a deploy is now genuinely meaningful rather than a no-op;
