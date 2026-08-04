@@ -18,6 +18,28 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-04 — Removed the "Next step" nudge entirely `[ship]`
+- **What:** Owner's call after the finding below: the nudge is needed "rarely — almost never", and the
+  start doors already cover the one moment it helped (cold start). Deleted the banner, its
+  show-condition, and everything that existed only to feed it — `NEXT_STEP_MESSAGE`, `STEP_NOUN`,
+  `IDEA_MESSAGE`, `draftTarget`, and the `squareTop` prop threaded into `Composer` to flatten the
+  card's corners under it. `isNextStep` survives: the start doors are now its only caller.
+- **Why it was wrong, in one line:** the nudge re-armed whenever a turn ended, and on a conversational
+  rung a turn ends every time the agent asks you something — so it offered to "continue" work that was
+  mid-sentence, and clicking it re-sent the step's canned message and restarted the playbook.
+- **Files:** `AgentRail.tsx`, `agentRail/journeyContent.ts`, `agentRail/Composer.tsx`, plus stale
+  cross-references in `tree/panels.tsx`. Typecheck + eslint clean; 1143 tests pass.
+- **PM impact:** none — the door work it amends is already in STATE.
+
+## 2026-08-04 — Fix: Dark mode had no effect in DNA tree/ledger/meters `[chore]`
+- **What:** DNA studio's console skin was derived only from `themeName` (`terminal` → dark,
+  everything else → light Paper), ignoring `themeMode` entirely — so picking e.g. Charcoal+Dark
+  still rendered light Console-on-Paper, with the inner `theme-paper` class actively shadowing the
+  correct outer `theme-pumpkin dark` CSS vars. Now `consoleMode` checks
+  `themeName === "terminal" || themeMode === "dark"` in all three route files.
+- **Files/commits:** `apps/web/src/features/dna/pages/{DnaTreePage,DnaLedgerPage,DnaMetersPage}.tsx` (uncommitted).
+- **PM impact:** none — isolated bug fix, no roadmap/state change.
+
 ## 2026-08-04 — Finding: the "Continue <step>" nudge re-arms mid-conversation `[wip]`
 - **What:** Owner spotted "CONTINUE INTERVIEW" offered while the interview was actively in flight.
   Diagnosed as systemic, not interview-specific. `showNudge` (`AgentRail.tsx`) suppresses only the three

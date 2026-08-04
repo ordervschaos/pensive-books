@@ -15,23 +15,19 @@ export interface ComposerMenu {
 }
 
 // The composer — or the answer card when the agent has asked a question. Owns no state of its own; the
-// draft/answer/menu state lives in AgentRail so it can be shared with the "next step" nudge and the
-// optimistic-echo logic above the feed.
+// draft/answer/menu state lives in AgentRail so it can be shared with the optimistic-echo logic above the
+// feed.
 export function Composer({
   awaiting, pendingOptions, onReply, answer, setAnswer,
   onStop, stopDisabled, cancelRequested,
   draft, setDraft, onSend, running, active, busy,
-  menu, taRef, stopping, squareTop,
+  menu, taRef, stopping,
 }: {
   awaiting: boolean; pendingOptions: string[]; onReply: (text: string) => void; answer: string; setAnswer: (v: string) => void;
   onStop: () => void; stopDisabled: boolean; cancelRequested: boolean;
   draft: string; setDraft: (v: string) => void; onSend: (text: string) => void; running: boolean; active: boolean; busy: boolean;
   menu: ComposerMenu | null;
   taRef: RefObject<HTMLTextAreaElement>; stopping: boolean;
-  // The "Next step" banner (AgentRail) docks flush on top of the composer when present — this flattens
-  // the card's top corners and tints its border to match the banner's, so the two read as one card
-  // ("agent-chat-island") instead of a gap-free but still-rounded seam.
-  squareTop?: boolean;
 }) {
   if (awaiting) {
     return (
@@ -85,9 +81,8 @@ export function Composer({
       )}
       {/* One bordered island: textarea on top, the send/stop button docked in its own footer row —
           never beside the textarea, where the textarea's own `w-full` fought the button for width
-          and pushed it past the rail's edge. squareTop (a "Next step" banner docked above) flattens
-          the top corners and tints the border to match, so banner + card read as one shape. */}
-      <div className={`overflow-hidden rounded-2xl border bg-background ${squareTop ? "rounded-t-none border-[hsl(var(--pv-accent))]/30" : "border-input"}`}>
+          and pushed it past the rail's edge. */}
+      <div className="overflow-hidden rounded-2xl border border-input bg-background">
         <Textarea ref={taRef} value={draft} onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (menu) {

@@ -14,8 +14,8 @@ import { useBookNodesLiveSync } from "@/features/dna/hooks/useBookNodesLiveSync"
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
 export default function DnaMetersPage() {
-  const { themeName } = useTheme();
-  const consoleMode = themeName === "terminal" ? "terminal" as const : "paper" as const;
+  const { themeName, themeMode } = useTheme();
+  const consoleMode = themeName === "terminal" || themeMode === "dark" ? "terminal" as const : "paper" as const;
   setConsoleTheme(consoleMode);
   const themeClass = consoleMode === "terminal" ? "theme-terminal dark" : "theme-paper";
   const { bookSlug } = useParams<{ bookSlug: string }>();

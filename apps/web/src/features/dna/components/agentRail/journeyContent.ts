@@ -1,42 +1,8 @@
-// What the "next step" nudge SAYS when clicked, keyed by dnaJourney's STEP_RECIPE substep — so the chat
-// bubble names the actual action instead of a one-size-fits-all "let's work on the next step" that read as
-// disconnected from whatever the button was visibly offering (e.g. "generate the logline").
-export const NEXT_STEP_MESSAGE: Record<string, string> = {
-  interview: "Interview me about my book.",
-  seed: "Generate logline options for the seed.",
-  premise: "Generate premise options for the central question.",
-  pillar: "Set the pillar's controlling idea and ending.",
-  contract: "Compile the contract from the brief.",
-  cast: "Add the core cast.",
-  acts: "Generate the acts.",
-  beats: "Generate the beat sheet.",
-  scenes: "Break the next beat into scenes.",
-  promises: "Settle the next open promise.",
-  prose: "Write the next scene.",
-};
-
-// Short noun for the "Next step" button — "Start interview" / "Continue beat sheet" — keyed the same as
-// NEXT_STEP_MESSAGE above. Kept separate from STEP_TEACH's prose because the button needs a 1-2 word
-// object, not a sentence.
-export const STEP_NOUN: Record<string, string> = {
-  interview: "interview",
-  seed: "logline",
-  premise: "premise",
-  pillar: "pillar",
-  contract: "contract",
-  cast: "cast",
-  acts: "acts",
-  beats: "beat sheet",
-  scenes: "scenes",
-  promises: "promises",
-  prose: "scene",
-};
-
 // The guide's teaching line for each journey substep — what the concept IS and why the book needs it,
 // in plain words. Shown in the rail's empty state (the greeting) so a first-time author learns the craft
-// term for the rung they're on before the agent even speaks. Keyed by dnaJourney's STEP_RECIPE substep,
-// like NEXT_STEP_MESSAGE above. The agent itself carries the same duty in its system prompt ("Teach as
-// you go" in book-agent) — this is the zero-cost, zero-latency copy of that stance.
+// term for the rung they're on before the agent even speaks. Keyed by dnaJourney's STEP_RECIPE substep.
+// The agent itself carries the same duty in its system prompt ("Teach as you go" in book-agent) — this is
+// the zero-cost, zero-latency copy of that stance.
 export const STEP_TEACH: Record<string, string> = {
   interview: "Before we build anything, I'll interview you — your characters, world, plot points, aims — and save it all to the book's vision so every later step honors it.",
   seed: "First rung: the logline — your whole story in one sentence: who wants what, what stands in the way, and what's at stake. It's the cheapest place to fix a story; one sentence is easy to change, 80,000 words are not.",
@@ -123,7 +89,6 @@ export const STRUCTURE_DOOR_MESSAGE = (label: string, blank: boolean): string =>
     ? "I want to work without a plot skeleton — no template. Interview me from scratch: my characters, the world, what goes wrong, and what it's all for. Don't assume a three-act shape."
     : `I've chosen the ${label} structure and its slots are now on the tree as empty placeholder beats. Use it as the frame for the interview: walk me through the slots in order, a couple at a time, and ask what I want to happen at each one. Where I already know, capture it; where I don't, offer options rather than leaving it blank. Save what I tell you to the vision as we go, and don't rewrite the skeleton — we're filling it in.`;
 
-// The seed step, but with NO idea in the brief yet — the rung before the first rung. The greeting and the
-// nudge both switch to ideation: the agent's job is to find the spark with the author, not demand one.
+// The seed step, but with NO idea in the brief yet — the rung before the first rung. The greeting switches
+// to ideation: the agent's job is to find the spark with the author, not demand one.
 export const IDEA_TEACH = "Everything downstream is derived from the idea, so we start by finding one worth deriving from — a character in trouble, a place with rules, a feeling you want the reader to leave with. Any spark works.";
-export const IDEA_MESSAGE = "I don't have a story idea yet. Ask me one or two quick questions if that helps, then pitch 3–4 distinct story ideas that fit my brief — each as one vivid sentence. We'll pick one and shape it into a logline.";

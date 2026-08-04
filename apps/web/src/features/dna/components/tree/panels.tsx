@@ -121,8 +121,9 @@ export function JourneyStrip({ nodes, onGoStage, onGapClick, right }: {
         {right && <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>{right}</span>}
       </div>
       {/* What's left — the open gaps in plain words, in spine order. Each gap is clickable: reveals that
-          stage's layer in the tree AND opens the agent rail, whose "next step" nudge already names the
-          mapped action (dnaJourney.currentObjective / AgentRail's NEXT_STEP_MESSAGE) — #14. */}
+          stage's layer in the tree AND opens the agent rail, where the author says what they want next —
+          #14. (The rail's "next step" nudge, which used to name the mapped action, was removed 2026-08-04:
+          it re-armed after every turn and offered to "continue" work already in flight.) */}
       {gaps.length > 0 && (
         <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
           <span style={{ fontFamily: mono, fontSize: 9.5, letterSpacing: "0.14em", textTransform: "uppercase", color: T.muted }}>what's left</span>

@@ -6,7 +6,7 @@
 // and projects the row live (refresh = no-op). Mirrors ReviseChat's shape but is driven by the
 // agent's `steps` feed rather than a per-layer chat thread.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Loader2, WandSparkles, X } from "lucide-react";
+import { ArrowDown, Loader2, WandSparkles, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLatestTaskRow } from "@/hooks/useLatestTaskRow";
 import { stopRun } from "@/lib/stopRun";
@@ -29,7 +29,7 @@ import { ActionLink, Eyebrow, RunError } from "@/components/book/shared/studioUi
 import { snapshotTree } from "@/features/dna/lib/treeVersions";
 import { briefIdea, type Brief } from "@/lib/brief";
 import {
-  NEXT_STEP_MESSAGE, START_DOORS, START_DOORS_LEAD, STEP_NOUN, STEP_TEACH, IDEA_TEACH, IDEA_MESSAGE,
+  START_DOORS, START_DOORS_LEAD, STEP_TEACH, IDEA_TEACH,
   STRUCTURE_BLURB, STRUCTURE_DOOR_LEAD, STRUCTURE_DOOR_MESSAGE,
 } from "./agentRail/journeyContent";
 import { AgentRailControls } from "./agentRail/AgentRailControls";
@@ -62,18 +62,18 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
   }, [nodes, settings]);
 
   // The guided-flow anchor (docs/agent-capabilities.md): the ONE journey rung to drive the author through
-  // next, derived live from the tree. Sent with each message so the agent leads with it; also surfaced as
-  // the idle "Next" nudge below.
+  // next, derived live from the tree. Sent with each message so the agent leads with it.
   // `brief` rides along because the journey's FIRST rung — the discovery interview — is gated outside the
   // tree, on brief.vision (docs/agent-guidance-system.md D3).
   const objective = useMemo(
     () => currentObjective(nodes, { bookSlug, brief }),
     [nodes, bookSlug, brief],
   );
-  // The one-line headline of the objective (the "▸ Step n/5 · …" line), for the idle nudge chip.
+  // The one-line headline of the objective (the "▸ Step n/5 · …" line) — the greeting's "do we know where
+  // this book is?" test.
   const objectiveHeadline = useMemo(() => objective.split("\n").find((l) => l.startsWith("▸"))?.replace(/^▸\s*/, "") ?? "", [objective]);
-  // The substep key behind that headline (e.g. "seed", "beats") — so the nudge's chat message can name the
-  // actual action instead of the generic "let's work on the next step" that used to ride under every headline.
+  // The substep key behind that headline (e.g. "seed", "beats") — picks the greeting's teaching line, gates
+  // the start doors to the interview rung, and seeds the focus chip's suggestion.
   const objectiveKey = useMemo(() => currentObjectiveKey(nodes, brief), [nodes, brief]);
   // The suggestion behind the focus chip is DERIVED (the journey rung) and merely OFFERED — never
   // auto-applied. "Derived proposes, author disposes": the agent's mode has always been computed; what's
@@ -84,20 +84,11 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
     [suggestedFocus, nodes],
   );
   // The rung BEFORE the first rung: on the SEED step with no idea in the brief, the guide's job is ideation,
-  // not loglines — the greeting and the nudge below both switch stance on this flag. It sits AFTER the
+  // not loglines — the greeting switches stance on this flag. It sits AFTER the
   // interview deliberately: a blank author is ideated with INSIDE the interview (STEP_RECIPE.interview says
   // so), so a fresh book gets the interview card, and this fires only for the odd book that reached the seed
   // (interview compiled or skipped) still carrying no idea.
   const needsIdea = objectiveKey === "seed" && !briefIdea(brief)?.trim();
-  // When the objective is the draft step, the concrete scene it targets — so the "next step" nudge can NAME
-  // which scene ("Write 'Bram's door'") instead of a bare ordinal, and can't diverge from what the agent
-  // does: we only surface it when the live objective actually points at this scene's id (same source of
-  // truth the agent receives), so the card ↔ action stay in lockstep.
-  const draftTarget = useMemo(() => {
-    const t = nextDraftTarget(nodes);
-    return t && objective.includes(`[${t.scene.id}]`) ? t : undefined;
-  }, [nodes, objective]);
-
   // The attached nodes resolved against the live tree (ids referencing since-deleted nodes drop out). These
   // anchor the agent — their ids ride OUT-OF-BAND on the message (not glued to the text), and the edge fn
   // rebuilds a live, hydrated <focus> block from them every turn, so the tray can never go stale in the
@@ -314,7 +305,8 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
   }, [steps, optimistic]);
   useEffect(() => { if (optimistic != null) scrollToBottom(false); }, [optimistic, scrollToBottom]);
 
-  // `isNextStep` must be true ONLY for the explicit "Next" nudge click below — it's the signal that lets
+  // `isNextStep` must be true ONLY for a guided-flow click — today that means the start doors below (the
+  // "Next step" nudge that used to be the other caller was removed 2026-08-04). It's the signal that lets
   // the server treat the guided-flow objective as the actual ask (and so use it to pick a skill brief). A
   // free-typed composer message must NOT carry that signal, even though `objective` still rides along for
   // the agent's own orientation — otherwise an unrelated typed question that happens to miss the skill
@@ -444,17 +436,11 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
     catch (e) { toast({ title: "Couldn't discard", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
   };
 
-  const nextStepMessage = needsIdea
-    ? IDEA_MESSAGE
-    : draftTarget
-    ? `Write "${nodeLabel(draftTarget.scene)}".`
-    : (objectiveKey && NEXT_STEP_MESSAGE[objectiveKey]) || objectiveHeadline || "Let's work on the next step.";
-
   // The start doors (journeyContent.START_DOORS) — the interview's entry points, offered ONLY on a fresh
-  // thread at the interview rung. They replace the single "Start interview" nudge rather than sitting
-  // beside it: two calls-to-action at the same moment is how a fork starts reading as navigation. And they
-  // live INSIDE the interview's first turn on purpose — the journey strip still says one corridor
-  // ("1 Idea — Interview"), because that's the truth; the doors are only how you walk into it.
+  // thread at the interview rung. They live INSIDE the interview's first turn on purpose: the journey strip
+  // still says one corridor ("1 Idea — Interview"), because that's the truth; the doors are only how you
+  // walk into it. They are also the rail's ONLY nudge now — see the note where the "Next step" card used
+  // to be, below.
   const showDoors = steps.length === 0 && !optimistic && objectiveKey === "interview";
   // The structure door is two-step: click it and the method list replaces the door grid, because picking a
   // skeleton WRITES to the tree and that deserves a named choice rather than a surprise. The methods come
@@ -483,22 +469,6 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
     setPickingStructure(false);
     await send(STRUCTURE_DOOR_MESSAGE(label, key === "none"), { isNextStep: true });
   };
-  // Guided-flow nudge (lib/dnaJourney.currentObjective) — docked directly on top of the composer (not in
-  // the feed) since the composer is where the action actually happens; a card floating up in the scroll
-  // history just left a void beneath it. Shows only when the agent's work is settled: idle, nothing
-  // running/awaiting, no proposal to review, no error.
-  const showNudge = !active && !optimistic && proposals.length === 0 && optionNodes.length === 0 && row?.status !== "error" && !!objectiveHeadline && !showDoors;
-  // "▸ Step 1/5 · Idea – Interview" (dnaJourney.currentObjective) → badge "1/5" + the rest as the row's
-  // description. draftTarget carries its own scene tally instead of the step badge.
-  const stepMatch = objectiveHeadline.match(/^Step\s+(\d+)\/(\d+)\s*·\s*(.*)$/);
-  const nudgeBadge = draftTarget ? `${draftTarget.orderIndex}/${draftTarget.total}` : stepMatch ? `${stepMatch[1]}/${stepMatch[2]}` : null;
-  const nudgeDesc = draftTarget
-    ? `Write “${nodeLabel(draftTarget.scene)}”`
-    : needsIdea ? "Find the story idea — pitch me a few directions" : (stepMatch ? stepMatch[3] : objectiveHeadline);
-  // "Start interview" vs "Continue the beat sheet" — an empty thread (steps.length === 0) means nothing
-  // has been said yet, so the button must not claim to "continue" a conversation that never began.
-  const nudgeAction = needsIdea ? "idea" : draftTarget ? "scene" : (objectiveKey && STEP_NOUN[objectiveKey]) || "";
-  const nudgeLabel = `${steps.length === 0 ? "Start" : "Continue"}${nudgeAction ? ` ${nudgeAction}` : ""}`;
 
   return (
     // No panel bg/border here — this sits on the same chrome tone as the page's title bar (set by the
@@ -656,34 +626,23 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
         </div>
       )}
 
-      {/* Composer — or the answer card when the agent has asked a question. The "Next step" nudge docks
-          directly on top of it (Lovable-style: one merged card, banner + input) since that's where the
-          author's eye and cursor already are — not a card floating up in the scroll history. */}
+      {/* Composer — or the answer card when the agent has asked a question.
+          A "Next step" card used to dock on top of this, offering "Continue <step>" whenever the agent was
+          idle. REMOVED 2026-08-04: it re-armed every time a turn ended, which on a conversational rung is
+          every time the agent asks you something — so it stood there offering to "continue" an interview
+          that was mid-sentence, and clicking it re-sent the step's canned message and restarted the
+          playbook. The three structured pending states it DID suppress on (a running turn, an open
+          proposal, staged options) already carry their own resolve-in-place UI; the unstructured one (the
+          agent ends its turn with a question in prose) has no server-side marker, so there was no honest
+          condition left to show a generic CTA under. Cold start is the one moment a nudge genuinely helps,
+          and the start doors above cover it. Everything else: the composer IS the next step. */}
       <div className="mt-3 shrink-0">
-        {showNudge && (
-          <div className="flex items-center gap-2 rounded-t-2xl border border-b-0 border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/[0.06] px-3 py-2">
-            <WandSparkles className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />
-            <span className="shrink-0 pv-serif text-[13px] font-medium text-foreground">Next step</span>
-            {nudgeBadge && (
-              <span className="shrink-0 rounded-full bg-[hsl(var(--pv-accent))]/10 px-2 py-0.5 pv-mono text-[9.5px] text-[hsl(var(--pv-accent))]">
-                {nudgeBadge}
-              </span>
-            )}
-            <span className="min-w-0 flex-1 truncate pv-serif text-[12.5px] text-[hsl(var(--pv-text-muted))]" title={nudgeDesc}>{nudgeDesc}</span>
-            <button type="button" onClick={() => void send(nextStepMessage, { isNextStep: true })} disabled={busy}
-              title="Let the agent lead you through this step"
-              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[hsl(var(--pv-accent))]/50 px-2.5 py-1 pv-mono text-[10px] uppercase tracking-[0.06em] text-[hsl(var(--pv-accent))] transition-colors hover:bg-[hsl(var(--pv-accent))]/10 disabled:opacity-50">
-              {nudgeLabel} <ArrowUp className="h-3 w-3 rotate-90" />
-            </button>
-          </div>
-        )}
         <Composer
           awaiting={!!(awaiting && row?.pending)} pendingOptions={row?.pending?.options ?? []}
           onReply={(t) => void reply(t)} answer={answer} setAnswer={setAnswer}
           onStop={() => void stop()} stopDisabled={!!row?.cancel_requested} cancelRequested={!!row?.cancel_requested}
           draft={draft} setDraft={setDraft} onSend={(t) => void send(t)} running={running} active={active} busy={busy}
           menu={menu} taRef={taRef} stopping={stopping}
-          squareTop={showNudge}
         />
       </div>
     </div>

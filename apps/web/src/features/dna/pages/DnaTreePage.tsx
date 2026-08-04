@@ -65,12 +65,12 @@ export default function DnaTreePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
-  // The studio follows the app theme, collapsed to its two console skins: the "terminal" theme is
-  // the original dark mono console; every other theme renders Console-on-Paper. setConsoleTheme
-  // swaps the shared token objects in place (idempotent), and key={consoleMode} on the root
-  // remounts the studio so every inline style recomputes on switch.
-  const { themeName } = useTheme();
-  const consoleMode = themeName === "terminal" ? "terminal" as const : "paper" as const;
+  // The studio follows the app theme, collapsed to its two console skins: the "terminal" theme, or
+  // any theme with Dark mode on, gets the dark mono console; Light-mode Paper/Coffee/Charcoal render
+  // Console-on-Paper. setConsoleTheme swaps the shared token objects in place (idempotent), and
+  // key={consoleMode} on the root remounts the studio so every inline style recomputes on switch.
+  const { themeName, themeMode } = useTheme();
+  const consoleMode = themeName === "terminal" || themeMode === "dark" ? "terminal" as const : "paper" as const;
   setConsoleTheme(consoleMode);
   const themeClass = consoleMode === "terminal" ? "theme-terminal dark" : "theme-paper";
   const tab: "tree" | "taste" | "overview" | "analytics" | "characters" | "story" | "craft" =
