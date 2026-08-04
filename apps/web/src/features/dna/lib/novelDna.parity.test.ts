@@ -355,6 +355,28 @@ function denseBook(): DnaNode[] {
   return [seed, prem, pil, ghostChar, realChar, blankChar, a1, a2, b1, b2, s1, judged];
 }
 
+// A book that walked the STRUCTURE ENTRY DOOR (dnaSkeleton.chooseStructure, 2026-08-04): a blank seed, a
+// pillar carrying nothing but the chosen method, and one empty placeholder beat per Save-the-Cat slot with the
+// key on the SCAFFOLD plane. Locks three new behaviours across the twin boundary at once — the non-default
+// template resolving, `structure` counting as a declaration rather than content (so the pillar stays empty),
+// and slot_missing staying silent because a materialized slot is empty, not absent.
+function scaffoldedBook(): DnaNode[] {
+  const seed = mk("seed", { id: "sc_seed", content: {} });
+  const prem = mk("premise", { id: "sc_prem", parent_id: "sc_seed", content: {} });
+  const pil = mk("pillar", { id: "sc_pil", parent_id: "sc_prem", content: { structure: "save_the_cat" } });
+  const SLOTS: [string, number][] = [
+    ["opening_image", 1], ["theme_stated", 1], ["setup", 1], ["catalyst", 1], ["debate", 1], ["break_into_two", 1],
+    ["b_story", 2], ["fun_and_games", 2], ["midpoint", 2], ["bad_guys_close_in", 2], ["all_is_lost", 2],
+    ["dark_night_of_the_soul", 2], ["break_into_three", 2], ["finale", 3], ["final_image", 3],
+  ];
+  const acts = [0, 1, 2].map((i) => mk("act", { id: `sc_a${i}`, parent_id: "sc_pil", position: i, content: {} }));
+  const beats = SLOTS.map(([slot, act], i) => mk("beat", {
+    id: `sc_b${i}`, parent_id: `sc_a${act - 1}`, position: i, content: {},
+    authoring: { source: "ai", locked: false, status: "accepted", scaffold: { title: slot, slot } },
+  }));
+  return [seed, prem, pil, ...acts, ...beats];
+}
+
 const settings: BookSettings = { title: "The Folding City", author: "A. Nzal", word_target: 60000 };
 const j = (v: unknown) => JSON.stringify(v);
 
@@ -405,7 +427,7 @@ const cases: [string, (m: typeof web, n: DnaNode[]) => unknown][] = [
 ];
 
 describe("novel-dna edge twin ↔ web engine parity", () => {
-  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)], ["craftFresh", stampCraft(true)], ["craftStale", stampCraft(false)], ["briefFitFresh", stampBriefFit(true)], ["briefFitStale", stampBriefFit(false)], ["loglineFitFresh", stampLoglineFit(true)], ["loglineFitStale", stampLoglineFit(false)], ["proseBook", proseBook()], ["cadenceBook", cadenceBook()], ["sketchBook", sketchBook()], ["endgameBook", endgameBook()], ["contractBook", contractBook()], ["structureBook", structureBook()], ["denseBook", denseBook()]];
+  const fixtures: [string, DnaNode[]][] = [["goodBook", goodBook()], ["brokenBook", brokenBook()], ["registryBook", registryBook()], ["exposureBook", exposureBook()], ["ledgerAtBook", ledgerAtBook()], ["verticalBook", verticalBook()], ["shapeFitFresh", stampShapeFit(true)], ["shapeFitStale", stampShapeFit(false)], ["craftFresh", stampCraft(true)], ["craftStale", stampCraft(false)], ["briefFitFresh", stampBriefFit(true)], ["briefFitStale", stampBriefFit(false)], ["loglineFitFresh", stampLoglineFit(true)], ["loglineFitStale", stampLoglineFit(false)], ["proseBook", proseBook()], ["cadenceBook", cadenceBook()], ["sketchBook", sketchBook()], ["endgameBook", endgameBook()], ["contractBook", contractBook()], ["structureBook", structureBook()], ["denseBook", denseBook()], ["scaffoldedBook", scaffoldedBook()]];
   for (const [fxName, nodes] of fixtures) {
     for (const [fnName, fn] of cases) {
       it(`${fnName} agrees on ${fxName}`, () => {
@@ -423,6 +445,20 @@ describe("novel-dna edge twin ↔ web engine parity", () => {
     expect([...states].sort()).toEqual(["empty", "filled", "stub"]);
     // …and the chokepoint must actually hide something, or the parity case above proves nothing.
     expect(web.liveNodes(denseBook()).length).toBeLessThan(denseBook().length);
+  });
+
+  it("a scaffolded book is silent on slot_missing — and would NOT be without the scaffold plane", () => {
+    const nodes = scaffoldedBook();
+    expect(web.validate(nodes).filter((i) => i.rule === "slot_missing")).toEqual([]);
+    // Strip the scaffold plane and the same tree nags for all 15 — proof the fixture exercises the branch.
+    const stripped = nodes.map((n) => (n.kind === "beat" ? { ...n, authoring: { ...n.authoring, scaffold: undefined } } : n));
+    expect(web.validate(stripped).filter((i) => i.rule === "slot_missing")).toHaveLength(15);
+  });
+
+  it("the pillar's method declaration does not make it read as authored", () => {
+    const pil = scaffoldedBook().find((n) => n.id === "sc_pil")!;
+    expect(web.hasOwnContent(pil)).toBe(false);
+    expect(web.structureForBook(scaffoldedBook())?.key).toBe("save_the_cat");
   });
 
   it("the structure fixture trips every slot rule (guards against a no-op fixture)", () => {

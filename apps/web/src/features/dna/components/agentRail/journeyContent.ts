@@ -51,6 +51,78 @@ export const STEP_TEACH: Record<string, string> = {
   promises: "Last rung: the promise ledger — every open loop the book set up (foreshadowing, contests, obligatory scenes) that hasn't paid off. A story feels finished when every promise is paid on the page or deliberately waived.",
 };
 
+// ── Start doors — the interview's entry points ────────────────────────────────
+// The interview is a SLOT-FILLING dialogue over brief.vision's sections (characters · world_setting ·
+// plot_points · themes_aims · …), and a slot-filler doesn't care which slot lands first. So entry order was
+// always free — but the rail offered exactly one button ("Start interview"), so authors never learned the
+// door was wide, and defaulted to answering whatever the agent happened to ask first.
+//
+// These are the DOORS: one canned first message each, named by the MATERIAL the author actually has (a
+// character, a scene) rather than by our internal stage. A door changes only what the agent asks first and
+// which vision section it captures first. The ladder underneath (idea → foundations → structure → scenes →
+// prose) is a dependency DAG and is NOT touched — derivation order is fixed, entry order is free. Shown only
+// on a fresh thread at the interview step; the interview then converges exactly as STEP_RECIPE.interview says.
+export interface StartDoor { key: string; label: string; hint: string; message: string; opensPicker?: boolean }
+
+export const START_DOORS_LEAD = "Where do you want to start? Any of these works — I'll take it from there.";
+
+export const START_DOORS: StartDoor[] = [
+  {
+    key: "character", label: "A character", hint: "someone I can't stop thinking about",
+    message: "I want to start from a character. Ask me about them first — who they are, what they want, and what's wrong with them — and capture what I say to the vision's characters section. Once they're on the page, work outward from them to the world and what goes wrong.",
+  },
+  {
+    key: "hook", label: "A hook", hint: "the what-if that started it",
+    message: "I want to start from the hook — the what-if that made me want to write this. Ask me for it, push on what makes it more than a one-liner, and capture it to the vision's plot points. Then help me find who it happens to.",
+  },
+  {
+    key: "scene", label: "A scene", hint: "a moment I can already see",
+    message: "I want to start from a scene I can already picture. Let me describe it, ask what makes it matter, and capture it to the vision's plot points. Then work backwards with me: who's in it, what had to happen for it to be possible, and where the book goes after it.",
+  },
+  {
+    key: "world", label: "A world", hint: "a place with rules",
+    message: "I want to start from the world — the place and its rules. Ask me what's true there and what it costs the people living in it, capture it to the vision's world / setting, then help me find the character those rules press hardest on.",
+  },
+  {
+    key: "feeling", label: "A feeling", hint: "what the reader leaves with",
+    message: "I want to start from the feeling I want the reader to leave with. Ask me what it is and what would earn it, capture it to the vision's themes / aims, then help me find the story that lands it.",
+  },
+  {
+    key: "structure", label: "A structure", hint: "a plot skeleton to fill in", opensPicker: true,
+    message: "", // supplied by STRUCTURE_DOOR_MESSAGE once the method is picked
+  },
+  {
+    key: "nothing", label: "Nothing yet", hint: "pitch me a few directions",
+    message: "I don't have a starting point yet. Ask me one or two quick questions if that helps, then pitch 3–4 distinct directions this book could take — each as one vivid sentence. We'll pick one and interview from there.",
+  },
+];
+
+// ── The structure door ────────────────────────────────────────────────────────
+// The one door that DOES something before it speaks. The others only seed the conversation; this one writes
+// the book's plot-skeleton method to the pillar and materializes its slots as real empty rows (dnaSkeleton's
+// chooseStructure), THEN starts the interview — so the interview has a frame to walk instead of a blank page,
+// and every slot already has an id the author can type into in any order.
+//
+// Author-facing blurbs for the registry's methods (novelDna STRUCTURE_TEMPLATES). Kept here, not on the
+// template, because they are marketing copy for a choice — the template's own `craft` strings are guidance
+// the GENERATOR reads, and the two should be free to diverge in voice. A method with no blurb still shows
+// (its label carries it), so adding a registry entry can't break this list.
+export const STRUCTURE_BLURB: Record<string, string> = {
+  weiland_3act: "The house default. Nine load-bearing turns across three acts — the fewest moving parts that still hold a novel up.",
+  save_the_cat: "Fifteen beats, tightly positioned. The most prescriptive option: best when you want the shape decided so you can spend everything on the scenes.",
+  heros_journey: "Twelve stages of departure, initiation, and return. Suits a story about someone who comes back changed.",
+  none: "No skeleton. You get the premise and pillar to write into, and nothing else is assumed.",
+};
+
+export const STRUCTURE_DOOR_LEAD = "Pick the skeleton you want to fill in. Every slot becomes a real, empty row you can write into in any order — and the interview will walk you through them.";
+
+/** What the author says to the agent once the skeleton is on the page. `label` is the template's own label
+ *  (or "no structure"), so the agent names the method the author actually chose. */
+export const STRUCTURE_DOOR_MESSAGE = (label: string, blank: boolean): string =>
+  blank
+    ? "I want to work without a plot skeleton — no template. Interview me from scratch: my characters, the world, what goes wrong, and what it's all for. Don't assume a three-act shape."
+    : `I've chosen the ${label} structure and its slots are now on the tree as empty placeholder beats. Use it as the frame for the interview: walk me through the slots in order, a couple at a time, and ask what I want to happen at each one. Where I already know, capture it; where I don't, offer options rather than leaving it blank. Save what I tell you to the vision as we go, and don't rewrite the skeleton — we're filling it in.`;
+
 // The seed step, but with NO idea in the brief yet — the rung before the first rung. The greeting and the
 // nudge both switch to ideation: the agent's job is to find the spark with the author, not demand one.
 export const IDEA_TEACH = "Everything downstream is derived from the idea, so we start by finding one worth deriving from — a character in trouble, a place with rules, a feeling you want the reader to leave with. Any spark works.";

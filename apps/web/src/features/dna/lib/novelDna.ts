@@ -466,7 +466,12 @@ export function inputHash(node: DnaNode, index: Map<string, DnaNode>): string {
 
 // Judge verdicts ABOUT a node are not content authored ON it: a read pass writing observed_craft must never
 // make an empty node look authored. `prose` is the one OUTPUT_FIELD that counts — see the note above.
-const NON_CONTENT_FIELDS = new Set<string>((OUTPUT_FIELDS as readonly string[]).filter((k) => k !== "prose"));
+// `structure` joins them for a different reason: it is a METHOD DECLARATION (which plot skeleton this book
+// follows — policy the generator reads), not a sentence of story. A pillar that carries only a structure key
+// is still an empty placeholder waiting for its controlling idea, and every consumer of the fill fold must
+// keep seeing it that way — otherwise choosing a template up front would silently mark the pillar authored
+// and, downstream, tell the journey the book had already been built.
+const NON_CONTENT_FIELDS = new Set<string>([...(OUTPUT_FIELDS as readonly string[]).filter((k) => k !== "prose"), "structure"]);
 
 /** Blank = absent, empty string, empty list, or an object whose every leaf is blank (`{}`, `{name:""}`). */
 function isBlankValue(v: unknown): boolean {
@@ -2198,7 +2203,8 @@ export function structuralLints(nodes: DnaNode[]): DnaIssue[] {
 // forward (dna-expand injects the template into the beatsheet pass); structureLints verify backward — the
 // same plan-data-feeds-both-passes symmetry as threads/games/meters. The pillar's `structure` key picks the
 // method ("none" = deliberately structure-free); absent = the house default (weiland_3act), so a new book is
-// OPINIONATED BY DEFAULT while kishōtenketsu / Save-the-Cat stay one registry entry away.
+// OPINIONATED BY DEFAULT. Adding a method IS one registry entry: Save the Cat and the Hero's Journey were added
+// exactly that way (2026-08-04), and kishōtenketsu is still one entry away.
 export interface StructureSlot {
   key: string; label: string;
   at: number;         // target position as a fraction of the BEAT SPINE (plan plane, like state_key indices)
@@ -2233,7 +2239,62 @@ export const WEILAND_3ACT: StructureTemplate = {
     { key: "resolution", label: "The Resolution", at: 0.98, tolerance: 0.06, act: 3, craft: "catch breath and show how the journey permanently changed the protagonist — growth dramatized on the page, never narrated" },
   ],
 };
-export const STRUCTURE_TEMPLATES: Record<string, StructureTemplate> = { [WEILAND_3ACT.key]: WEILAND_3ACT };
+// Blake Snyder's Save the Cat! — 15 beats across three acts, the most positionally prescriptive method here.
+// Percentages are his own page numbers over a 110-page script, normalized (catalyst p12, break into two p25,
+// midpoint p55, all is lost p75, break into three p85). Five of the fifteen are SEQUENCES rather than moments
+// — set-up, debate, fun and games, bad guys close in, finale — so their tolerance is deliberately wide: asking
+// a multi-scene movement to land on one spine index would be a lint about arithmetic, not about craft.
+export const SAVE_THE_CAT: StructureTemplate = {
+  key: "save_the_cat", label: "Save the Cat (Snyder)",
+  acts: [
+    { title: "Act One", purpose: "state the thesis: the world as it is, the flaw it rewards, and the event that makes staying impossible", target_pct: 0.23 },
+    { title: "Act Two", purpose: "the antithesis — the upside-down world where the old way stops working; fun first, then the walls close in", target_pct: 0.77 },
+    { title: "Act Three", purpose: "the synthesis: what was learned in the A story fused with what was learned in the B story, spent on the final problem", target_pct: 1 },
+  ],
+  slots: [
+    { key: "opening_image", label: "Opening Image", at: 0.01, tolerance: 0.04, act: 1, craft: "the 'before' snapshot — one image carrying the protagonist's world, mood, and flaw as they stand, so the final image can measure how far they moved" },
+    { key: "theme_stated", label: "Theme Stated", at: 0.045, tolerance: 0.05, act: 1, craft: "someone states what the story will argue is true, in passing, to a protagonist who is not yet able to hear it — never as a speech about the theme" },
+    { key: "setup", label: "Set-Up", at: 0.05, tolerance: 0.08, act: 1, craft: "the status quo and everything that must break: what's missing in the protagonist's life, the people around them, and every element the finale will need to have been planted" },
+    { key: "catalyst", label: "Catalyst", at: 0.11, tolerance: 0.05, act: 1, craft: "the telegram — an external event that wrecks the status quo so the old life can't simply resume" },
+    { key: "debate", label: "Debate", at: 0.17, tolerance: 0.08, act: 1, craft: "the protagonist resists: the last stretch where refusing is still possible, and the question 'dare I?' is dramatized rather than asserted" },
+    { key: "break_into_two", label: "Break Into Two", at: 0.23, tolerance: 0.05, act: 1, craft: "the protagonist CHOOSES to leave the old world — the decision must be theirs, not something done to them, or act two is a passenger seat" },
+    { key: "b_story", label: "B Story", at: 0.27, tolerance: 0.06, act: 2, craft: "the relationship line opens — usually the person who carries the theme; this is where the argument gets discussed by people instead of stated by the book" },
+    { key: "fun_and_games", label: "Fun and Games", at: 0.39, tolerance: 0.11, act: 2, craft: "the promise of the premise: the sequence a reader came for, where the new world is explored for its own pleasure before the plot tightens" },
+    { key: "midpoint", label: "Midpoint", at: 0.5, tolerance: 0.06, act: 2, craft: "a false victory or false defeat that raises the stakes and ends the fun — the outer goal and the inner need cross here, and time starts running out" },
+    { key: "bad_guys_close_in", label: "Bad Guys Close In", at: 0.59, tolerance: 0.09, act: 2, polarity: "down", craft: "external pressure regroups while the protagonist's own team fractures — the doubts inside must tighten in step with the threat outside" },
+    { key: "all_is_lost", label: "All Is Lost", at: 0.68, tolerance: 0.05, act: 2, polarity: "down", craft: "the opposite of the midpoint: the lowest point, carrying a whiff of death — something must actually die here, literally or as a way of living" },
+    { key: "dark_night_of_the_soul", label: "Dark Night of the Soul", at: 0.73, tolerance: 0.06, act: 2, polarity: "down", craft: "the protagonist sits in the loss with nothing left of the old way — the beat that earns the next one; skipping it makes the recovery feel granted rather than paid for" },
+    { key: "break_into_three", label: "Break Into Three", at: 0.77, tolerance: 0.05, act: 2, craft: "the A story and B story fuse: what the relationship taught supplies the missing piece, and the protagonist chooses to act on the theme they refused in act one" },
+    { key: "finale", label: "Finale", at: 0.89, tolerance: 0.09, act: 3, craft: "the new way applied — dismantle the old world for good, defeat the antagonist at every level established, and prove the change by what the protagonist does under pressure" },
+    { key: "final_image", label: "Final Image", at: 0.99, tolerance: 0.04, act: 3, craft: "the 'after' snapshot, deliberately rhyming with the opening image so the distance travelled is shown rather than summarized" },
+  ],
+};
+// Christopher Vogler's twelve-stage Hero's Journey (the writer's distillation of Campbell's monomyth), grouped
+// into Departure / Initiation / Return. Positions are the conventional ones; "Tests, Allies, Enemies" is a
+// sequence rather than a moment, so it carries the widest band.
+export const HEROS_JOURNEY: StructureTemplate = {
+  key: "heros_journey", label: "Hero's Journey (Vogler)",
+  acts: [
+    { title: "Departure", purpose: "the known world, the summons out of it, and the crossing that makes return impossible on the old terms", target_pct: 0.25 },
+    { title: "Initiation", purpose: "the special world tests the hero to the edge of death and pays them for surviving it", target_pct: 0.75 },
+    { title: "Return", purpose: "carrying the prize home costs one more, larger death — and the hero comes back changed, with something the ordinary world needs", target_pct: 1 },
+  ],
+  slots: [
+    { key: "ordinary_world", label: "The Ordinary World", at: 0.03, tolerance: 0.06, act: 1, craft: "the hero at home in the world they know — establish the balance the journey will disturb, and the lack they can't yet name" },
+    { key: "call_to_adventure", label: "The Call to Adventure", at: 0.1, tolerance: 0.05, act: 1, craft: "the disturbance that presents a problem, challenge, or adventure — the known world stops being sufficient" },
+    { key: "refusal_of_the_call", label: "Refusal of the Call", at: 0.15, tolerance: 0.06, act: 1, craft: "the hero hesitates or turns away — dramatize the fear, so that going anyway is a choice with a price and not a formality" },
+    { key: "meeting_the_mentor", label: "Meeting the Mentor", at: 0.2, tolerance: 0.06, act: 1, craft: "the hero gains what they need to begin — training, a gift, or the confidence to face the unknown; the mentor supplies the push, never the victory" },
+    { key: "crossing_the_threshold", label: "Crossing the Threshold", at: 0.25, tolerance: 0.05, act: 1, craft: "the hero commits and enters the special world — the rules change here, and the story's real terms are set" },
+    { key: "tests_allies_enemies", label: "Tests, Allies, Enemies", at: 0.37, tolerance: 0.1, act: 2, craft: "the hero learns the special world's rules by paying for them — small trials that sort friend from enemy and teach what the ordeal will demand" },
+    { key: "approach_inmost_cave", label: "Approach to the Inmost Cave", at: 0.47, tolerance: 0.07, act: 2, craft: "preparation at the edge of the most dangerous place — plans, doubts, and the last chance to reconsider before the central crisis" },
+    { key: "ordeal", label: "The Ordeal", at: 0.55, tolerance: 0.06, act: 2, polarity: "down", craft: "the central crisis: the hero faces death, literal or symbolic, and something of the old self does not come back out" },
+    { key: "reward", label: "The Reward", at: 0.63, tolerance: 0.06, act: 2, polarity: "up", craft: "seizing the sword — the hero takes possession of what the ordeal was for, and the story lets both hero and reader breathe before the cost lands" },
+    { key: "road_back", label: "The Road Back", at: 0.75, tolerance: 0.07, act: 3, craft: "the hero commits to returning, and the special world pursues — the consequences of taking the prize come due" },
+    { key: "resurrection", label: "The Resurrection", at: 0.88, tolerance: 0.06, act: 3, craft: "the final and most dangerous test at the highest level: the hero is purified by a last sacrifice and proves the transformation held" },
+    { key: "return_with_the_elixir", label: "Return with the Elixir", at: 0.97, tolerance: 0.05, act: 3, craft: "the hero comes home carrying something that heals the ordinary world's lack — without it, the journey was a trip, not a story" },
+  ],
+};
+export const STRUCTURE_TEMPLATES: Record<string, StructureTemplate> = { [WEILAND_3ACT.key]: WEILAND_3ACT, [SAVE_THE_CAT.key]: SAVE_THE_CAT, [HEROS_JOURNEY.key]: HEROS_JOURNEY };
 export const DEFAULT_STRUCTURE_KEY = WEILAND_3ACT.key;
 
 /** Resolve the book's structure template from the pillar's `structure` key. "none" = deliberately
@@ -2276,7 +2337,13 @@ function structureLints(nodes: DnaNode[]): DnaIssue[] {
   // Tombstones: a slot the author deliberately deleted is not "missing" — it is declined. (Owner decision
   // 2026-08-02; doc_1785673597000.md §9.2.)
   const waived = new Set((pillar?.authoring?.waived_slots ?? []).map((k) => String(k).trim()).filter(Boolean));
-  for (const slot of tpl.slots) if (!claimed.has(slot.key) && !waived.has(slot.key))
+  // Nor is a MATERIALIZED slot missing — it is empty. Once the author picks a structure up front, the seeder
+  // mints one placeholder beat per slot carrying the key on the SCAFFOLD plane (authoring.scaffold.slot, never
+  // content.slot, so the row still reads as unwritten). Judging those as slot_missing would greet a book with
+  // one warning per slot the instant it chose a method — "early, not wrong" in reverse. Position and order are
+  // still judged on content claims only: a placeholder has nowhere to be yet.
+  const scaffolded = new Set(nodes.filter((n) => n.kind === "beat").map((n) => String(n.authoring?.scaffold?.slot ?? "").trim()).filter(Boolean));
+  for (const slot of tpl.slots) if (!claimed.has(slot.key) && !waived.has(slot.key) && !scaffolded.has(slot.key))
     issues.push({ rule: "slot_missing", severity: "warn", message: `no beat carries "${slot.label}" (~${Math.round(slot.at * 100)}% — ${slot.craft.split(" — ")[0]})`, nodeId: pillar?.id ?? beats[0].id });
   const halfStep = 0.5 / beats.length;
   let prevOrd = -1, prevLabel = "";

@@ -6,7 +6,7 @@
 // P1.2). The web file's `dnaHealth` (and its dnaSchema dependency) is intentionally OMITTED — the server
 // never scores health. Everything present here MUST stay behaviourally identical to the web copy; parity is
 // LOCKED by apps/web/src/features/dna/lib/novelDna.parity.test.ts (currentObjective run over both copies).
-import { byId, childrenOf, debtSettled, obligationLedger, openObligations, scenesInOrder, type DnaNode, type NodeKind, type SceneContent } from "./novel-dna.ts";
+import { byId, childrenOf, debtSettled, liveNodes, obligationLedger, openObligations, scenesInOrder, type DnaNode, type NodeKind, type SceneContent } from "./novel-dna.ts";
 import type { Brief } from "./brief.ts";
 
 export type StageKey = "premise" | "foundations" | "structure" | "scenes" | "draft";
@@ -110,7 +110,13 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[], brief?: Brief | n
     // is "already built" the moment anything beyond the seed exists (a fresh book is minted with just the
     // seed node, so `any non-seed node` is exactly the fresh/not-fresh line). Keying this on seedDone alone
     // wasn't enough: a fully drafted book whose seed was never *accepted* would be sent back to the interview.
-    const startedBuilding = seedDone || nodes.some((x) => x.kind !== "seed");
+    // liveNodes, not nodes: since the tree went DENSE a book can carry a full scaffold of empty placeholder
+    // rows (dnaSkeleton.seedSkeleton) without a word of it being authored — and choosing a structure template
+    // up front is now an ENTRY DOOR, taken BEFORE the interview. Counting those rows as "already built" would
+    // make picking a skeleton silently skip the interview, which is the opposite of what picking one means:
+    // the scaffold is the FRAME the interview then walks. Empty rows are invisible here, exactly as they are
+    // to every other read path (novelDna: absence is a value now, and it fails open unless you filter).
+    const startedBuilding = seedDone || liveNodes(nodes).some((x) => x.kind !== "seed");
     const visionDone = !!(brief?.vision?.compiled_at || brief?.vision?.skipped) || startedBuilding;
     return resolveSeq([
       { key: "interview", label: "Interview", done: visionDone, ready: true },

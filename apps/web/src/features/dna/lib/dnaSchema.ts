@@ -60,7 +60,9 @@ export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
     // structure = the plot-skeleton TEMPLATE (novelDna STRUCTURE_TEMPLATES): an explicit, swappable method
     // choice — the opposite of the removed silent Freytag bias (see premise.shape note above). Absent = the
     // house default (weiland_3act) applied at generation time; "none" = deliberately structure-free.
-    { key: "structure", label: "structure", type: "select", options: ["weiland_3act", "none"] }],
+    // Keep in step with STRUCTURE_TEMPLATES (novelDna) — listed literally rather than derived to keep this
+    // module free of an import back into the engine; the picker itself reads the registry, not this list.
+    { key: "structure", label: "structure", type: "select", options: ["weiland_3act", "save_the_cat", "heros_journey", "none"] }],
   character: [
     { key: "name", label: "name", required: true }, { key: "role", label: "role", type: "select", options: ROLES }, { key: "want", label: "want", multiline: true },
     { key: "need", label: "need", multiline: true }, { key: "wound", label: "wound", multiline: true }, { key: "lie", label: "lie", multiline: true },

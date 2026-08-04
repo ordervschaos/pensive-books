@@ -2,7 +2,7 @@
 // author advances through, finishing one before the next unlocks. This is the mental model the old build
 // studio got right (Brief→Foundations→Spine→…); here it's the DNA rungs grouped into stages. Pure: derives
 // each stage's status from the tree so the Navigator only renders. See docs/novel-dna-spec.md.
-import { byId, childrenOf, debtSettled, isAuthored, obligationLedger, openObligations, renderBlockers, scenesInOrder, validate, type BookSettings, type DnaIssue, type DnaNode, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
+import { byId, childrenOf, debtSettled, liveNodes, isAuthored, obligationLedger, openObligations, renderBlockers, scenesInOrder, validate, type BookSettings, type DnaIssue, type DnaNode, type NodeKind, type SceneContent } from "@/features/dna/lib/novelDna";
 import { contentCompleteness, requiredKeys } from "@/features/dna/lib/dnaSchema";
 import type { Brief } from "@/lib/brief";
 
@@ -120,7 +120,13 @@ export function stageSubsteps(key: StageKey, nodes: DnaNode[], brief?: Brief | n
     // is "already built" the moment anything beyond the seed exists (a fresh book is minted with just the
     // seed node, so `any non-seed node` is exactly the fresh/not-fresh line). Keying this on seedDone alone
     // wasn't enough: a fully drafted book whose seed was never *accepted* would be sent back to the interview.
-    const startedBuilding = seedDone || nodes.some((x) => x.kind !== "seed");
+    // liveNodes, not nodes: since the tree went DENSE a book can carry a full scaffold of empty placeholder
+    // rows (dnaSkeleton.seedSkeleton) without a word of it being authored — and choosing a structure template
+    // up front is now an ENTRY DOOR, taken BEFORE the interview. Counting those rows as "already built" would
+    // make picking a skeleton silently skip the interview, which is the opposite of what picking one means:
+    // the scaffold is the FRAME the interview then walks. Empty rows are invisible here, exactly as they are
+    // to every other read path (novelDna: absence is a value now, and it fails open unless you filter).
+    const startedBuilding = seedDone || liveNodes(nodes).some((x) => x.kind !== "seed");
     const visionDone = !!(brief?.vision?.compiled_at || brief?.vision?.skipped) || startedBuilding;
     return resolveSeq([
       { key: "interview", label: "Interview", done: visionDone, ready: true },

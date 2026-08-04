@@ -18,6 +18,80 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-04 — Finding: the "Continue <step>" nudge re-arms mid-conversation `[wip]`
+- **What:** Owner spotted "CONTINUE INTERVIEW" offered while the interview was actively in flight.
+  Diagnosed as systemic, not interview-specific. `showNudge` (`AgentRail.tsx`) suppresses only the three
+  STRUCTURED pending states — running/`awaiting_input` (ask_author), an open proposal, staged options.
+  The common hand-back has no marker: a turn ending via the `finish` tool (`advance.ts:378` → `done`
+  step) or a blind reply (`note`) whose text is a question leaves no server-state signal, so the nudge
+  re-arms on every conversational rung. Not merely cosmetic — the button re-sends
+  `NEXT_STEP_MESSAGE[step]` with `isNextStep: true`, re-triggering the step playbook mid-conversation.
+  The naive fix ("hide when the agent spoke last") also hides the button at genuine step BOUNDARIES,
+  because `done` marks turn completion, not step completion.
+- **Proposed:** degrade to a passive progress chip (drop the button) when the agent spoke last; keep it
+  for cold start and post-apply. Fully-correct version = persist the last turn's objective key on the
+  row (beside `context_focus_mode`) and show the button only when the live `objectiveKey` differs.
+- **Files:** none changed — diagnosis only, awaiting the owner's go-ahead.
+- **PM impact:** none.
+
+## 2026-08-04 — The structure door: pick a plot skeleton before the interview `[ship]`
+- **What:** A seventh start door that WRITES before it speaks. Picking a method sets
+  `pillar.content.structure`, materializes every slot as a real empty beat (`chooseStructure` →
+  `seedSkeleton`, one save), then opens the interview *against that frame* — the agent walks the slots
+  asking what the author wants at each, instead of asking into a blank page. Two new registry
+  entries: **Save the Cat** (15 beats, Snyder's page numbers normalized) and **Hero's Journey**
+  (Vogler's 12 stages); plus "No structure" for a deliberately skeleton-free book (mints the spine
+  only). Owner ask: "before the interview, after the brief."
+- **Three fixes the door forced, each a real bug it would otherwise have caused:**
+  (1) `structure` added to `NON_CONTENT_FIELDS` — a method is a *declaration*, not authorship, so a
+  pillar carrying only one still reads empty to the fill fold; (2) the journey's grandfather clause
+  now runs on `liveNodes`, so a scaffold of empty rows no longer reads as "already built" and
+  silently skips the interview it exists to frame; (3) `slot_missing` skips slots claimed on the
+  SCAFFOLD plane — a materialized slot is empty, not absent, so choosing a method no longer greets
+  the author with one warning per slot.
+- **Files:** `novelDna.ts` + `_shared/novel-dna.ts` (templates, NON_CONTENT_FIELDS, structureLints —
+  patched identically, parity-locked), `dnaJourney.ts` + `_shared/dna-journey.ts`, `dnaSkeleton.ts`
+  (`chooseStructure`), `dnaSchema.ts` + regenerated `_shared/dna-schema.json`, `journeyContent.ts`,
+  `AgentRail.tsx` (two-step door). Tests: 6 `chooseStructure` cases + a `scaffoldedBook` parity
+  fixture + 2 no-op guards. 1143 passed; typecheck clean.
+- **Deployed:** `dna-expand`, `book-agent`, `dna-decompose`, `dna-chat` (all bundle the changed
+  `_shared` twins; dna-chat is dead but kept consistent).
+- **Not verified:** still no browser run — see the entry below.
+- **PM impact:** STATE — DNA tree editor row updated.
+
+## 2026-08-04 — Start doors: six entry points into the interview `[ship]`
+- **What:** Built tier 1 of the entry-points design (the `[wip]` entry below). A fresh agent thread at
+  the interview rung now shows six doors — a character · a hook · a scene · a world · a feeling ·
+  nothing yet — instead of the lone `START INTERVIEW →`. Each is a canned first message that tells the
+  agent where to begin and which `brief.vision` slot to capture into; the interview's own recipe and
+  convergence are untouched. Doors *replace* the nudge (not sit beside it) and render inside the
+  interview's first turn, so the journey strip keeps telling the truth: one corridor, many doors. No
+  change to `resolveSeq`/`stageComplete` or the edge twin. This is the **P4 entry buttons** item that
+  the 2026-08-03 scaffold work left open.
+- **Files/commits:** `features/dna/components/agentRail/journeyContent.ts` (`START_DOORS`,
+  `START_DOORS_LEAD`), `features/dna/components/AgentRail.tsx` (`showDoors`, card grid, nudge
+  suppression). Uncommitted. `tsc -p tsconfig.app.json` clean; `vitest run src/features/dna`
+  1102 passed.
+- **Not verified:** no browser check — chrome-devtools-mcp's profile was locked by a running Chrome and
+  the claude-in-chrome extension wasn't connected. Dev server left running on :8080 for the author.
+- **PM impact:** STATE — DNA tree editor row updated (P4 shipped; P3 ascent + the rung-jump flavour of
+  P4 remain).
+
+## 2026-08-04 — Design: many doors, one corridor (DNA entry points) `[wip]`
+- **What:** Author flagged that a fresh book offers exactly one door (`START INTERVIEW →`) even
+  though the system already accepts any starting material. Analysis: the interview is an
+  order-free *slot-filling dialogue* over `brief.vision`'s 8 sections, so entry order is already
+  free — only the affordance is missing. Proposed tier 1 = a `START_DOORS` map in
+  `journeyContent.ts` + a card fork inside the interview's first turn (a character · a hook · a
+  scene · a world · a feeling · pitch me), generalizing the existing `IDEA_MESSAGE` precedent. No
+  journey/schema/edge-twin change. Named the tier-2 gap: character-first has an object-permanence
+  problem — the named character stays prose in `vision.characters` until the cast step (gated on an
+  accepted pillar), fixable via provisional foundation nodes or semantic ascent (`dnaDecompose`).
+- **Files/commits:** `doc_1785833818771.md` (analysis, uncommitted); reads over
+  `features/dna/lib/dnaJourney.ts`, `components/agentRail/journeyContent.ts`,
+  `components/tree/BriefSection.tsx`. No code changed this session.
+- **PM impact:** none — proposal only, awaiting the author's go-ahead to build tier 1.
+
 ## 2026-08-04 — "Next step" nudge: Start vs Continue `[chore]`
 - **What:** The nudge button beside the composer always said "Continue" even when the thread was
   empty and nothing had happened yet (e.g. the interview hadn't started). Now reads

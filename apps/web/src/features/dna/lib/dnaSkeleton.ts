@@ -178,3 +178,50 @@ export function seedSkeleton(nodes: DnaNode[], bookId: number): DnaNode[] {
   }
   return out;
 }
+
+// ── CHOOSING THE METHOD (the structure entry door) ────────────────────────────────────────────────────────
+// seedSkeleton above materializes whatever template the book ALREADY resolves to. This picks that template
+// first — the author's answer to "which plot skeleton?" before a word is written — and then materializes it,
+// so the two halves land in ONE save and the tree never sits in a state where the pillar says one method and
+// the rows underneath came from another.
+//
+// The method is written to `pillar.content.structure`, which `structureForBook` reads. It does NOT make the
+// pillar authored: `structure` is in novelDna's NON_CONTENT_FIELDS, so an otherwise-blank pillar carrying only
+// a method still reads as an empty placeholder to the fill fold — which is what keeps the interview from
+// thinking the book is already built (dnaJourney's grandfather clause runs on liveNodes).
+
+/** Pick the book's structure method and materialize it, as ONE list of rows to save. `method` is a
+ *  STRUCTURE_TEMPLATES key, or "none" for a deliberately skeleton-free book (which still mints the spine, so
+ *  the author has a premise and pillar to write into — it just declines to guess at acts and beats). */
+export function chooseStructure(nodes: DnaNode[], bookId: number, method: string): DnaNode[] {
+  const staged: DnaNode[] = [];
+  let next = nodes;
+  const push = (n: DnaNode) => { staged.push(n); next = [...next, n]; };
+
+  const pillar = nodes.find((n) => n.kind === "pillar");
+  if (pillar) {
+    // An existing pillar is EDITED, never re-minted — switching method on a started book is a legitimate
+    // gesture, and the rows already under it are the author's.
+    const updated: DnaNode = { ...pillar, content: { ...(pillar.content as Record<string, unknown>), structure: method } };
+    staged.push(updated);
+    next = nodes.map((n) => (n.id === pillar.id ? updated : n));
+  } else {
+    const seed = nodes.find((n) => n.kind === "seed");
+    let premise = nodes.find((n) => n.kind === "premise");
+    if (!premise) {
+      if (!seed) return []; // no ladder at all to hang anything from
+      premise = mint(bookId, "premise", seed.id, 0, { title: "Premise", hint: "the dramatic question" });
+      push(premise);
+    }
+    // Minted carrying the method from birth, so `structureForBook` below resolves to the chosen template
+    // rather than the house default.
+    const fresh = mint(bookId, "pillar", premise.id, 0, { title: "Pillar", hint: "controlling idea · ending" });
+    push({ ...fresh, content: { structure: method } });
+  }
+
+  // "none" stops here on purpose: the author asked for no skeleton, so minting acts would be the tool
+  // overruling them. seedSkeleton would return [] anyway (structureForBook gives undefined) — being explicit
+  // keeps the intent readable at the call site.
+  if (method === "none") return staged;
+  return [...staged, ...seedSkeleton(next, bookId)];
+}

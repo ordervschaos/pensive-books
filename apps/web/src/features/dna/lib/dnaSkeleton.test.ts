@@ -4,7 +4,8 @@
 //   1. a minted slot must still read as EMPTY (template text lives in `authoring.scaffold`, never `content`)
 //   2. deleting a slot is an authorial statement — never re-minted, never re-linted
 import { describe, expect, it } from "vitest";
-import { seedSkeleton, waiveSlot, waivedSlots } from "@/features/dna/lib/dnaSkeleton";
+import { chooseStructure, seedSkeleton, waiveSlot, waivedSlots } from "@/features/dna/lib/dnaSkeleton";
+import { stageSubsteps } from "@/features/dna/lib/dnaJourney";
 import { hasOwnContent, liveNodes, validate, type DnaNode, type NodeKind } from "@/features/dna/lib/novelDna";
 
 let seq = 0;
@@ -175,5 +176,63 @@ describe("tombstones — a declined slot stays declined", () => {
     const missing = (nodes: DnaNode[]) => validate(nodes).filter((x) => x.rule === "slot_missing").map((x) => x.message);
     expect(missing(build([])).join(" ")).toContain("The Inciting Event");   // not waived → still nags
     expect(missing(build(["inciting_event"]))).toEqual([]);                  // waived → silent
+  });
+});
+
+// ── The structure entry door (chooseStructure) ────────────────────────────────────────────────────────────
+// Picking the plot skeleton BEFORE the interview, on a book that is nothing but a seed. Three things have to
+// hold or the door is a trap: the chosen method actually governs what gets minted (not the house default);
+// the pillar it writes to still reads as EMPTY (a method is a declaration, not authorship); and the resulting
+// scaffold must not convince the journey the book has already been built.
+describe("chooseStructure — the structure entry door", () => {
+  const seedOnly = (): DnaNode[] => [mk("seed", { id: "sd", content: { logline: "A cartographer maps a city that rewrites itself." } })];
+
+  it("mints the whole spine from a seed-only book, with the CHOSEN method governing the slots", () => {
+    for (const [method, beats, acts] of [["weiland_3act", 9, 3], ["save_the_cat", 15, 3], ["heros_journey", 12, 3]] as const) {
+      const rows = chooseStructure(seedOnly(), 1, method);
+      const of = (k: string) => rows.filter((n) => n.kind === k);
+      expect(of("premise"), method).toHaveLength(1);
+      expect(of("pillar"), method).toHaveLength(1);
+      expect(of("act"), method).toHaveLength(acts);
+      expect(of("beat"), method).toHaveLength(beats);
+      expect((of("pillar")[0].content as { structure?: string }).structure).toBe(method);
+    }
+  });
+
+  it("a pillar carrying ONLY the method still reads as empty — a declaration is not authorship", () => {
+    const pillar = chooseStructure(seedOnly(), 1, "save_the_cat").find((n) => n.kind === "pillar")!;
+    expect(hasOwnContent(pillar)).toBe(false);
+  });
+
+  it("'none' mints the spine to write into and declines to guess at acts or beats", () => {
+    const rows = chooseStructure(seedOnly(), 1, "none");
+    expect(rows.map((n) => n.kind).sort()).toEqual(["pillar", "premise"]);
+    expect(rows.filter((n) => n.kind === "act")).toHaveLength(0);
+  });
+
+  it("edits an existing pillar rather than minting a second one", () => {
+    const rows = chooseStructure(fresh(), 1, "heros_journey");
+    const pillars = rows.filter((n) => n.kind === "pillar");
+    expect(pillars).toHaveLength(1);
+    expect(pillars[0].id).toBe("pil");                                    // the same row, edited
+    expect((pillars[0].content as { controlling_idea?: string }).controlling_idea).toBe("Belonging is built."); // content preserved
+    expect(rows.filter((n) => n.kind === "beat")).toHaveLength(12);        // and re-skeletoned on the new method
+  });
+
+  it("a freshly scaffolded book is silent — a materialized slot is empty, not missing", () => {
+    const rows = chooseStructure(seedOnly(), 1, "save_the_cat");
+    const missing = validate([...seedOnly(), ...rows]).filter((i) => i.rule === "slot_missing");
+    expect(missing).toEqual([]);
+  });
+
+  it("the scaffold is invisible to liveNodes, so the journey still opens on the interview", () => {
+    // The state the door actually fires in: a brand-new book whose seed has no accepted logline yet. Before
+    // the grandfather clause ran on liveNodes, the scaffold's empty rows counted as "already building" and
+    // picking a structure silently skipped the interview it was supposed to frame.
+    const blank = (): DnaNode[] => [mk("seed", { id: "sd" })];
+    const tree = [...blank(), ...chooseStructure(blank(), 1, "save_the_cat")];
+    expect(liveNodes(tree).filter((n) => n.kind !== "seed")).toEqual([]);
+    const now = stageSubsteps("premise", tree, null).find((s) => s.status === "now");
+    expect(now?.key).toBe("interview");
   });
 });

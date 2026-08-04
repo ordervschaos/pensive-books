@@ -17,7 +17,9 @@ import {
 } from "@/features/dna/lib/agentThread";
 import { availableCommands, matchCommands, type AgentCommand } from "@/features/dna/lib/agentCommands";
 import { nodeLabel } from "@/features/dna/lib/dnaChat";
-import { analysisText, byId, type BookSettings, type DnaNode, type NodeKind } from "@/features/dna/lib/novelDna";
+import { analysisText, byId, STRUCTURE_TEMPLATES, type BookSettings, type DnaNode, type NodeKind } from "@/features/dna/lib/novelDna";
+import { chooseStructure } from "@/features/dna/lib/dnaSkeleton";
+import { saveNodes } from "@/features/dna/lib/bookNodes";
 import { currentObjective, currentObjectiveKey, nextDraftTarget } from "@/features/dna/lib/dnaJourney";
 import { useChatScroll } from "@/components/book/shared/useChatScroll";
 import { useAutoAccept } from "@/features/dna/hooks/useAutoAccept";
@@ -26,7 +28,10 @@ import { useLatestAiCall } from "@/features/dna/hooks/useLatestAiCall";
 import { ActionLink, Eyebrow, RunError } from "@/components/book/shared/studioUi";
 import { snapshotTree } from "@/features/dna/lib/treeVersions";
 import { briefIdea, type Brief } from "@/lib/brief";
-import { NEXT_STEP_MESSAGE, STEP_NOUN, STEP_TEACH, IDEA_TEACH, IDEA_MESSAGE } from "./agentRail/journeyContent";
+import {
+  NEXT_STEP_MESSAGE, START_DOORS, START_DOORS_LEAD, STEP_NOUN, STEP_TEACH, IDEA_TEACH, IDEA_MESSAGE,
+  STRUCTURE_BLURB, STRUCTURE_DOOR_LEAD, STRUCTURE_DOOR_MESSAGE,
+} from "./agentRail/journeyContent";
 import { AgentRailControls } from "./agentRail/AgentRailControls";
 import { FocusChip, suggestFocusMode } from "./agentRail/FocusChip";
 import { StepBubble } from "./agentRail/StepBubble";
@@ -445,11 +450,44 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
     ? `Write "${nodeLabel(draftTarget.scene)}".`
     : (objectiveKey && NEXT_STEP_MESSAGE[objectiveKey]) || objectiveHeadline || "Let's work on the next step.";
 
+  // The start doors (journeyContent.START_DOORS) — the interview's entry points, offered ONLY on a fresh
+  // thread at the interview rung. They replace the single "Start interview" nudge rather than sitting
+  // beside it: two calls-to-action at the same moment is how a fork starts reading as navigation. And they
+  // live INSIDE the interview's first turn on purpose — the journey strip still says one corridor
+  // ("1 Idea — Interview"), because that's the truth; the doors are only how you walk into it.
+  const showDoors = steps.length === 0 && !optimistic && objectiveKey === "interview";
+  // The structure door is two-step: click it and the method list replaces the door grid, because picking a
+  // skeleton WRITES to the tree and that deserves a named choice rather than a surprise. The methods come
+  // from the engine's registry (novelDna.STRUCTURE_TEMPLATES) plus "none", so a new registry entry shows up
+  // here for free — the doors don't keep their own copy of the method list.
+  const [pickingStructure, setPickingStructure] = useState(false);
+  const structureChoices = useMemo(
+    () => [...Object.values(STRUCTURE_TEMPLATES).map((t) => ({ key: t.key, label: t.label, slots: t.slots.length })),
+      { key: "none", label: "No structure", slots: 0 }],
+    [],
+  );
+  // Pick a method → write it to the pillar, materialize its slots, and only then open the interview against
+  // that frame. One save (chooseStructure returns pillar + skeleton together) so the tree is never half-set.
+  const pickStructure = async (key: string, label: string) => {
+    if (busy || active) return;
+    setBusy(true);
+    try {
+      const rows = chooseStructure(nodes, bookId, key);
+      if (rows.length) await saveNodes(rows);
+    } catch (e) {
+      toast({ title: "Couldn't set the structure", description: String((e as Error)?.message ?? e), variant: "destructive" });
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+    setPickingStructure(false);
+    await send(STRUCTURE_DOOR_MESSAGE(label, key === "none"), { isNextStep: true });
+  };
   // Guided-flow nudge (lib/dnaJourney.currentObjective) — docked directly on top of the composer (not in
   // the feed) since the composer is where the action actually happens; a card floating up in the scroll
   // history just left a void beneath it. Shows only when the agent's work is settled: idle, nothing
   // running/awaiting, no proposal to review, no error.
-  const showNudge = !active && !optimistic && proposals.length === 0 && optionNodes.length === 0 && row?.status !== "error" && !!objectiveHeadline;
+  const showNudge = !active && !optimistic && proposals.length === 0 && optionNodes.length === 0 && row?.status !== "error" && !!objectiveHeadline && !showDoors;
   // "▸ Step 1/5 · Idea – Interview" (dnaJourney.currentObjective) → badge "1/5" + the rest as the row's
   // description. draftTarget carries its own scene tally instead of the step badge.
   const stepMatch = objectiveHeadline.match(/^Step\s+(\d+)\/(\d+)\s*·\s*(.*)$/);
@@ -518,6 +556,51 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
                 <p className="border-l-2 border-[hsl(var(--pv-accent))]/40 pl-2.5 pv-serif text-[12.5px] italic leading-[1.55] text-[hsl(var(--pv-text-faint))]">
                   {needsIdea ? IDEA_TEACH : STEP_TEACH[objectiveKey!]}
                 </p>
+              )}
+              {/* The doors. Each is just a canned first message (+ which vision section to capture into) —
+                  no branch in the journey, no schema behind it. Picking one carries isNextStep so the
+                  server still runs the interview step's playbook; the door only says where to begin. */}
+              {showDoors && !pickingStructure && (
+                <div className="space-y-2 pt-1">
+                  <p className="pv-serif text-[12.5px] leading-[1.55] text-[hsl(var(--pv-text-muted))]">{START_DOORS_LEAD}</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {START_DOORS.map((d) => (
+                      <button key={d.key} type="button" disabled={busy}
+                        onClick={() => (d.opensPicker ? setPickingStructure(true) : void send(d.message, { isNextStep: true }))}
+                        title={d.opensPicker ? d.hint : d.message}
+                        className="rounded-xl border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-2.5 py-1.5 text-left transition-colors hover:border-[hsl(var(--pv-accent))]/50 hover:bg-[hsl(var(--pv-accent))]/[0.06] disabled:opacity-50">
+                        <span className="block pv-serif text-[13px] leading-[1.35] text-foreground">{d.label}{d.opensPicker ? " →" : ""}</span>
+                        <span className="block pv-serif text-[11.5px] leading-[1.35] text-[hsl(var(--pv-text-faint))]">{d.hint}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Step two of the structure door — the method list. This is the one door that writes to the
+                  tree before it speaks, so it names the choice and says what it will do. */}
+              {showDoors && pickingStructure && (
+                <div className="space-y-2 pt-1">
+                  <p className="pv-serif text-[12.5px] leading-[1.55] text-[hsl(var(--pv-text-muted))]">{STRUCTURE_DOOR_LEAD}</p>
+                  <div className="space-y-1.5">
+                    {structureChoices.map((c) => (
+                      <button key={c.key} type="button" disabled={busy}
+                        onClick={() => void pickStructure(c.key, c.label)}
+                        className="block w-full rounded-xl border border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/40 px-2.5 py-1.5 text-left transition-colors hover:border-[hsl(var(--pv-accent))]/50 hover:bg-[hsl(var(--pv-accent))]/[0.06] disabled:opacity-50">
+                        <span className="flex items-baseline gap-1.5">
+                          <span className="pv-serif text-[13px] leading-[1.35] text-foreground">{c.label}</span>
+                          {c.slots > 0 && (
+                            <span className="pv-mono text-[9.5px] uppercase tracking-[0.08em] text-[hsl(var(--pv-text-faint))]">{c.slots} slots</span>
+                          )}
+                        </span>
+                        <span className="block pv-serif text-[11.5px] leading-[1.4] text-[hsl(var(--pv-text-faint))]">{STRUCTURE_BLURB[c.key] ?? ""}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <button type="button" onClick={() => setPickingStructure(false)} disabled={busy}
+                    className="pv-serif text-[11.5px] text-[hsl(var(--pv-text-faint))] underline-offset-2 hover:underline disabled:opacity-50">
+                    ← back to the other doors
+                  </button>
+                </div>
               )}
             </div>
           )}
