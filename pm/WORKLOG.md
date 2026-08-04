@@ -18,6 +18,87 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-04 — AgentRail: dock "Next step" nudge on the composer, not the feed `[ship]`
+- **What:** First-load AgentRail had a huge dead gap between the greeting card and the input box
+  (flagged from a screenshot: the card top-aligned in a full-height `flex-1` feed with nothing
+  else in it). Fix follows the Lovable pattern (banner glued to the input, not floating in scroll
+  history): moved the "Next step" nudge out of the scrollable feed and docked it flush on top of
+  the composer as one merged card (`rounded-t-2xl border-b-0` banner + new `squareTop` prop on
+  `Composer`'s textarea to flatten the seam). Verified live via chrome-devtools-mcp screenshot +
+  computed-style check (border is solid, not the dashed illusion the first screenshot suggested).
+- **Files/commits:** `apps/web/src/features/dna/components/AgentRail.tsx`,
+  `apps/web/src/features/dna/components/agentRail/Composer.tsx` (uncommitted).
+- **PM impact:** none — small UX fix within the existing AgentRail work, no STATE/ROADMAP change.
+
+## 2026-08-04 — FocusChip: fixed layout wrap + undefined pv-* tokens `[chore]`
+- **What:** Follow-up fix on the just-decluttered AgentRail header. Two bugs: (1) the "Interview?"
+  suggestion hint wrapped onto its own line under the Focus chip because the outer wrapper was a
+  plain block `<div>` around a block-level flex chip — made it `inline-flex` so it reads
+  `Focus: Interview?` on one line. (2) both FocusChip's dropdown and the new kebab menu referenced
+  `--pv-surface-1` / `--pv-ink-1/2/3`, CSS vars that don't exist anywhere in tokens.css (only
+  `--pv-surface`, `--pv-surface-2`, `--pv-text(-muted/-faint)` are defined) — remapped to real
+  tokens and rebuilt the kebab menu as a local (non-portaled) popover, since shadcn's DropdownMenu
+  portals to `document.body`, outside the `theme-paper`/`theme-terminal` wrapper DnaTreePage scopes
+  the studio to.
+- **Files/commits:** `apps/web/src/features/dna/components/agentRail/FocusChip.tsx`,
+  `apps/web/src/features/dna/components/agentRail/AgentRailControls.tsx` (uncommitted, same
+  unshipped agent-focus branch as the prior entry).
+- **PM impact:** none — bugfix on top of unshipped, uncommitted work.
+
+## 2026-08-04 — AgentRail header decluttered: kebab menu + drop redundant close `[chore]`
+- **What:** The uncommitted agent-focus header (Focus chip + manual/auto + fast/deep + history +
+  new-chat + close) no longer fit the rail's top strip. Moved manual/auto and fast/deep segmented
+  toggles into a kebab (`MoreVertical`) `DropdownMenu`, keeping a small accent dot on the trigger
+  when `auto` is armed so that state stays glanceable without opening it. Dropped the rail's own
+  close (X) button entirely — `DnaTreePage`'s `PanelLeft` toggle already opens/closes the rail, so
+  it was a redundant affordance; removed `onClose` prop end-to-end (AgentRail → AgentRailControls →
+  DnaTreePage call site).
+- **Files/commits:** `apps/web/src/features/dna/components/agentRail/AgentRailControls.tsx`,
+  `apps/web/src/features/dna/components/AgentRail.tsx`,
+  `apps/web/src/features/dna/pages/DnaTreePage.tsx` (uncommitted, layered on top of the
+  already-uncommitted agent-focus work from an earlier session).
+- **PM impact:** none — pure UI cleanup on top of unshipped, uncommitted work.
+
+## 2026-08-04 — Digest ships only book highlights: prod runs Aug-01 code `[wip]`
+- **What:** Diagnosed why the 6am digest arrived with readwise quotes only. Not a settings or
+  source problem — **production `apps/digest` is the Aug 01 20:33 build**: everything since (paid
+  AI gate, raw-list fallback, boundary truncation, trim pass) is unpushed on `digest-reader-render`
+  while GitHub `main` ends at `442aade`. That old code has no non-AI fallback, so every non-readwise
+  section calls DeepSeek — and `DEEPSEEK_API_KEY` isn't set in Vercel prod, so each one throws and is
+  silently dropped. Today's run gathered 10 fresh articles with full bodies and shipped none of them.
+  Evidence: stored `body` exactly 12000 chars cut mid-word with no `` sentinel (pre-`8d0773e`
+  `slice`); zero `ai_calls` rows in the cron window (the key check throws *before* the logging try);
+  local run of current code renders all three feed sections. The "good" Aug-01/02 issues have
+  `attempts=7`/`3` — manual rebuilds from localhost; the cron has likely never rendered a feed section.
+  Also found two real bugs: `trimItems` UPDATEs a `digest_posts` row `recordPosts` only inserts at the
+  end of the build (first-seen posts never cache → re-trimmed and re-billed forever), and a missing
+  provider key produces a failure with no `ai_calls` trace. No fix applied — deploying means pushing
+  `main`, which is the author's call.
+- **Files/commits:** no code changes. `doc_1785830892000.md` (full write-up + fix order + starter
+  section configs), `learning_1785830892000_digest-thin-issue.md`. Working tree also still carries the
+  in-flight agent-focus/book-agent edits from the prior session.
+- **PM impact:** none (wip) — fix is 4 steps, gated on author green-light: push/deploy `apps/digest`,
+  set `DEEPSEEK_API_KEY` in prod, flip `ai_enabled`, then add `ranked`/`search`/`unread` sections.
+
+## 2026-08-03 — Agent focus, slice 1: the implicit mode made declarable `[ship]`
+- **What:** The agent always had a mode — derived from the journey stage, invisible, unoverridable
+  (the `discovering`/`inInterview`/three-state-objective predicates). Slice 1 promotes it to an
+  author-declared object with **zero fencing**: `wide` is the identity element, so an undeclared turn
+  assembles a byte-identical prompt to before (locked by test). Shipped: `_shared/agent-focus.ts`
+  registry (8 modes, policy-as-data) with `resolveFocus`/`focusBlock`/`focusSkills` + completion
+  predicates that **self-clear** a finished focus; `<focus>` tag renamed `<pinned>` (the tray and the
+  mode were colliding on one word); a `setFocus` row-write path that works mid-turn (exit must never
+  depend on the agent being healthy); the rail's `FocusChip` with a derived-but-offered suggestion.
+  Invariants written into the module header: focus may narrow the MENU and the SALIENCE, never
+  visibility or write permission.
+- **Files/commits:** new `docs/agent-focus.md` (spec), `_shared/agent-focus.ts` + `.test.ts` (15 tests),
+  `20260803190000_agent_focus.sql`, `book-agent/{index,context,advance,shared}.ts`,
+  `agentRail/FocusChip.tsx`, `agentFocusModes.json` + artifact lock, `agentThread.ts`. Uncommitted.
+  Migration pushed + `book-agent` deployed. 1378 web + 51 edge tests green.
+- **PM impact:** none — no Now slot claimed (this was an owner-directed detour, not a roadmap item).
+  Slices 2 (ambient lens) and 3 (tool menu) are specced but unstarted; ratify before scheduling.
+
+
 ## 2026-08-03 — Fold-on-read: the agent loop gets a durable memory `[ship]`
 - **What:** Gave the agent's reads a backing store, so compaction stops meaning amnesia. New
   `record_findings` tool (non-terminal, batches with reads → zero extra round-trips) banks the model's

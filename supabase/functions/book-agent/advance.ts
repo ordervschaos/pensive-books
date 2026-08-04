@@ -159,7 +159,18 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
     // intent hydration inside threadSystem (nodes the message names get their full plan inlined).
     const authorAsk = latestAuthorAsk(baseTranscript);
     // `auto` (autonomous mode: never park, commit own picks) computed above for the turn ceiling.
-    const { instructions, bookState, groundingLabels } = await threadSystem(service, row.book_id, row.context_analysis, effort, auto, row.context_objective, row.context_attached_ids, authorAsk, !!row.context_follow_objective, row.context_variant);
+    const { instructions, bookState, groundingLabels, focus } = await threadSystem(service, row.book_id, row.context_analysis, effort, auto, row.context_objective, row.context_attached_ids, authorAsk, !!row.context_follow_objective, row.context_variant, { mode: row.context_focus_mode, target: row.context_focus_target, at: row.context_focus_at });
+    // A focus that has met its own done() predicate SELF-CLEARS (docs/agent-focus.md §6 "Complete"):
+    // a declared focus is stickier than the derived objective — nothing recomputes it — so without this
+    // it would keep steering turns after the work it named was finished. Cleared on the row (so the chip
+    // disappears and later links resolve to `wide`), but NOT retroactively removed from this turn's
+    // prompt: the block was already assembled, and the model finishing the last step of a focus should
+    // still see what it was doing. Fire-and-forget: a failed clear costs one stale turn, never the turn.
+    if (focus.completed) {
+      service.from("book_agent_runs")
+        .update({ context_focus_mode: null, context_focus_target: null, context_focus_at: null })
+        .eq("id", row.id).then(undefined, (e: unknown) => console.warn("focus auto-clear failed:", e));
+    }
     // Grounding steps (docs/agent-turn-grounding.md): surface what got silently pre-loaded this turn
     // (skill briefs, focus/mentioned node content) BEFORE the model call, so the author sees concrete
     // activity during the wait instead of a bare spinner. Folded into the same pre-call write below — no

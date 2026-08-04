@@ -11,6 +11,7 @@ import { analysisText, fillMap, ledgerText, lintConfigForBrief, type AuthoringSt
 import { hungerBlock, treeDigestLines } from "../_shared/dna-context.ts";
 import { AGENT_SKILLS, matchSkills } from "../_shared/agent-skills.ts";
 import { craftOverrideBlock } from "../_shared/craft-kb.ts";
+import { focusBlock, focusSkills, resolveFocus, type ResolvedFocus, type StoredFocus } from "../_shared/agent-focus.ts";
 
 // ── Tree digest (docs/agent-context-model.md) ────────────────────────────────
 // The system prompt ships the WHOLE tree every turn; dumping each node's full content (a beat's paragraph
@@ -97,7 +98,7 @@ function digestNode(kind: string, content: Record<string, unknown> | null | unde
 // the tree changes after every apply, and carrying it at position 0 invalidated the whole cached prefix
 // (system + entire transcript) on every turn. Each node is a DIGEST — handle/gist + causal spine, full
 // content via read_node (see digestNode).
-async function threadSystem(service: SupabaseClient, bookId: number, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null, authorAsk = "", followObjective = false, variant: string | null = null): Promise<{ instructions: string; bookState: string; groundingLabels: string[] }> {
+async function threadSystem(service: SupabaseClient, bookId: number, analysis: string | null, effort: "low" | "high" = "high", auto = false, objective: string | null = null, attachedIds: string[] | null = null, authorAsk = "", followObjective = false, variant: string | null = null, storedFocus: StoredFocus | null = null): Promise<{ instructions: string; bookState: string; groundingLabels: string[]; focus: ResolvedFocus }> {
   const { data: book } = await service.from("books").select("name, brief, craft_notes, craft_overrides").eq("id", bookId).maybeSingle();
   const b = book as { name?: string; brief?: Brief; craft_notes?: Record<string, string> | null; craft_overrides?: Record<string, string> | null } | null;
   const { data: rows } = await service
@@ -173,7 +174,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
   // stray `prose` key from anything else. This block is rebuilt every turn from the live tree, so it can
   // never go stale the way the old glued-to-the-message "Focus —" prefix did.
   const focusNodes = (attachedIds ?? []).map((id) => byIdRow.get(id)).filter((n): n is DnaNodeRow => !!n);
-  const focus = focusNodes.map((n) => {
+  const pinned = focusNodes.map((n) => {
     const content: Record<string, unknown> = { ...(n.content ?? {}) };
     if (n.kind !== "scene") delete content.prose; // prose only rides for scenes (docs/agent-context-model.md)
     return `[${n.id}${n.authoring?.locked ? " · LOCKED" : ""}] ${n.kind} “${nodeHandle(n.content)}”:\n${JSON.stringify(content)}`;
@@ -297,8 +298,21 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
   const startedBuilding = seedAccepted || liveNodes.some((n) => n.kind !== "seed");
   const discovering = !vis?.compiled_at && !vis?.skipped && !startedBuilding;
   const interviewSkill = AGENT_SKILLS.find((s) => s.name === "vision-interview");
-  const effectiveSkills = discovering && interviewSkill ? [interviewSkill] : matchedSkills;
+  const baseSkills = discovering && interviewSkill ? [interviewSkill] : matchedSkills;
+  // ── The DECLARED focus (docs/agent-focus.md) ──
+  // Resolved against the LIVE tree, so a stale target (deleted node) or a completed focus is detected
+  // here rather than trusted from the row. Pure ⇒ a retried chain link re-derives the identical focus.
+  // Undeclared ⇒ mode `wide` ⇒ focusBlock()/focusSkills() are empty ⇒ this whole feature contributes
+  // ZERO bytes to the prompt, which is the degradation lock in agent-focus.test.ts.
+  const focus = resolveFocus(storedFocus, liveNodes, b?.brief ?? null);
+  // The mode's playbooks are ADDITIVE to the ask's trigger matches: a mode states the JOB, triggers still
+  // catch an ad-hoc ask inside it. Never a replacement — a missed trigger must not cost technique.
+  const modeSkills = focusSkills(focus)
+    .map((name) => AGENT_SKILLS.find((s) => s.name === name))
+    .filter((s): s is typeof AGENT_SKILLS[number] => !!s);
+  const effectiveSkills = [...baseSkills, ...modeSkills.filter((m) => !baseSkills.some((s) => s.name === m.name))];
   const skillBriefs = effectiveSkills.map((s) => `### ${s.name}\n${s.body}`).join("\n\n");
+  const focusTargetLabel = focus.target ? nodeHandle(byIdRow.get(focus.target)?.content) : undefined;
   // Only meaningful once structure exists — mirrors the client's gate (AgentRail), which sends undefined
   // otherwise. analysisText ignores its settings arg, so we pass {}. Lint thresholds are genre-tuned
   // from the brief (lintConfigForBrief) so the agent acts on the same strictness the genre calls for.
@@ -326,6 +340,11 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
   // misinterpretation when a prompt mixes instructions, context, and a large structured document).
   const blocks = [
     `<book_name>${b?.name ?? ""}</book_name>`,
+    // The DECLARED focus (docs/agent-focus.md) goes FIRST among the anchors — it's the author's own
+    // statement of what this session is about, so it should frame everything that follows. Empty unless
+    // the author actually declared one. It is an ANCHOR: the block itself says a concrete ask wins over
+    // it, that the whole tree is still visible, and that every unlocked node is still editable.
+    focusBlock(focus, focusTargetLabel),
     // HUNGER (doc_1785673597000.md §5a-bis): the tree's appetite, stated in its own voice. The per-node view
     // is in the digest above; this is the one-line aggregate so "how much book is still owed" is legible
     // without counting rows.
@@ -355,8 +374,11 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
     // The context tray (docs/agent-context-model.md): the nodes the author attached to work on, hydrated in
     // full so you have their real content without a read_node. Lead with these unless the author steers
     // elsewhere — an anchor, not a fence: the whole tree is still below.
-    focus ? `<focus note="the author attached these nodes to work on — their FULL content is inlined here; lead with them">\n${focus}\n</focus>` : "",
-    // Intent hydration (above): the message's named targets, pre-read. Sits beside <focus> — same shape,
+    // Renamed <focus> → <pinned> when the DECLARED focus landed (docs/agent-focus.md §3): two different
+    // things were heading for the name "focus" — the author's task/mode, and this tray of nodes they want
+    // kept in view. The tray answers "what should I be looking at?", the mode answers "what am I doing?".
+    pinned ? `<pinned note="the author pinned these nodes to keep in view — their FULL content is inlined here; lead with them">\n${pinned}\n</pinned>` : "",
+    // Intent hydration (above): the message's named targets, pre-read. Sits beside <pinned> — same shape,
     // derived from the ask instead of a manual attach.
     mentionedText ? `<mentioned note="nodes the author's latest message references — full plan content inlined, and for named SCENES their prose too (long prose keeps head+tail; read_node for the omitted middle) so you can act on the ask directly WITHOUT a read_node round-trip">\n${mentionedText}\n</mentioned>` : "",
     // Skill briefs (agent-skills.ts): the playbooks whose triggers match the ask, pre-injected so the
@@ -388,7 +410,7 @@ async function threadSystem(service: SupabaseClient, bookId: number, analysis: s
 
   // The A/B seam goes LAST so it can override anything above it. variantSuffix("") for an unset variant,
   // so production prompt bytes are unchanged — see variants.ts.
-  return { instructions: `${SYSTEM_THREAD}${effortLine}${autoLine}${variantSuffix(variant)}`, bookState: blocks.join("\n\n"), groundingLabels };
+  return { instructions: `${SYSTEM_THREAD}${effortLine}${autoLine}${variantSuffix(variant)}`, bookState: blocks.join("\n\n"), groundingLabels, focus };
 }
 
 

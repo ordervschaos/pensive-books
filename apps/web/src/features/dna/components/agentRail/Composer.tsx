@@ -21,13 +21,17 @@ export function Composer({
   awaiting, pendingOptions, onReply, answer, setAnswer,
   onStop, stopDisabled, cancelRequested,
   draft, setDraft, onSend, running, active, busy,
-  menu, taRef, stopping,
+  menu, taRef, stopping, squareTop,
 }: {
   awaiting: boolean; pendingOptions: string[]; onReply: (text: string) => void; answer: string; setAnswer: (v: string) => void;
   onStop: () => void; stopDisabled: boolean; cancelRequested: boolean;
   draft: string; setDraft: (v: string) => void; onSend: (text: string) => void; running: boolean; active: boolean; busy: boolean;
   menu: ComposerMenu | null;
   taRef: RefObject<HTMLTextAreaElement>; stopping: boolean;
+  // The "Next step" banner (AgentRail) docks flush on top of the composer when present — this flattens
+  // the card's top corners and tints its border to match the banner's, so the two read as one card
+  // ("agent-chat-island") instead of a gap-free but still-rounded seam.
+  squareTop?: boolean;
 }) {
   if (awaiting) {
     return (
@@ -49,15 +53,17 @@ export function Composer({
             ))}
           </div>
         )}
-        <div className="flex items-end gap-2">
+        <div className="overflow-hidden rounded-2xl border border-input bg-background">
           <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onReply(answer); } }}
             rows={1} placeholder="…or answer in your own words" disabled={busy}
-            className="pv-serif min-h-[42px] resize-none text-[14px] leading-[1.55]" />
-          <button type="button" onClick={() => onReply(answer)} disabled={busy || !answer.trim()}
-            className="inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
-          </button>
+            className="pv-serif min-h-[38px] resize-none border-0 bg-transparent px-3.5 pb-1 pt-2.5 text-[14px] leading-[1.55] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0" />
+          <div className="flex items-center justify-end px-2 pb-2">
+            <button type="button" onClick={() => onReply(answer)} disabled={busy || !answer.trim()}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40">
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5" />}
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -77,7 +83,11 @@ export function Composer({
           ))}
         </div>
       )}
-      <div className="flex items-end gap-2">
+      {/* One bordered island: textarea on top, the send/stop button docked in its own footer row —
+          never beside the textarea, where the textarea's own `w-full` fought the button for width
+          and pushed it past the rail's edge. squareTop (a "Next step" banner docked above) flattens
+          the top corners and tints the border to match, so banner + card read as one shape. */}
+      <div className={`overflow-hidden rounded-2xl border bg-background ${squareTop ? "rounded-t-none border-[hsl(var(--pv-accent))]/30" : "border-input"}`}>
         <Textarea ref={taRef} value={draft} onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (menu) {
@@ -90,15 +100,17 @@ export function Composer({
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(draft); }
           }}
           rows={1} placeholder={running ? "the agent is working…" : "Ask the agent · / commands · @ a node…"} disabled={busy || active}
-          className="pv-serif min-h-[42px] resize-none text-[14px] leading-[1.55]" />
-        <button type="button" onClick={() => (running ? onStop() : onSend(draft))}
-          disabled={running ? (stopping || cancelRequested) : busy || active || !draft.trim()}
-          title={running ? ((stopping || cancelRequested) ? "stopping…" : "Stop") : undefined}
-          className="inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40">
-          {running
-            ? ((stopping || cancelRequested) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-3.5 w-3.5" />)
-            : busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
-        </button>
+          className="pv-serif min-h-[38px] resize-none border-0 bg-transparent px-3.5 pb-1 pt-2.5 text-[14px] leading-[1.55] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0" />
+        <div className="flex items-center justify-end px-2 pb-2">
+          <button type="button" onClick={() => (running ? onStop() : onSend(draft))}
+            disabled={running ? (stopping || cancelRequested) : busy || active || !draft.trim()}
+            title={running ? ((stopping || cancelRequested) ? "stopping…" : "Stop") : undefined}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40">
+            {running
+              ? ((stopping || cancelRequested) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3 w-3" />)
+              : busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5" />}
+          </button>
+        </div>
       </div>
     </div>
   );

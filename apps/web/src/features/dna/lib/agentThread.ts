@@ -74,10 +74,16 @@ export interface AgentThreadRow extends TaskRow {
   cancel_requested: boolean;
   error: string | null;
   context_auto: boolean | null; // auto-accept mode is armed on this run (the watcher mirrors it)
+  // The DECLARED focus (docs/agent-focus.md). The ROW is the source of truth, not client state: the
+  // server self-clears a focus whose done() predicate fires, and the chip must follow that. NULL = the
+  // author declared nothing (wide).
+  context_focus_mode: string | null;
+  context_focus_target: string | null;
+  context_focus_at: string | null;
 }
 
 export const AGENT_THREAD_SELECT =
-  "id, book_id, kind, status, created_at, updated_at, steps, pending, proposals, report, cancel_requested, error, context_auto";
+  "id, book_id, kind, status, created_at, updated_at, steps, pending, proposals, report, cancel_requested, error, context_auto, context_focus_mode, context_focus_target, context_focus_at";
 
 // book-agent is invoked directly against the DEPLOYED edge fn + the active model stack in dev and prod
 // alike — it is NOT mirrored in the eval-bridge dev bridge (that reimplements flows locally; book-agent's
@@ -122,6 +128,16 @@ async function invoke(body: Record<string, unknown>): Promise<void> {
  *  get no skill brief, not whatever the current guided-flow rung happens to match). */
 export async function sendAgentMessage(bookId: number, message: string, analysis?: string, effort?: "low" | "high", auto?: boolean, objective?: string, attachedIds?: string[], isNextStep?: boolean): Promise<void> {
   await invoke({ bookId, message, ...(analysis?.trim() ? { analysis } : {}), ...(effort ? { effort } : {}), ...(auto ? { auto: true } : {}), ...(objective?.trim() ? { objective } : {}), ...(attachedIds?.length ? { attachedIds } : {}), ...(isNextStep ? { isNextStep: true } : {}) });
+}
+
+/** Declare (or clear, with `mode: null`) the agent's focus — what we're working on (docs/agent-focus.md).
+ *
+ *  Deliberately its OWN call, not a field on sendAgentMessage and not an agent tool: the author must be
+ *  able to clear the focus while a turn is mid-flight or the agent is wedged. Routing exit through the
+ *  agent would inherit the agent's failure modes. The server reads focus at turn start, so a change lands
+ *  on the next chain link and never corrupts the running one. */
+export async function setAgentFocus(bookId: number, mode: string | null, target?: string | null): Promise<void> {
+  await invoke({ bookId, setFocus: true, focusMode: mode, focusTarget: target ?? null });
 }
 
 /** Answer the agent's pending ask_author question, resuming the parked turn. */

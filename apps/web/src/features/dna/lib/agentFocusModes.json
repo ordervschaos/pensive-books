@@ -1,0 +1,50 @@
+[
+  {
+    "key": "wide",
+    "label": "Wide",
+    "blurb": "No particular focus — the whole book is fair game.",
+    "target": "none"
+  },
+  {
+    "key": "interview",
+    "label": "Interview",
+    "blurb": "Draw the author's vision out in conversation and capture it.",
+    "target": "none"
+  },
+  {
+    "key": "logline",
+    "label": "Logline",
+    "blurb": "Shape the idea into a logline and a premise with a dramatic question.",
+    "target": "none"
+  },
+  {
+    "key": "foundations",
+    "label": "Foundations",
+    "blurb": "The pillar, cast, world, and voice the whole book stands on.",
+    "target": "optional"
+  },
+  {
+    "key": "structure",
+    "label": "Structure",
+    "blurb": "Acts, beats, and the causal spine between them.",
+    "target": "optional"
+  },
+  {
+    "key": "scenes",
+    "label": "Scenes",
+    "blurb": "Break beats into scenes that each turn a value.",
+    "target": "optional"
+  },
+  {
+    "key": "draft-scene",
+    "label": "Drafting a scene",
+    "blurb": "Sketch, render, and read back one scene.",
+    "target": "required"
+  },
+  {
+    "key": "consistency-audit",
+    "label": "Consistency audit",
+    "blurb": "Hunt contradictions and dropped promises across the whole book.",
+    "target": "optional"
+  }
+]

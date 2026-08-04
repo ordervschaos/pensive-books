@@ -12,7 +12,7 @@ import { useLatestTaskRow } from "@/hooks/useLatestTaskRow";
 import { stopRun } from "@/lib/stopRun";
 import {
   AGENT_THREAD_SELECT, answerAgent, applyAgentProposal, ASPECT_KINDS, discardAgentProposal,
-  fetchAgentSessionCount, fetchAgentSessions, resumeAgentSession, sendAgentMessage, startNewAgentSession,
+  fetchAgentSessionCount, fetchAgentSessions, resumeAgentSession, sendAgentMessage, setAgentFocus, startNewAgentSession,
   type AgentProposal, type AgentSession, type Aspect, type AgentStep, type AgentThreadRow,
 } from "@/features/dna/lib/agentThread";
 import { availableCommands, matchCommands, type AgentCommand } from "@/features/dna/lib/agentCommands";
@@ -28,6 +28,7 @@ import { snapshotTree } from "@/features/dna/lib/treeVersions";
 import { briefIdea, type Brief } from "@/lib/brief";
 import { NEXT_STEP_MESSAGE, STEP_TEACH, IDEA_TEACH, IDEA_MESSAGE } from "./agentRail/journeyContent";
 import { AgentRailControls } from "./agentRail/AgentRailControls";
+import { FocusChip, suggestFocusMode } from "./agentRail/FocusChip";
 import { StepBubble } from "./agentRail/StepBubble";
 import { ProposalCard } from "./agentRail/ProposalCard";
 import { SessionHistory } from "./agentRail/SessionHistory";
@@ -39,12 +40,11 @@ import { AdminPromptPeek } from "./agentRail/AdminPromptPeek";
 // strip-on-pick replacement restores; group 2 = the query typed after it.
 const MENTION_RE = /(^|\s)@([^@\n]*)$/;
 
-export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedIds = [], onAttach, onDetach, onClose, onJump }: {
+export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedIds = [], onAttach, onDetach, onJump }: {
   bookId: number; nodes: DnaNode[]; settings: BookSettings; bookSlug?: string; // bookSlug feeds the reader URL into the final render/publish hand-off
   brief?: Brief | null; // the books.brief — lets the greeting tell "no idea yet" (ideate) from "idea set, no logline" (teach the logline)
   attachedIds?: string[]; onDetach?: (id: string) => void; // slice 2 — the context tray (anchors); omitted = no tray
   onAttach?: (id: string) => void; // "@" in the composer — attach an anchor WITHOUT going to the tree row's @ icon
-  onClose?: () => void; // folds the rail's own close affordance into its header row instead of a floating sibling
   onJump?: (id: string) => void; // reveals + scrolls to a node in the tree — lets a staged-options step jump to its picker
 }) {
   const { toast } = useToast();
@@ -70,6 +70,14 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
   // The substep key behind that headline (e.g. "seed", "beats") — so the nudge's chat message can name the
   // actual action instead of the generic "let's work on the next step" that used to ride under every headline.
   const objectiveKey = useMemo(() => currentObjectiveKey(nodes, brief), [nodes, brief]);
+  // The suggestion behind the focus chip is DERIVED (the journey rung) and merely OFFERED — never
+  // auto-applied. "Derived proposes, author disposes": the agent's mode has always been computed; what's
+  // new (docs/agent-focus.md) is that the author can see it and say no.
+  const suggestedFocus = useMemo(() => suggestFocusMode(objectiveKey), [objectiveKey]);
+  const suggestedFocusTarget = useMemo(
+    () => (suggestedFocus === "draft-scene" ? nextDraftTarget(nodes)?.scene.id : undefined),
+    [suggestedFocus, nodes],
+  );
   // The rung BEFORE the first rung: on the SEED step with no idea in the brief, the guide's job is ideation,
   // not loglines — the greeting and the nudge below both switch stance on this flag. It sits AFTER the
   // interview deliberately: a blank author is ideated with INSIDE the interview (STEP_RECIPE.interview says
@@ -142,6 +150,24 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
     staleMs: 6 * 60 * 1000,
   });
 
+  // ── The DECLARED focus (docs/agent-focus.md slice 1) ──
+  // The ROW is the source of truth, never local state: the server self-clears a focus whose done()
+  // predicate fires (interview → vision compiled, draft-scene → the scene has prose), and the chip must
+  // follow that. Reading it off `row` also means it survives reloads and rides Realtime for free.
+  const focusMode = row?.context_focus_mode ?? null;
+  const focusTargetLabel = useMemo(() => {
+    const id = row?.context_focus_target;
+    const n = id ? byId(nodes).get(id) : undefined;
+    return n ? nodeLabel(n) : undefined;
+  }, [row?.context_focus_target, nodes]);
+  const applyFocus = async (mode: string | null, target?: string | null) => {
+    try {
+      await setAgentFocus(bookId, mode, target);
+      await refetch();
+    } catch (e) {
+      toast({ title: "Couldn't change the focus", description: String((e as Error)?.message ?? e), variant: "destructive" });
+    }
+  };
   const rowSteps = useMemo(() => (Array.isArray(row?.steps) ? row!.steps! : []) as AgentStep[], [row]);
   const rowProposals = useMemo(() => (Array.isArray(row?.proposals) ? row!.proposals! : []) as AgentProposal[], [row]);
   // Optimistic chat switching (newChat / resume below). Both archive-and-swap the whole thread, and both
@@ -419,6 +445,19 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
     ? `Write "${nodeLabel(draftTarget.scene)}".`
     : (objectiveKey && NEXT_STEP_MESSAGE[objectiveKey]) || objectiveHeadline || "Let's work on the next step.";
 
+  // Guided-flow nudge (lib/dnaJourney.currentObjective) — docked directly on top of the composer (not in
+  // the feed) since the composer is where the action actually happens; a card floating up in the scroll
+  // history just left a void beneath it. Shows only when the agent's work is settled: idle, nothing
+  // running/awaiting, no proposal to review, no error.
+  const showNudge = !active && !optimistic && proposals.length === 0 && optionNodes.length === 0 && row?.status !== "error" && !!objectiveHeadline;
+  // "▸ Step 1/5 · Idea – Interview" (dnaJourney.currentObjective) → badge "1/5" + the rest as the row's
+  // description. draftTarget carries its own scene tally instead of the step badge.
+  const stepMatch = objectiveHeadline.match(/^Step\s+(\d+)\/(\d+)\s*·\s*(.*)$/);
+  const nudgeBadge = draftTarget ? `${draftTarget.orderIndex}/${draftTarget.total}` : stepMatch ? `${stepMatch[1]}/${stepMatch[2]}` : null;
+  const nudgeDesc = draftTarget
+    ? `Write “${nodeLabel(draftTarget.scene)}”`
+    : needsIdea ? "Find the story idea — pitch me a few directions" : (stepMatch ? stepMatch[3] : objectiveHeadline);
+
   return (
     // No panel bg/border here — this sits on the same chrome tone as the page's title bar (set by the
     // fixed rail container in DnaTreePage.tsx). Header height (h-11 = 44px = DnaTreePage's HEADER_H)
@@ -428,13 +467,21 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
       <div className="box-border flex h-11 shrink-0 items-center gap-2 border-b border-[hsl(var(--pv-border-soft))]">
         <WandSparkles className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />
         <Eyebrow tone="accent" className="shrink-0">Agent</Eyebrow>
+        {/* The focus chip — what we're working on, and one click to leave it. Deliberately NOT disabled
+            while a turn runs: exit must never depend on the agent being healthy (docs/agent-focus.md §6). */}
+        <FocusChip
+          mode={focusMode}
+          targetLabel={focusTargetLabel}
+          suggested={suggestedFocus}
+          suggestedTarget={suggestedFocusTarget}
+          onSet={(m, t) => void applyFocus(m, t)}
+        />
         <AgentRailControls
           auto={auto} onToggleAuto={toggleAuto}
           effort={effort} onSetEffort={setEffortMode}
           active={active}
           sessionCount={sessionCount} historyOpen={historyOpen} onToggleHistory={() => setHistoryOpen((v) => !v)}
           onNewChat={() => void newChat()} newChatDisabled={busy || active || steps.length === 0}
-          onClose={onClose}
         />
       </div>
 
@@ -477,36 +524,6 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
           ))}
           {/* Staged options (propose_options) — pickable right here, not only at the node's row in the tree. */}
           {optionNodes.map((n) => <OptionsCard key={n.id} node={n} nodes={nodes} onJump={onJump} />)}
-          {/* Guided-flow nudge (lib/dnaJourney.currentObjective) — appears in the feed as the LAST item
-              only when the agent's work is settled: idle, nothing running/awaiting, no proposal to review,
-              no error. So it reads as "here's what's next", not a pinned CTA. One click hands the step to
-              the agent (the objective itself already rides every message's context). */}
-          {!active && !optimistic && proposals.length === 0 && optionNodes.length === 0 && row?.status !== "error" && objectiveHeadline && (() => {
-            // "▸ Step 1/5 · Idea – Interview" (dnaJourney.currentObjective) → badge "1/5" + the rest as the
-            // row's description. draftTarget carries its own scene tally instead of the step badge.
-            const stepMatch = objectiveHeadline.match(/^Step\s+(\d+)\/(\d+)\s*·\s*(.*)$/);
-            const badge = draftTarget ? `${draftTarget.orderIndex}/${draftTarget.total}` : stepMatch ? `${stepMatch[1]}/${stepMatch[2]}` : null;
-            const desc = draftTarget
-              ? `Write “${nodeLabel(draftTarget.scene)}”`
-              : needsIdea ? "Find the story idea — pitch me a few directions" : (stepMatch ? stepMatch[3] : objectiveHeadline);
-            return (
-              <div className="flex items-center gap-2 rounded-xl border border-dashed border-[hsl(var(--pv-accent))]/35 bg-[hsl(var(--pv-accent))]/[0.05] px-3 py-2">
-                <WandSparkles className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />
-                <span className="shrink-0 pv-serif text-[13px] font-medium text-foreground">Next step</span>
-                {badge && (
-                  <span className="shrink-0 rounded-full bg-[hsl(var(--pv-accent))]/10 px-2 py-0.5 pv-mono text-[9.5px] text-[hsl(var(--pv-accent))]">
-                    {badge}
-                  </span>
-                )}
-                <span className="min-w-0 flex-1 truncate pv-serif text-[12.5px] text-[hsl(var(--pv-text-muted))]" title={desc}>{desc}</span>
-                <button type="button" onClick={() => void send(nextStepMessage, { isNextStep: true })} disabled={busy}
-                  title="Let the agent lead you through this step"
-                  className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[hsl(var(--pv-accent))]/50 px-2.5 py-1 pv-mono text-[10px] uppercase tracking-[0.06em] text-[hsl(var(--pv-accent))] transition-colors hover:bg-[hsl(var(--pv-accent))]/10 disabled:opacity-50">
-                  Continue <ArrowUp className="h-3 w-3 rotate-90" />
-                </button>
-              </div>
-            );
-          })()}
           {optimistic && (
             <div className="flex justify-end">
               <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-[hsl(var(--pv-surface-2))] px-3.5 py-2 pv-serif text-[14px] leading-[1.55] text-foreground whitespace-pre-wrap opacity-60">
@@ -552,14 +569,34 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
         </div>
       )}
 
-      {/* Composer — or the answer card when the agent has asked a question */}
+      {/* Composer — or the answer card when the agent has asked a question. The "Next step" nudge docks
+          directly on top of it (Lovable-style: one merged card, banner + input) since that's where the
+          author's eye and cursor already are — not a card floating up in the scroll history. */}
       <div className="mt-3 shrink-0">
+        {showNudge && (
+          <div className="flex items-center gap-2 rounded-t-2xl border border-b-0 border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/[0.06] px-3 py-2">
+            <WandSparkles className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />
+            <span className="shrink-0 pv-serif text-[13px] font-medium text-foreground">Next step</span>
+            {nudgeBadge && (
+              <span className="shrink-0 rounded-full bg-[hsl(var(--pv-accent))]/10 px-2 py-0.5 pv-mono text-[9.5px] text-[hsl(var(--pv-accent))]">
+                {nudgeBadge}
+              </span>
+            )}
+            <span className="min-w-0 flex-1 truncate pv-serif text-[12.5px] text-[hsl(var(--pv-text-muted))]" title={nudgeDesc}>{nudgeDesc}</span>
+            <button type="button" onClick={() => void send(nextStepMessage, { isNextStep: true })} disabled={busy}
+              title="Let the agent lead you through this step"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[hsl(var(--pv-accent))]/50 px-2.5 py-1 pv-mono text-[10px] uppercase tracking-[0.06em] text-[hsl(var(--pv-accent))] transition-colors hover:bg-[hsl(var(--pv-accent))]/10 disabled:opacity-50">
+              Continue <ArrowUp className="h-3 w-3 rotate-90" />
+            </button>
+          </div>
+        )}
         <Composer
           awaiting={!!(awaiting && row?.pending)} pendingOptions={row?.pending?.options ?? []}
           onReply={(t) => void reply(t)} answer={answer} setAnswer={setAnswer}
           onStop={() => void stop()} stopDisabled={!!row?.cancel_requested} cancelRequested={!!row?.cancel_requested}
           draft={draft} setDraft={setDraft} onSend={(t) => void send(t)} running={running} active={active} busy={busy}
           menu={menu} taRef={taRef} stopping={stopping}
+          squareTop={showNudge}
         />
       </div>
     </div>

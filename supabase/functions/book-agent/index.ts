@@ -31,7 +31,41 @@ Deno.serve(async (req: Request) => {
     const body = (await req.json().catch(() => ({}))) as {
       bookId?: number; runId?: number; answer?: string; chain?: boolean; autoContinue?: boolean;
       message?: string; analysis?: string; effort?: "low" | "high"; auto?: boolean; objective?: string; attachedIds?: string[]; isNextStep?: boolean;
+      focusMode?: string | null; focusTarget?: string | null; setFocus?: boolean;
     };
+
+    // ── Set / clear the declared focus (docs/agent-focus.md §6) ──
+    // A PLAIN ROW WRITE, deliberately not a tool call and not bundled into a message: the author must be
+    // able to clear the focus while a turn is mid-flight or the agent is wedged in a retry loop. Anything
+    // that routes exit THROUGH the agent inherits the agent's failure modes. The running turn is not
+    // disturbed — focus is read at turn start, so a change lands on the next chain link (the same
+    // discipline cooperative cancel already uses).
+    if (body.setFocus && body.bookId) {
+      const userClient = createUserClient(req.headers.get("Authorization") ?? "");
+      const { data: { user: u }, error: aErr } = await userClient.auth.getUser();
+      if (aErr || !u) return json({ error: "Unauthorized" }, 401);
+      const { data: canEdit } = await userClient.rpc("user_can_edit_book", { _book_id: body.bookId });
+      if (canEdit === false) return json({ error: "Access denied" }, 403);
+      const mode = typeof body.focusMode === "string" && body.focusMode.trim() && body.focusMode !== "wide"
+        ? body.focusMode.trim() : null;
+      const target = mode && typeof body.focusTarget === "string" && body.focusTarget.trim() ? body.focusTarget.trim() : null;
+      const focusCols = { context_focus_mode: mode, context_focus_target: target, context_focus_at: mode ? new Date().toISOString() : null };
+      const { data: updated, error } = await service.from("book_agent_runs")
+        .update(focusCols).eq("book_id", body.bookId).eq("kind", "thread").select("id");
+      if (error) throw new Error(error.message);
+      // No thread row yet (the author picked a focus before ever typing): mint the idle thread now so the
+      // declaration isn't silently dropped. `status: 'idle'` — an empty thread the first message appends to,
+      // NOT a run to drive. Guarded by the partial unique index book_agent_runs_one_thread_per_book, so a
+      // race just collides and we re-apply to the winner.
+      if (!updated?.length) {
+        const { error: insErr } = await service.from("book_agent_runs")
+          .insert({ book_id: body.bookId, created_by: u.id, kind: "thread", status: "idle", ...focusCols });
+        if (insErr) {
+          await service.from("book_agent_runs").update(focusCols).eq("book_id", body.bookId).eq("kind", "thread");
+        }
+      }
+      return json({ ok: true, focusMode: mode, focusTarget: target });
+    }
 
     // ── Continue call (self/watchdog): drive the run's turns in THIS worker until the wall-clock budget
     // runs low, then hand off to a fresh worker. We answer the moment dispatch is accepted (the reinvoke
