@@ -15,6 +15,23 @@ export const NEXT_STEP_MESSAGE: Record<string, string> = {
   prose: "Write the next scene.",
 };
 
+// Short noun for the "Next step" button — "Start interview" / "Continue beat sheet" — keyed the same as
+// NEXT_STEP_MESSAGE above. Kept separate from STEP_TEACH's prose because the button needs a 1-2 word
+// object, not a sentence.
+export const STEP_NOUN: Record<string, string> = {
+  interview: "interview",
+  seed: "logline",
+  premise: "premise",
+  pillar: "pillar",
+  contract: "contract",
+  cast: "cast",
+  acts: "acts",
+  beats: "beat sheet",
+  scenes: "scenes",
+  promises: "promises",
+  prose: "scene",
+};
+
 // The guide's teaching line for each journey substep — what the concept IS and why the book needs it,
 // in plain words. Shown in the rail's empty state (the greeting) so a first-time author learns the craft
 // term for the rung they're on before the agent even speaks. Keyed by dnaJourney's STEP_RECIPE substep,

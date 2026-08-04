@@ -26,7 +26,7 @@ import { useLatestAiCall } from "@/features/dna/hooks/useLatestAiCall";
 import { ActionLink, Eyebrow, RunError } from "@/components/book/shared/studioUi";
 import { snapshotTree } from "@/features/dna/lib/treeVersions";
 import { briefIdea, type Brief } from "@/lib/brief";
-import { NEXT_STEP_MESSAGE, STEP_TEACH, IDEA_TEACH, IDEA_MESSAGE } from "./agentRail/journeyContent";
+import { NEXT_STEP_MESSAGE, STEP_NOUN, STEP_TEACH, IDEA_TEACH, IDEA_MESSAGE } from "./agentRail/journeyContent";
 import { AgentRailControls } from "./agentRail/AgentRailControls";
 import { FocusChip, suggestFocusMode } from "./agentRail/FocusChip";
 import { StepBubble } from "./agentRail/StepBubble";
@@ -457,6 +457,10 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
   const nudgeDesc = draftTarget
     ? `Write “${nodeLabel(draftTarget.scene)}”`
     : needsIdea ? "Find the story idea — pitch me a few directions" : (stepMatch ? stepMatch[3] : objectiveHeadline);
+  // "Start interview" vs "Continue the beat sheet" — an empty thread (steps.length === 0) means nothing
+  // has been said yet, so the button must not claim to "continue" a conversation that never began.
+  const nudgeAction = needsIdea ? "idea" : draftTarget ? "scene" : (objectiveKey && STEP_NOUN[objectiveKey]) || "";
+  const nudgeLabel = `${steps.length === 0 ? "Start" : "Continue"}${nudgeAction ? ` ${nudgeAction}` : ""}`;
 
   return (
     // No panel bg/border here — this sits on the same chrome tone as the page's title bar (set by the
@@ -586,7 +590,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
             <button type="button" onClick={() => void send(nextStepMessage, { isNextStep: true })} disabled={busy}
               title="Let the agent lead you through this step"
               className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[hsl(var(--pv-accent))]/50 px-2.5 py-1 pv-mono text-[10px] uppercase tracking-[0.06em] text-[hsl(var(--pv-accent))] transition-colors hover:bg-[hsl(var(--pv-accent))]/10 disabled:opacity-50">
-              Continue <ArrowUp className="h-3 w-3 rotate-90" />
+              {nudgeLabel} <ArrowUp className="h-3 w-3 rotate-90" />
             </button>
           </div>
         )}

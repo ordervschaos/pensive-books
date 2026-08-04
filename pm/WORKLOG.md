@@ -18,6 +18,28 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-04 — "Next step" nudge: Start vs Continue `[chore]`
+- **What:** The nudge button beside the composer always said "Continue" even when the thread was
+  empty and nothing had happened yet (e.g. the interview hadn't started). Now reads
+  `Start <step>` when `steps.length === 0` and `Continue <step>` once the thread has history —
+  added a `STEP_NOUN` map in journeyContent.ts (interview/logline/premise/.../beat sheet/scene),
+  keyed the same way as the existing `NEXT_STEP_MESSAGE`/`STEP_TEACH` maps.
+- **Files/commits:** `apps/web/src/features/dna/components/AgentRail.tsx`,
+  `apps/web/src/features/dna/components/agentRail/journeyContent.ts` (uncommitted, same unshipped
+  agent-focus/agent-rail branch as the prior two entries).
+- **PM impact:** none — copy/UX fix on top of unshipped, uncommitted work.
+
+## 2026-08-04 — Composer: fix send button clipped off the rail edge `[ship]`
+- **What:** Follow-up on the "Next step" docking — a screenshot showed the send button cut off at
+  the rail's bottom-right. Root cause: `Textarea`'s base `w-full` class sat next to the button in a
+  flex row with no `min-width:0`, so the textarea claimed the full row width and pushed the button
+  out past the container. Fixed by making the composer one bordered "island" (textarea on top, the
+  send/stop button in its own footer row inside the same card) instead of two flex siblings —
+  applied to both the idle composer and the awaiting-answer card. Verified via chrome-devtools-mcp
+  screenshot; typecheck clean.
+- **Files/commits:** `apps/web/src/features/dna/components/agentRail/Composer.tsx` (uncommitted).
+- **PM impact:** none — UX fix within existing AgentRail work, no STATE/ROADMAP change.
+
 ## 2026-08-04 — AgentRail: dock "Next step" nudge on the composer, not the feed `[ship]`
 - **What:** First-load AgentRail had a huge dead gap between the greeting card and the input box
   (flagged from a screenshot: the card top-aligned in a full-height `flex-1` feed with nothing
