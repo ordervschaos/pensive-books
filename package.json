@@ -20,7 +20,6 @@
     "dev": "corepack pnpm --filter @pensive/web dev",
     "dev:web": "corepack pnpm --filter @pensive/web dev",
     "dev:marketing": "corepack pnpm --filter @pensive/marketing dev",
-    "dev:digest": "corepack pnpm --filter @pensive/digest dev",
     "dev:bridge": "node scripts/eval-bridge.mjs",
     "dev:claude-local-shim": "node scripts/claude-local-shim.mjs",
     "dev:claude-local-shim:restart": "pkill -f 'scripts/claude-local-shim.mjs' || true; nohup node scripts/claude-local-shim.mjs > nohup.out 2>&1 & disown; sleep 1; ps aux | grep '[c]laude-local-shim'",
