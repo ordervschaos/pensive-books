@@ -177,7 +177,7 @@ async function updateDigest(
 /**
  * Turn raw field values into a Section, or refuse.
  *
- * The refusal is the point. Before it, a `feed` with no URLs or a `serial` with no book id saved happily and
+ * The refusal is the point. Before it, a `feed` with no URLs or a `ranked` with no target saved happily and
  * then gathered nothing every morning, forever — a section that could not possibly work, with no signal
  * anywhere. An empty `search` query was worse: it still billed an Opus call to produce nothing.
  *

@@ -9,7 +9,7 @@ import { fieldsFor, fieldValue, isRequired, type Field } from "@/lib/digest/sect
 // `lib/digest/sectionSchema.ts` declares for the chosen kind, and knows nothing about any individual kind.
 //
 // Two rewrites got it here. First it was one flat form whose unused fields were ignored by the matching
-// branch in addSection — fine at four kinds, unusable at eleven ("Book id (serial)" sitting above
+// branch in addSection — fine at four kinds, unusable at ten ("Min score (ranked)" sitting above
 // "Subreddits (ranked)" above "Channels (video)"). Then it was a hand-written fieldset per kind, which fixed
 // the noise but left the field list duplicated across here, `types.ts` and the parse branch in `actions.ts`:
 // three edits per new field, and silent drift the moment you forgot one.
@@ -54,7 +54,6 @@ const KINDS: KindInfo[] = [
     label: "readwise — quotes from your highlights",
     blurb: "One API call. Printed verbatim; no model touches the quote.",
   },
-  { value: "serial", label: "serial — pages from one of your books", blurb: "One database read. No model." },
   {
     value: "unread",
     label: "unread — what this digest fetched and never used",

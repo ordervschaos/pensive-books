@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 // The domain contract. Everything in the pipeline speaks these three shapes.
 //
-// The important one is `Adapter`: every source kind — web search, RSS, a book you're re-reading, a pure
+// The important one is `Adapter`: every source kind — web search, RSS, a mailed newsletter, a pure
 // prompt — collapses to "produce Items". That is what makes adding a source a new file rather than a new
 // branch in the pipeline (source-adapter / plugin pattern). The writer stage downstream never learns
 // where an Item came from; it only ever sees text it was handed, which is the structural guarantee that
@@ -11,7 +11,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export type SectionKind =
   | "search"
   | "feed"
-  | "serial"
   | "prompt"
   | "readwise"
   | "ranked"
@@ -52,13 +51,6 @@ export interface SearchSection extends SectionBase {
 export interface FeedSection extends SectionBase {
   kind: "feed";
   urls: string[];
-}
-
-export interface SerialSection extends SectionBase {
-  kind: "serial";
-  /** A book in the main Pensive app. Read-only: the digest never writes to books/pages. */
-  book_id: number;
-  pages_per_day?: number;
 }
 
 export interface PromptSection extends SectionBase {
@@ -158,7 +150,6 @@ export interface QuizSection extends SectionBase {
 export type Section =
   | SearchSection
   | FeedSection
-  | SerialSection
   | PromptSection
   | ReadwiseSection
   | RankedSection

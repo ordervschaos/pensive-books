@@ -90,8 +90,6 @@ function sectionDetail(s: Section): string {
       return s.query;
     case "feed":
       return s.urls.join(", ");
-    case "serial":
-      return `book ${s.book_id}, ${s.pages_per_day ?? 1} page(s)/day`;
     case "readwise":
       return s.mode === "random"
         ? `random highlights from your ${s.category ?? "whole"} library`

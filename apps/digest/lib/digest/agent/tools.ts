@@ -125,7 +125,6 @@ const KIND_SUMMARY: Record<SectionKind, string> = {
   inbox: "Newsletters mailed to this digest's own address. The only push source; the cheapest in the app.",
   video: "YouTube channels or podcast RSS, read instead of watched. Transcript where one exists.",
   readwise: "Quotes from the reader's own Readwise vault. Printed verbatim — no model touches them.",
-  serial: "A book in the main Pensive app, a page or two a day. Read-only.",
   unread: "The corpus's own leftovers: posts this digest fetched and never used.",
   sitewatch: "Pages with no feed. Emits nothing unless the page actually changed.",
   search: "Live web search. THE ONE PAID GATHER PATH — it bills every run whether or not it finds anything, and needs both AI writing and web search enabled on the digest.",

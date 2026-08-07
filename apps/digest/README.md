@@ -18,7 +18,7 @@ pg_cron */15 → POST /api/cron/tick
                         └─ buildIssue(id)
                              ⓪ cadence  drop sections not due today        lib/digest/build.ts
                              ① gather   per section, parallel, no writing   lib/digest/adapters.ts
-                                        search | feed | serial | prompt | readwise
+                                        search | feed | prompt | readwise
                                         ranked | inbox | unread | sitewatch | video
                              ② filter   canonical url → sha256 → delivered? lib/digest/canonical.ts
                              ③ write    one LLM call per section, parallel  lib/digest/write.ts
@@ -239,7 +239,6 @@ Gather cost differs enormously by section kind, which is why `search` is behind 
 | kind | gather cost | notes |
 |---|---|---|
 | `feed` | HTTP fetches only | No model call at all. Article extraction via r.jina.ai. |
-| `serial` | one DB read | Nothing external. |
 | `prompt` | nothing | No retrieval by design. |
 | `readwise` | 1–4 HTTP reads | No model call at **either** stage — the write is a template (see below). |
 | `ranked` | 1–N HTTP reads | Keyless public APIs. arXiv/GitHub need no extraction at all (abstract / release notes ARE the body). |
@@ -361,7 +360,7 @@ The schema is **pure data** — a `type` tag both sides interpret, not parse cal
 into a client component and reads top-to-bottom as documentation. `name` is both the form field name and the
 Section property name, which is what removes the rename table entirely.
 
-**Required is enforced, not suggested.** Before it, a `feed` with no URLs or a `serial` with no book id saved
+**Required is enforced, not suggested.** Before it, a `feed` with no URLs or a `sitewatch` with no urls saved
 happily and then gathered nothing every morning, forever — a section that could not possibly work, with no
 signal anywhere. An empty `search` query was worse: it still billed an Opus call to produce nothing. Adding a
 field to a kind is now one edit, and a kind that needs conditional requiredness has exactly one hook
@@ -681,7 +680,6 @@ to ignore when it's fine is a status surface you ignore when it isn't.
   few days and shipped nothing. That's honest, but a daily cadence on a weekly-volume beat mostly yields
   silence — either widen the beat or let a section declare its own cadence (weekly, on a named day).
 - **Same story, three sites = three URLs.** Dedupe is per-URL; clustering by title similarity is v2.
-- **`serial` sections are owner-only.** Collaborator access via `book_access` is deliberate follow-up.
 - **Readwise quote selection is a draw, not a choice.** `random` picks weighted-at-random and `review` defers
   to Readwise; neither reads the section's `instructions`, so "quotes about attention this week" is not
   expressible. The honest fix is a selection pass (rank the over-drawn candidates against the instruction)

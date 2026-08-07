@@ -169,23 +169,6 @@ export const SECTION_FIELDS: Record<SectionKind, readonly Field[]> = {
     },
   ],
 
-  serial: [
-    {
-      name: "book_id",
-      label: "Book id",
-      type: "number",
-      required: true,
-      hint: "A book you own in the main app. Read-only; the digest never writes to it.",
-    },
-    {
-      name: "pages_per_day",
-      label: "Pages/day",
-      type: "number",
-      default: 1,
-      hint: "The cursor advances after each run and wraps at the end, so a finished book restarts.",
-    },
-  ],
-
   unread: [
     {
       name: "min_age_days",
@@ -296,8 +279,8 @@ export function isRequired(field: Field, values: Record<string, unknown>): boole
 /**
  * Parse a kind's fields out of raw form values and report what's missing.
  *
- * The missing-field check is the point of the whole module. Before it, a `feed` with no URLs or a `serial`
- * with no book saved happily and then gathered nothing every morning, forever — a section that cannot
+ * The missing-field check is the point of the whole module. Before it, a `feed` with no URLs or a `sitewatch`
+ * with no urls saved happily and then gathered nothing every morning, forever — a section that cannot
  * possibly work, with no signal anywhere. An empty `search` query was worse: it still billed an Opus call to
  * produce nothing.
  */

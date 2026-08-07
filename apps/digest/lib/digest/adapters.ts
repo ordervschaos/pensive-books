@@ -7,7 +7,6 @@ import type {
   RunCtx,
   SearchSection,
   Section,
-  SerialSection,
 } from "./types";
 import { aiEnabled, callModel, MODEL_GATHER, WEB_SEARCH_TOOL } from "./llm";
 import { urlHash } from "./canonical";
@@ -174,62 +173,6 @@ const feedAdapter: Adapter = async (section, ctx) => {
 };
 
 // ---------------------------------------------------------------------------------------------------
-// serial — N pages a day out of a book you already have in Pensive
-// ---------------------------------------------------------------------------------------------------
-// This is "predetermined content fed into the pipeline": a course, a re-read, your own notes. No LLM and no
-// network. The cursor rides books.digest_bookmarked_page_index, which has been sitting unused in the schema.
-//
-// The service-role client bypasses RLS, so ownership is checked here by hand — the digest owner must own the
-// book. (Collaborator access via book_access is a deliberate later step, not an oversight.)
-const serialAdapter: Adapter = async (section, ctx) => {
-  const s = section as SerialSection;
-  const db = createServiceClient();
-  const perDay = Math.max(1, Math.min(s.pages_per_day ?? 1, 10));
-
-  const { data: book } = await db
-    .from("books")
-    .select("id, name, owner_id, digest_bookmarked_page_index")
-    .eq("id", s.book_id)
-    .maybeSingle();
-  if (!book || book.owner_id !== ctx.digest.owner_id) return [];
-
-  const from = book.digest_bookmarked_page_index ?? 0;
-  const { data: pages } = await db
-    .from("pages")
-    .select("id, title, content, html_content, page_index")
-    .eq("book_id", s.book_id)
-    .eq("archived", false)
-    .gte("page_index", from)
-    .order("page_index", { ascending: true })
-    .limit(perDay);
-
-  if (!pages?.length) return [];
-
-  // Advance the cursor only after a successful read, and let it wrap so a finished book restarts rather
-  // than going silent forever.
-  const last = pages[pages.length - 1] as { page_index: number };
-  await db.from("books").update({ digest_bookmarked_page_index: last.page_index + 1 }).eq("id", s.book_id);
-
-  return (pages as Array<Record<string, unknown>>).map((p) => ({
-    title: (p.title as string) || `${book.name} — page ${(p.page_index as number) + 1}`,
-    text: plainText(p.content) || stripHtml((p.html_content as string) ?? ""),
-    source: book.name as string,
-  }));
-};
-
-// pages.content is TipTap JSON. A tiny recursive text walk beats importing the web app's converter across an
-// app boundary — this only needs readable prose, not fidelity.
-function plainText(node: unknown): string {
-  if (!node) return "";
-  if (typeof node === "string") return node;
-  if (Array.isArray(node)) return node.map(plainText).join("");
-  const n = node as Record<string, unknown>;
-  if (n.type === "text" && typeof n.text === "string") return n.text;
-  const inner = plainText(n.content);
-  return typeof n.type === "string" && /paragraph|heading|listItem/.test(n.type) ? `${inner}\n\n` : inner;
-}
-
-// ---------------------------------------------------------------------------------------------------
 // prompt — no retrieval at all
 // ---------------------------------------------------------------------------------------------------
 // A reflection, a question of the day. There is nothing to gather; the WRITE stage generates from the
@@ -299,7 +242,6 @@ function toItem(h: Highlight): Item {
 export const ADAPTERS: Partial<Record<Section["kind"], Adapter>> = {
   search: searchAdapter,
   feed: feedAdapter,
-  serial: serialAdapter,
   prompt: promptAdapter,
   readwise: readwiseAdapter,
   ranked: rankedAdapter,
