@@ -1,4 +1,4 @@
-// DnaTreePage — /books/:slug/dna/tree
+// StudioTreePage — /books/:slug/studio/tree
 // The ONE studio surface: six tabs (overview / tree / voice / analytics / characters / story) over the
 // live book_nodes tree. This file is the route shell — data loading, Realtime subscriptions, page-level
 // state, and tab layout. The tree UI itself lives in @/features/dna/components/tree/*.
@@ -56,11 +56,11 @@ const HEADER_H = 44;
 const CANVAS_MARGIN = 16;
 
 // ── Page ─────────────────────────────────────────────────────────────────────
-export default function DnaTreePage() {
+export default function StudioTreePage() {
   const { bookSlug } = useParams();
   const bookId = getNumericId(bookSlug);
   // Two views share this page (one route, splat-matched so switching doesn't remount): the structural tree and
-  // the "voice & feel" taste surface. Keeping taste on its own /dna/tree/taste tab stops its fields from
+  // the "voice & feel" taste surface. Keeping taste on its own /studio/tree/taste tab stops its fields from
   // interleaving with the tree structure.
   const location = useLocation();
   const navigate = useNavigate();
@@ -81,7 +81,7 @@ export default function DnaTreePage() {
     : location.pathname.endsWith("/story") ? "story"
     : location.pathname.endsWith("/craft") ? "craft"
     : "tree";
-  const treePath = `/books/${bookSlug}/dna/tree`;
+  const treePath = `/books/${bookSlug}/studio/tree`;
   const overviewPath = `${treePath}/overview`;
   const analyticsPath = `${treePath}/analytics`;
   const charactersPath = `${treePath}/characters`;
@@ -382,7 +382,7 @@ export default function DnaTreePage() {
       }));
       const { error: nodesErr } = await supabase.from("book_nodes").insert(forkedNodes);
       if (nodesErr) throw nodesErr;
-      window.open(`/books/${fork.id as number}/dna/tree`, "_blank");
+      window.open(`/books/${fork.id as number}/studio/tree`, "_blank");
     } catch (e) {
       alert(`Fork failed: ${(e as Error).message}`);
     } finally {
@@ -640,7 +640,7 @@ export default function DnaTreePage() {
           {tab === "tree" && (
             <button onClick={() => { setHistoryOpen(true); setOverflowOpen(false); }} style={menuItemStyle}>⟲ history</button>
           )}
-          <a href={`/books/${bookSlug}/dna.json`} onClick={() => setOverflowOpen(false)} style={menuItemStyle}>{"{ } json →"}</a>
+          <a href={`/books/${bookSlug}/studio.json`} onClick={() => setOverflowOpen(false)} style={menuItemStyle}>{"{ } json →"}</a>
           <button onClick={() => { setOverflowOpen(false); void forkDna(); }} disabled={forking} title="Copy this DNA tree into a new book to experiment freely" style={{ ...menuItemStyle, color: forking ? T.faint : menuItemStyle.color, cursor: forking ? "default" : "pointer" }}>
             {forking ? "forking…" : "⑂ fork →"}
           </button>
@@ -898,11 +898,11 @@ export default function DnaTreePage() {
             <div style={{ fontSize: 11, color: T.good, fontFamily: MONO, marginBottom: 16 }}>✓ no lints — the tree is conformant</div>
           )}
 
-          {/* Shape / Craft / Cold-read / Meter emotional-trace — same MetersPane the standalone /dna/meters
+          {/* Shape / Craft / Cold-read / Meter emotional-trace — same MetersPane the standalone /studio/meters
               route renders; a projection of the live tree, reads write back onto it. */}
           <MetersPane nodes={nodes} bookId={bookId} bookSlug={bookSlug ?? ""} />
 
-          {/* continuity ledger — same LedgerPane the standalone /dna/ledger route renders. */}
+          {/* continuity ledger — same LedgerPane the standalone /studio/ledger route renders. */}
           <LedgerPane nodes={nodes} bookId={bookId} bookSlug={bookSlug ?? ""} />
 
           {/* PROMISES — the obligation ledger across all six debt axes, pressure-ordered, with the manual

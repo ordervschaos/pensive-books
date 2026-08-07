@@ -1,20 +1,19 @@
-// DnaLedgerPage — /books/:slug/dna/ledger
-// The standalone ledger route: loads + subscribes the tree, then renders the shared LedgerPane (the same body
-// the studio's Analytics tab shows). Pure projection of the live tree — nothing generates here; the pane's
-// "Build continuity ledger" button writes onto book_nodes and the subscription below re-projects. Nav
-// suppressed (a dev DNA route).
+// StudioMetersPage — /books/:slug/studio/meters
+// The standalone meters route: loads + subscribes the tree, then renders the shared MetersPane (the same body
+// the studio's `meters` tab shows). Pure projection of the live tree — nothing generates here; the pane's read
+// buttons write onto book_nodes and the subscription below re-projects. Nav suppressed (a dev DNA route).
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { type DnaNode } from "@/features/dna/lib/novelDna";
-import { LedgerPane } from "@/features/dna/components/tree/LedgerPane";
+import { MetersPane } from "@/features/dna/components/tree/MetersPane";
 import { setConsoleTheme, T } from "@/features/dna/components/tree/treeChrome";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { useBookNodesLiveSync } from "@/features/dna/hooks/useBookNodesLiveSync";
 
 const getNumericId = (p: string | undefined) => { const m = p?.match(/^(\d+)/); return m ? parseInt(m[1]) : 0; };
 
-export default function DnaLedgerPage() {
+export default function StudioMetersPage() {
   const { themeName, themeMode } = useTheme();
   const consoleMode = themeName === "terminal" || themeMode === "dark" ? "terminal" as const : "paper" as const;
   setConsoleTheme(consoleMode);
@@ -32,7 +31,7 @@ export default function DnaLedgerPage() {
   }, [bookId]);
 
   // live subscription (refresh = no-op: the page is a projection of server state)
-  useBookNodesLiveSync(bookId, "ledger", setNodes);
+  useBookNodesLiveSync(bookId, "meters", setNodes);
 
   if (error) return <div className={themeClass} style={{ padding: 24, color: T.bad, fontFamily: "monospace", background: T.bg, minHeight: "100vh" }}>error: {error}</div>;
   if (!nodes) return <div className={themeClass} style={{ padding: 24, color: T.muted, fontFamily: "monospace", background: T.bg, minHeight: "100vh" }}>loading…</div>;
@@ -41,10 +40,10 @@ export default function DnaLedgerPage() {
     <div key={consoleMode} className={themeClass} style={{ minHeight: "100vh", background: T.bg, color: T.inkSoft, padding: "24px 28px", fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
       <div style={{ maxWidth: 1080, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
-          <h1 style={{ fontSize: 18, fontWeight: 700, letterSpacing: -0.2, color: T.ink }}>Continuity ledger</h1>
-          <a href={`/books/${bookSlug}/dna/tree`} style={{ fontSize: 12, color: T.accent, textDecoration: "none" }}>← tree</a>
+          <h1 style={{ fontSize: 18, fontWeight: 700, letterSpacing: -0.2, color: T.ink }}>Meters</h1>
+          <a href={`/books/${bookSlug}/studio/tree`} style={{ fontSize: 12, color: T.accent, textDecoration: "none" }}>← tree</a>
         </div>
-        <LedgerPane nodes={nodes} bookId={bookId} bookSlug={bookSlug ?? ""} />
+        <MetersPane nodes={nodes} bookId={bookId} bookSlug={bookSlug ?? ""} />
       </div>
     </div>
   );

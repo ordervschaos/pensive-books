@@ -1,4 +1,4 @@
-// DnaJsonPage — /books/:slug/dna.json
+// StudioJsonPage — /books/:slug/studio.json
 // Dumps the book_nodes tree as raw JSON. No app chrome; nav is suppressed via ConditionalNav.
 // Two query params:
 //   ?mode=flat  (default) — raw book_nodes rows as stored
@@ -29,7 +29,7 @@ function nestNodes(flat: DnaNode[]) {
   return roots;
 }
 
-export default function DnaJsonPage() {
+export default function StudioJsonPage() {
   const { bookSlug } = useParams();
   const [params] = useSearchParams();
   const mode = params.get("mode") === "tree" ? "tree" : "flat";

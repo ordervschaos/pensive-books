@@ -18,6 +18,27 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-07 — Renamed DNA→Studio (routes+UI) and built the studio.pensive.me entrance `[wip]`
+- **What:** Author ratified: hostname-rewrite (not a new app) for `studio.pensive.me`, `/studio` as the logged-in books-view/dashboard, and a full DNA→Studio rename of routes/pages/UI copy (internal engine naming — `novelDna.ts`, `dnaSchema.ts`, `book_nodes`, the `/dna/docs/architecture` atlas — deliberately left alone; that's the data-model concept, distinct from the product surface). Shipped: apps/web route rename (`/books/:slug/dna/*` → `/studio/*`, 6 page files renamed Dna→Studio), new `/studio` `StudioDashboardPage` (books with a DNA tree, via `book_nodes!inner`), legacy `/dna/*` redirects in `LegacyRedirects.tsx`, and apps/marketing hostname-rewrite (`studio.pensive.me` → `app.pensive.me` origin fixed in `inferAppOrigin`; middleware rewrites `/` to a new `/studio-landing` SSG page reusing the existing Studio spotlight copy/mock when logged out, redirects to `/studio` when logged in).
+- **Files/commits:** not committed yet. `apps/web/src/App.tsx`, `apps/web/src/components/LegacyRedirects.tsx`, `apps/web/src/components/navigation/TopNav.tsx`, `apps/web/src/pages/studio/StudioDashboardPage.tsx` (new), `apps/web/src/hooks/use-studio-books-query.ts` (new), 6 renamed `features/dna/pages/Studio*Page.tsx`, several `features/dna/components/*` comment updates, `apps/marketing/middleware.ts`, `apps/marketing/lib/pensive.ts`, `apps/marketing/app/studio-landing/page.tsx` (new). Both apps typecheck clean; UI not yet verified in a browser (chrome-devtools-mcp profile lock + claude-in-chrome extension unavailable this session).
+- **PM impact:** none promoted yet — not committed/deployed. Outstanding manual step: attach `studio.pensive.me` as a second domain on the `pensive-marketing` Vercel project + DNS (production change, left for the author).
+
+## 2026-08-07 — Scoped `studio.pensive.me` landing page (no code yet) `[wip]`
+- **What:** User wants a DNA-studio entrance at `studio.pensive.me` — a selling landing page for the AI-writing path + a logged-in "DNA books" view. Explored current state: no studio infra exists anywhere; `apps/marketing` already has a Studio spotlight *section* on the unified pensive.me landing page; `/books` in apps/web is a unified list with no DNA-only view (DNA-ness is derived from `book_nodes` rows, not a column). Proposed two options and am waiting on the author to pick: (1) hostname-rewrite inside existing `apps/marketing` project (recommended — reuses SSG/auth/copy, avoids `apps/digest`-style new-app overhead) vs. a standalone new app; (2) dedicated `/dna/books` route vs. a filtered `/books` view for the logged-in destination.
+- **Files/commits:** no commits; scratch analysis in `doc_1786089301122.md` (repo root, uncommitted, not meant to be committed).
+- **PM impact:** none yet — pending author decision on the two open questions before any build/promotion.
+
+## 2026-08-05 — Fast-forwarded `digest-reader-render` onto `main` and pushed `[chore]`
+- **What:** `main` was a strict ancestor (merge-base == origin/main HEAD), so pushed the branch tip
+  straight to `origin/main` as a fast-forward rather than checking out and merging — avoided
+  disturbing uncommitted WORKLOG edits/untracked docs on the feature branch. Pre-push hooks
+  (typecheck + tests) passed. Also committed the pending WORKLOG catalogue entries (interview
+  double-confirm, dead-end turns, console dark-mode) that were sitting uncommitted, then switched
+  to `main`.
+- **Files/commits:** `b62bf00..99cb777` pushed to `main`; `a3861f1` (WORKLOG catalogue commit,
+  still local-only on `digest-reader-render`, not pushed).
+- **PM impact:** none — pure housekeeping/ship-what-was-already-done, no new scope.
+
 ## 2026-08-04 — Removed the "Next step" nudge entirely `[ship]`
 - **What:** Owner's call after the finding below: the nudge is needed "rarely — almost never", and the
   start doors already cover the one moment it helped (cold start). Deleted the banner, its

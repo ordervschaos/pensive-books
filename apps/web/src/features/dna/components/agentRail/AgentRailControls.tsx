@@ -3,11 +3,11 @@ import { ChevronDown, Clock, Infinity as InfinityIcon, MoreVertical, SquarePen, 
 
 // The header's button cluster: a kebab menu (mode + effort) plus past-chats badge and new-chat. Pulled
 // out of AgentRail's render so the main component reads as orchestration, not markup. The close affordance
-// was dropped — the tree's own PanelLeft toggle (DnaTreePage) already opens/closes this rail, so a second
+// was dropped — the tree's own PanelLeft toggle (StudioTreePage) already opens/closes this rail, so a second
 // X here was a redundant exit.
 //
 // The kebab menu is hand-rolled (not shadcn's DropdownMenu) to match FocusChip's own popover: shadcn's
-// menu portals into document.body, which escapes the local theme-paper/theme-terminal wrapper DnaTreePage
+// menu portals into document.body, which escapes the local theme-paper/theme-terminal wrapper StudioTreePage
 // forces around the studio (Console-on-Paper is scoped to that div, not to <html>) — the portal would
 // pick up whichever theme is set site-wide instead, and can render with no matching --popover background
 // at all. Rendering in place keeps it inside the same themed subtree the rest of the rail lives in.

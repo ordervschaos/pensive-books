@@ -35,12 +35,13 @@ const ProfileEdit = lazy(() => import("@/pages/user/profile/ProfileEdit"));
 const MyBooks = lazy(() => import("@/pages/books/index/MyBooks"));
 const NewBook = lazy(() => import("@/pages/books/new/NewBook"));
 const BookDetails = lazy(() => import("@/pages/books/show/BookDetails"));
-const DnaNewBookPage = lazy(() => import("@/features/dna/pages/DnaNewBookPage"));
-const DnaJsonPage = lazy(() => import("@/features/dna/pages/DnaJsonPage"));
-const DnaTreePage = lazy(() => import("@/features/dna/pages/DnaTreePage"));
-const DnaDevPage = lazy(() => import("@/features/dna/pages/DnaDevPage"));
-const DnaMetersPage = lazy(() => import("@/features/dna/pages/DnaMetersPage"));
-const DnaLedgerPage = lazy(() => import("@/features/dna/pages/DnaLedgerPage"));
+const StudioNewBookPage = lazy(() => import("@/features/dna/pages/StudioNewBookPage"));
+const StudioJsonPage = lazy(() => import("@/features/dna/pages/StudioJsonPage"));
+const StudioTreePage = lazy(() => import("@/features/dna/pages/StudioTreePage"));
+const StudioDevPage = lazy(() => import("@/features/dna/pages/StudioDevPage"));
+const StudioMetersPage = lazy(() => import("@/features/dna/pages/StudioMetersPage"));
+const StudioLedgerPage = lazy(() => import("@/features/dna/pages/StudioLedgerPage"));
+const StudioDashboardPage = lazy(() => import("@/pages/studio/StudioDashboardPage"));
 const DnaArchitecturePage = lazy(() => import("@/features/dna/pages/DnaArchitecturePage"));
 const DraftChanges = lazy(() => import("@/pages/books/show/DraftChanges"));
 const VersionHistoryPage = lazy(() => import("@/pages/books/show/VersionHistoryPage"));
@@ -81,13 +82,13 @@ function ScrollToTop() {
 function ConditionalNav() {
   const location = useLocation();
   const isPageViewRoute = location.pathname.includes('/pages/');
-  const isJsonRoute = location.pathname.endsWith('/dna.json');
-  const isTreeRoute = location.pathname.includes('/dna/tree');
-  const isMetersRoute = location.pathname.includes('/dna/meters');
-  const isLedgerRoute = location.pathname.includes('/dna/ledger');
+  const isJsonRoute = location.pathname.endsWith('/studio.json');
+  const isTreeRoute = location.pathname.includes('/studio/tree');
+  const isMetersRoute = location.pathname.includes('/studio/meters');
+  const isLedgerRoute = location.pathname.includes('/studio/ledger');
   const isArchRoute = location.pathname.includes('/dna/docs');
 
-  // Hide nav for page view routes (own fixed settings menu) and dev DNA routes.
+  // Hide nav for page view routes (own fixed settings menu) and dev Studio routes.
   if (isPageViewRoute || isJsonRoute || isTreeRoute || isMetersRoute || isLedgerRoute || isArchRoute) {
     return null;
   }
@@ -111,12 +112,12 @@ function ProtectedLayout() {
   );
 }
 
-// The vanilla DNA studio was deprecated in favor of the tree (docs/plan-one-studio-consolidation.md) —
-// /dna keeps working as the studio entry point from the book editor. It lands on the tree tab (not Overview):
-// the tree + editor rail is more grounding to start from than the read-only Overview summary.
-function DnaStudioRedirect() {
+// The vanilla studio was deprecated in favor of the tree (docs/plan-one-studio-consolidation.md) —
+// /studio keeps working as the studio entry point from the book editor. It lands on the tree tab (not
+// Overview): the tree + editor rail is more grounding to start from than the read-only Overview summary.
+function StudioRedirect() {
   const { bookSlug } = useParams();
-  return <Navigate to={`/books/${bookSlug}/dna/tree`} replace />;
+  return <Navigate to={`/books/${bookSlug}/studio/tree`} replace />;
 }
 
 export default function App() {
@@ -188,19 +189,20 @@ export default function App() {
                         <Route path="/user/profile/edit" element={<ProfileEdit />} />
                         <Route path="/books" element={<MyBooks />} />
                         <Route path="/books/new" element={<NewBook />} />
-                        <Route path="/books/dna/new" element={<DnaNewBookPage />} />
+                        <Route path="/studio" element={<StudioDashboardPage />} />
+                        <Route path="/studio/new" element={<StudioNewBookPage />} />
                         <Route path="/books/:bookSlug/versions/:versionId/pages/:pageSlug" element={<VersionPageView />} />
                         <Route path="/books/:bookSlug/versions/:versionId" element={<VersionPreview />} />
                         <Route path="/books/:bookSlug/versions" element={<VersionHistoryPage />} />
                         <Route path="/books/:bookSlug/draft" element={<DraftChanges />} />
                         <Route path="/books/:bookSlug" element={<BookDetails />} />
-                        <Route path="/books/:bookSlug/dna" element={<DnaStudioRedirect />} />
-                        <Route path="/books/:bookSlug/dna.json" element={<DnaJsonPage />} />
-                        <Route path="/books/:bookSlug/dna/meters" element={<DnaMetersPage />} />
-                        <Route path="/books/:bookSlug/dna/ledger" element={<DnaLedgerPage />} />
+                        <Route path="/books/:bookSlug/studio" element={<StudioRedirect />} />
+                        <Route path="/books/:bookSlug/studio.json" element={<StudioJsonPage />} />
+                        <Route path="/books/:bookSlug/studio/meters" element={<StudioMetersPage />} />
+                        <Route path="/books/:bookSlug/studio/ledger" element={<StudioLedgerPage />} />
                         {/* Admin-only book flight recorder — static path outranks the tree splat below */}
-                        <Route path="/books/:bookSlug/dna/tree/dev" element={<AdminRoute><DnaDevPage /></AdminRoute>} />
-                        <Route path="/books/:bookSlug/dna/tree/*" element={<DnaTreePage />} />
+                        <Route path="/books/:bookSlug/studio/tree/dev" element={<AdminRoute><StudioDevPage /></AdminRoute>} />
+                        <Route path="/books/:bookSlug/studio/tree/*" element={<StudioTreePage />} />
                         <Route path="/books/:bookSlug/edit" element={<BookEdit />} />
                         <Route path="/books/:bookSlug/pages/:pageSlug" element={<PageView />} />
                       </Route>

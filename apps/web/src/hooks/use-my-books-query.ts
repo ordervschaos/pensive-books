@@ -49,7 +49,7 @@ interface UseMyBooksInfiniteParams {
   pageSize: number;
 }
 
-function escapeIlike(value: string) {
+export function escapeIlike(value: string) {
   return value.replace(/[%_,]/g, (m) => `\\${m}`);
 }
 

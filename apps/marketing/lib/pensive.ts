@@ -30,7 +30,7 @@ export function inferAppOrigin(hostname: string, protocol: string) {
     return LOCAL_APP_ORIGIN;
   }
 
-  if (hostname === "pensive.me" || hostname === "www.pensive.me") {
+  if (hostname === "pensive.me" || hostname === "www.pensive.me" || hostname === "studio.pensive.me") {
     return PROD_APP_ORIGIN;
   }
 

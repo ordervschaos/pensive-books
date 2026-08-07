@@ -1,5 +1,5 @@
 // TreeOverviewTab — the tree studio's Overview tab body. Renders in the studio's Console-on-Paper light
-// skin: DnaTreePage mounts the whole studio inside a `theme-paper` wrapper, so the studioUi components
+// skin: StudioTreePage mounts the whole studio inside a `theme-paper` wrapper, so the studioUi components
 // here resolve the Paper-DS tokens directly — no palette override. The tree has no card component of its
 // own (editing happens inline via EditableField), so `renderCard` here is a thin adapter: a thread row
 // that jumps into the tree tab at that node instead of editing in place.

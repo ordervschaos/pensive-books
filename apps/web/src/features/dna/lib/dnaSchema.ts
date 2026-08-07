@@ -1,7 +1,7 @@
 // dnaSchema — the SINGLE SOURCE OF TRUTH for what each node kind's content looks like. One `NODE_SCHEMA`
 // object declares every editable/validatable field (its type, whether it's required, its enum, the kind it
 // references) and three consumers derive from it instead of re-asserting the shape:
-//   • the tree editor    — renders a typed editor per field (DnaTreePage)
+//   • the tree editor    — renders a typed editor per field (StudioTreePage)
 //   • the content lints   — validateContent() checks a node against its schema (generation boundary + score)
 //   • the completeness    — requiredMissing()/contentCompleteness() count filled vs required fields
 // This replaces the old drift where EDIT_FIELDS (editor), the dna-chat prompt, and the TS NodeContent types
@@ -20,7 +20,7 @@ export interface EditSpec {
   // rung needs a sentence of explanation but shouldn't cost a permanent chrome row (docs/dna-studio-redesign-handoff.md #3)
   required?: boolean; // load-bearing — a node missing this reads as incomplete (and is rejected at generation)
   // taste = a USER-OWNED, subjective field ("to their taste"): tone, controlling idea, voice style, idiolect.
-  // The Voice & Feel panel (DnaTreePage) gathers every taste field into one surface so the author isn't
+  // The Voice & Feel panel (StudioTreePage) gathers every taste field into one surface so the author isn't
   // chasing them across four tree depths. Untagged editable fields are shared craft; genOnly = AI-maintained.
   taste?: boolean;
   // genOnly = part of the content CONTRACT (the AI may set it, it appears in the generation prompt) but the
@@ -32,7 +32,7 @@ export interface EditSpec {
 const ROLES = ["protagonist", "antagonist", "ally", "love_interest", "minor"];
 const POLARITY = ["up", "down"];
 
-// ── The schema (formerly DnaTreePage.EDIT_FIELDS) — now the one place the field shape lives ───────────────
+// ── The schema (formerly StudioTreePage.EDIT_FIELDS) — now the one place the field shape lives ───────────────
 export const NODE_SCHEMA: Partial<Record<NodeKind, EditSpec[]>> = {
   seed: [{ key: "logline", label: "logline", multiline: true, required: true,
     hint: "the logline — derived from the brief (the origin) above; ≠ the raw idea. Refine it with the lab." }],
@@ -181,7 +181,7 @@ export const editSpecs = (kind: NodeKind): EditSpec[] => (NODE_SCHEMA[kind] ?? [
 // The taste (user-owned, subjective) fields for a kind — the atoms the Voice & Feel panel consolidates.
 export const tasteSpecs = (kind: NodeKind): EditSpec[] => (NODE_SCHEMA[kind] ?? []).filter((s) => s.taste);
 
-// ── Structural constants (single copy; were duplicated across DnaTreePage + dnaChat) ─────────────────────
+// ── Structural constants (single copy; were duplicated across StudioTreePage + dnaChat) ─────────────────────
 export const KIND_LEVEL: Record<NodeKind, number> = {
   seed: 0, premise: 1, pillar: 2, character: 2, relationship: 2, tentpole: 2, world_fact: 2, location: 2, voice_profile: 2, thread: 2, game: 2, meter: 2, act: 3, beat: 4, scene: 5,
 };

@@ -129,7 +129,7 @@ const NewBook = () => {
         title: `Imported “${result.title}”`,
         description: `${result.chapters} chapters · ${result.scenes} scenes · ${result.words.toLocaleString()} words. Your prose is locked — the Studio builds around it.`,
       });
-      navigate(`/books/${result.bookId}/dna`);
+      navigate(`/books/${result.bookId}/studio`);
     } catch (error: unknown) {
       toast({
         variant: "destructive",

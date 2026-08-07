@@ -9,7 +9,7 @@
 //     "Terminal" theme (ThemeProvider), CSS-var side defined as `.theme-terminal` in tokens.css.
 // TS hex constants (not CSS vars) because the tree styles inline and composes alpha suffixes
 // (`${c}22`), which CSS vars can't do. `T`/`KIND_COLOR`/`KIND_BG` are MUTABLE objects with stable
-// identity — setConsoleTheme() swaps their contents; DnaTreePage calls it from the app theme and
+// identity — setConsoleTheme() swaps their contents; StudioTreePage calls it from the app theme and
 // remounts the studio (key=mode) so every inline style recomputes. Mono stays the structural voice
 // (labels, badges, meta); Newsreader serif carries content the author reads/writes.
 export const MONO = "'JetBrains Mono', ui-monospace, Menlo, monospace";
@@ -124,7 +124,7 @@ export const KIND_BG: Record<string, string> = {};
 
 let activeConsoleTheme: ConsoleThemeName | null = null;
 
-/** Swap the console skin in place. Idempotent; call before rendering the studio (DnaTreePage does). */
+/** Swap the console skin in place. Idempotent; call before rendering the studio (StudioTreePage does). */
 export function setConsoleTheme(mode: ConsoleThemeName) {
   if (activeConsoleTheme === mode) return;
   activeConsoleTheme = mode;

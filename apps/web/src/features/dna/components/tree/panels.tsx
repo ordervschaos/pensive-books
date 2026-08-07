@@ -16,7 +16,7 @@ import { type StaleActions } from "./staleActions";
 // tree. The MACHINERY (state keys, thread roles, grounds_in — the genOnly fields) is the AI's to maintain
 // and stays hidden from the editor entirely. Reuses EditableField so edits flow through the same save path,
 // and each group title jumps to the full node in the tree below.
-// `asPage` renders it as the body of its own /dna/tree/taste tab (always open, no collapse chrome) instead of
+// `asPage` renders it as the body of its own /studio/tree/taste tab (always open, no collapse chrome) instead of
 // pinned atop the tree — keeps the taste fields from interleaving with the structural tree.
 export function VoiceFeelPanel({ nodes, index, onJump, asPage }: { nodes: DnaNode[]; index: Map<string, DnaNode>; onJump: (id: string) => void; asPage?: boolean }) {
   const [open, setOpen] = useState(true);

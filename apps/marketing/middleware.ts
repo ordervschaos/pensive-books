@@ -22,9 +22,16 @@ export function middleware(request: NextRequest) {
   }
 
   const cookieNames = request.cookies.getAll().map((cookie) => cookie.name);
+  const isStudioHost = request.nextUrl.hostname === "studio.pensive.me";
 
   if (hasSessionCookie(cookieNames)) {
-    return NextResponse.redirect(new URL("/books", appOrigin));
+    return NextResponse.redirect(new URL(isStudioHost ? "/studio" : "/books", appOrigin));
+  }
+
+  // studio.pensive.me is a second custom domain on this same Vercel project (no separate
+  // app/deploy) — logged-out visitors get the Studio-only pitch instead of the main site.
+  if (isStudioHost) {
+    return NextResponse.rewrite(new URL("/studio-landing", request.url));
   }
 
   return NextResponse.next();

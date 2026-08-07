@@ -1,9 +1,9 @@
 // useBookNodesLiveSync — the debounced Realtime re-fetch on `book_nodes` changes, shared by every
 // page that projects the live tree (refresh = no-op, standing rule). Was hand-copied identically
-// (down to the 400ms debounce) across DnaTreePage/DnaMetersPage/DnaLedgerPage, differing only by
+// (down to the 400ms debounce) across StudioTreePage/StudioMetersPage/StudioLedgerPage, differing only by
 // the channel-name prefix (which just needs to be readable in the Realtime debug view — the random
 // suffix already guarantees uniqueness). Owns only the SUBSCRIPTION; callers still do their own
-// initial load (it varies — DnaTreePage's bootstraps an empty tree, the others are a plain select).
+// initial load (it varies — StudioTreePage's bootstraps an empty tree, the others are a plain select).
 import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { DnaNode } from "@/features/dna/lib/novelDna";

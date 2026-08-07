@@ -1,5 +1,5 @@
-// DnaNewBookPage — /books/dna/new
-// Fastest path into the DNA studio: ask for a name, create an empty book (brief: {}), and land
+// StudioNewBookPage — /studio/new
+// Fastest path into Studio: ask for a name, create an empty book (brief: {}), and land
 // straight in the tree. No cover/subtitle/author — those stay on the full /books/new flow.
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
@@ -7,7 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { setPageTitle } from "@/utils/pageTitle";
 
-export default function DnaNewBookPage() {
+export default function StudioNewBookPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [name, setName] = useState("");
@@ -28,7 +28,7 @@ export default function DnaNewBookPage() {
         .single();
       if (error) throw error;
 
-      navigate(`/books/${data.id}/dna/tree/`);
+      navigate(`/books/${data.id}/studio/tree/`);
     } catch (error: unknown) {
       toast({
         variant: "destructive",

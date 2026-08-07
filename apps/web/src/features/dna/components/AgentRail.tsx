@@ -472,7 +472,7 @@ export function AgentRail({ bookId, nodes, settings, bookSlug, brief, attachedId
 
   return (
     // No panel bg/border here — this sits on the same chrome tone as the page's title bar (set by the
-    // fixed rail container in DnaTreePage.tsx). Header height (h-11 = 44px = DnaTreePage's HEADER_H)
+    // fixed rail container in StudioTreePage.tsx). Header height (h-11 = 44px = StudioTreePage's HEADER_H)
     // and border-bottom match the title bar's exactly, so the two read as ONE merged top strip with
     // no seam between them.
     <div className="flex h-full flex-col px-3.5 pb-3">

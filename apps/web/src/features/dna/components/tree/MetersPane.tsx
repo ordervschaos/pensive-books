@@ -1,6 +1,6 @@
 // MetersPane — the meters dashboard body, extracted so it renders in two places on ONE implementation:
-// the standalone /dna/meters route (DnaMetersPage wraps it in page chrome) and the studio's `meters` tab
-// (DnaTreePage feeds it the already-subscribed nodes). Pure projection of the live tree — the read buttons
+// the standalone /studio/meters route (StudioMetersPage wraps it in page chrome) and the studio's `meters` tab
+// (StudioTreePage feeds it the already-subscribed nodes). Pure projection of the live tree — the read buttons
 // invoke the edge reads, which write onto book_nodes; the dotted/verdict rows reappear via the subscription
 // the host owns. The serial graph mirrors the landing "shape of your story" mock (MetersMock.tsx).
 import { useMemo, useState } from "react";
@@ -136,7 +136,7 @@ function MeterRow({ nodes, meter, color, serial, issues }: { nodes: DnaNode[]; m
 
 // The meters dashboard body. Host owns node loading/subscription; this pane just projects + triggers reads.
 // bookSlug is only used to navigate to the tree/agent rail after a "send to editor" (works as a route change
-// on the standalone page and as a tab switch inside the studio — /dna/tree is splat-matched, no remount).
+// on the standalone page and as a tab switch inside the studio — /studio/tree is splat-matched, no remount).
 export function MetersPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; bookId: number; bookSlug: string }) {
   const navigate = useNavigate();
   const [reading, setReading] = useState(false); // the read / send is in flight
@@ -181,7 +181,7 @@ export function MetersPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; book
     setReading(true);
     try {
       const sent = await sendShapeFindingsToEditor(bookId, nodes, {});
-      if (sent) navigate(`/books/${bookSlug}/dna/tree`);
+      if (sent) navigate(`/books/${bookSlug}/studio/tree`);
       else setNote("Every movement is delivered — no shape gaps to send.");
     } catch (e) {
       setNote(`Couldn't send to the editor: ${String((e as Error)?.message ?? e)}`);
@@ -211,7 +211,7 @@ export function MetersPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; book
     setReading(true);
     try {
       const sent = await sendBriefFitFindingsToEditor(bookId, nodes, {});
-      if (sent) navigate(`/books/${bookSlug}/dna/tree`);
+      if (sent) navigate(`/books/${bookSlug}/studio/tree`);
       else setNote("The logline clears every brief-fidelity axis — no flags to send.");
     } catch (e) {
       setNote(`Couldn't send to the editor: ${String((e as Error)?.message ?? e)}`);
@@ -240,7 +240,7 @@ export function MetersPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; book
     setReading(true);
     try {
       const sent = await sendLoglineFitFindingsToEditor(bookId, nodes, {});
-      if (sent) navigate(`/books/${bookSlug}/dna/tree`);
+      if (sent) navigate(`/books/${bookSlug}/studio/tree`);
       else setNote("The premise clears every logline-fidelity axis — no flags to send.");
     } catch (e) {
       setNote(`Couldn't send to the editor: ${String((e as Error)?.message ?? e)}`);
@@ -269,7 +269,7 @@ export function MetersPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; book
     setReading(true);
     try {
       const sent = await sendCraftFindingsToEditor(bookId, nodes, {});
-      if (sent) navigate(`/books/${bookSlug}/dna/tree`);
+      if (sent) navigate(`/books/${bookSlug}/studio/tree`);
       else setNote("Every craft axis clears the floor — no flags to send.");
     } catch (e) {
       setNote(`Couldn't send to the editor: ${String((e as Error)?.message ?? e)}`);
@@ -298,7 +298,7 @@ export function MetersPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; book
     setReading(true);
     try {
       const sent = await sendConfusionFindingsToEditor(bookId, nodes, {});
-      if (sent) navigate(`/books/${bookSlug}/dna/tree`);
+      if (sent) navigate(`/books/${bookSlug}/studio/tree`);
       else setNote("A cold reader can follow everything — no confusion flags to send.");
     } catch (e) {
       setNote(`Couldn't send to the editor: ${String((e as Error)?.message ?? e)}`);
@@ -311,7 +311,7 @@ export function MetersPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; book
     setReading(true);
     try {
       const sent = await sendFindingsToEditor(bookId, nodes, {});
-      if (sent) navigate(`/books/${bookSlug}/dna/tree`);
+      if (sent) navigate(`/books/${bookSlug}/studio/tree`);
       else setNote("The prose is on-plan — no gaps to send.");
     } catch (e) {
       setNote(`Couldn't send to the editor: ${String((e as Error)?.message ?? e)}`);

@@ -227,7 +227,7 @@ function briefSummary(brief: Brief | null): string {
     .filter(Boolean).join(" · ");
 }
 
-// `open` defaults true (a fresh/premise-stage book) so the brief is never surprise-hidden; DnaTreePage
+// `open` defaults true (a fresh/premise-stage book) so the brief is never surprise-hidden; StudioTreePage
 // persists the toggle per book and defaults it collapsed once the tree is past the premise stage (#4 —
 // the brief is "the constant origin": reference on a drafting book, not work in progress).
 export function BriefOrigin({ brief, onSave, open = true, onToggleOpen }: {

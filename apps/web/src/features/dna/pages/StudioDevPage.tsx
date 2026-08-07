@@ -1,4 +1,4 @@
-// DnaDevPage — /books/:slug/dna/tree/dev (admin only)
+// StudioDevPage — /books/:slug/studio/tree/dev (admin only)
 // The book's flight recorder: every agent run (book_agent_runs), archived chat (book_agent_sessions),
 // and LLM call (ai_calls) for one book, in one inspector. The run view renders the stored transcript
 // turn-by-turn — text / thinking / tool_use / tool_result blocks — and pairs each assistant turn with
@@ -194,7 +194,7 @@ function TriggerCard({ kind, label, msg, index }: { kind: "ask" | "answer" | "au
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
-export default function DnaDevPage() {
+export default function StudioDevPage() {
   const { bookSlug } = useParams();
   const bookId = getNumericId(bookSlug);
   const [bookName, setBookName] = useState("");
@@ -449,7 +449,7 @@ export default function DnaDevPage() {
         <span className="font-semibold text-sm">{bookName || `book ${bookId}`}</span>
         <span className="font-mono text-[11px] text-muted-foreground">{runs.length} runs · {sessions.length} archived chats · {num(callCount)} llm calls</span>
         <span className="flex-1" />
-        <Link to={`/books/${bookSlug}/dna/tree`} className="text-xs underline text-muted-foreground hover:text-foreground">← back to tree</Link>
+        <Link to={`/books/${bookSlug}/studio/tree`} className="text-xs underline text-muted-foreground hover:text-foreground">← back to tree</Link>
       </div>
 
       <div className="flex" style={{ height: "calc(100vh - 41px)" }}>

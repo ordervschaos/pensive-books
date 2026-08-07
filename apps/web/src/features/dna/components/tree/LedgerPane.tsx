@@ -1,6 +1,6 @@
 // LedgerPane — the continuity ledger body, extracted so it renders in two places on ONE implementation:
-// the standalone /dna/ledger route (DnaLedgerPage wraps it in page chrome) and the studio's Analytics tab
-// (DnaTreePage feeds it the already-subscribed nodes). Pure projection of the live tree — "Build continuity
+// the standalone /studio/ledger route (StudioLedgerPage wraps it in page chrome) and the studio's Analytics tab
+// (StudioTreePage feeds it the already-subscribed nodes). Pure projection of the live tree — "Build continuity
 // ledger" runs the sequential per-scene read (docs/true-agent.md Step 3), writing facts + continuity_break
 // flags onto book_nodes; the subscription the host owns re-projects them here. Mirrors MetersPane's shape.
 import { useMemo, useState } from "react";
@@ -42,7 +42,7 @@ export function LedgerPane({ nodes, bookId, bookSlug }: { nodes: DnaNode[]; book
     setBusy(true);
     try {
       const sent = await sendBreaksToEditor(bookId, nodes, {});
-      if (sent) navigate(`/books/${bookSlug}/dna/tree`);
+      if (sent) navigate(`/books/${bookSlug}/studio/tree`);
       else setNote("Nothing to send — the prose is consistent and every planned move/payoff landed.");
     } catch (e) {
       setNote(`Couldn't send to the editor: ${String((e as Error)?.message ?? e)}`);
