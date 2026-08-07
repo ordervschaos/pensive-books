@@ -6,6 +6,26 @@
 
 ## Log
 
+### 2026-08-07 — "Studio" is the external product name; "DNA" stays the internal engine term
+
+Owner call. Building the studio.pensive.me entrance forced a naming decision: routes, page components,
+and UI copy that said "DNA" (`/dna/tree`, `DnaTreePage`, nav breadcrumbs) are renamed to "Studio"
+(`/studio/tree`, `StudioTreePage`). The internal data-model vocabulary — `novelDna.ts`, `dnaSchema.ts`,
+the `book_nodes` table, the `/dna/docs/architecture` admin atlas — is deliberately **not** renamed.
+
+**Why.** These are two different concepts that happened to share a word: "DNA" is the metaphor for the
+tree structure a book is grown from (foundations → structure → scenes → prose); "Studio" is what a
+writer calls the product surface where they direct that growth. Sweeping the engine's internal naming
+too would have touched ~25 lib files and every test that imports them, for no reader-facing benefit, and
+would have blurred a distinction that's useful to keep sharp when reasoning about the codebase (data
+model vs. product surface). Also chose a **hostname-rewrite** on the existing `apps/marketing` SSG
+project over a new bounded-context app (the `apps/digest` shape) for `studio.pensive.me`, since it's a
+sales entrance with no backend of its own — a new app would have meant a fourth Supabase-cookie
+consumer and a second SSG site competing with `pensive.me` for the same SEO surface.
+
+**What it replaced.** No prior standing on this — first time the product surface needed a name distinct
+from the engine's internal metaphor.
+
 ### 2026-08-02 — The digest agent is free for everyone; the paid gate stays on the pipeline
 
 Owner call. The agent shipped behind `aiEnabled(digest)` — the same `digests.ai_enabled` gate the 6am

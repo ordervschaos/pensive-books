@@ -1,6 +1,6 @@
 # STATE — what exists, and what status it's in
 
-> Snapshot date: **2026-08-04**. Update when something ships, parks, or dies.
+> Snapshot date: **2026-08-07**. Update when something ships, parks, or dies.
 > Deep detail lives in `docs/` and `apps/web/src/features/dna/FEATURE.md`; this is the map.
 
 ## The product at a glance
@@ -69,6 +69,7 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 
 | Project | Status | Notes |
 |---|---|---|
+| Studio entrance (studio.pensive.me + /studio dashboard) | shipped (code) | 2026-08-07, `20cd616`. Product-facing rename DNA→Studio: apps/web routes moved `/books/:slug/dna/*` → `/books/:slug/studio/*` (6 page components renamed, `LegacyRedirects.tsx` 301s old links), new `/studio` `StudioDashboardPage` lists books with a DNA tree (`book_nodes!inner`, no schema flag exists for it). apps/marketing gained a hostname-rewrite: `studio.pensive.me` → new SSG `/studio-landing` page when logged out (reuses the existing Studio spotlight copy), → `app.pensive.me/studio` when logged in; `inferAppOrigin` fixed so that host resolves correctly. Deliberately NOT renamed: internal DNA engine (`novelDna.ts`, `dnaSchema.ts`, `book_nodes`, `/dna/docs/architecture` atlas) — that's the data-model concept, distinct from this product-surface name. **Outstanding:** attach `studio.pensive.me` as a second domain on the `pensive-marketing` Vercel project + DNS (manual/external, author's call), and a real browser smoke-test (no browser-automation path was reachable the session this shipped) |
 | EPUB import Layer A (epub → DNA tree draft) | shipped | Prose locked as user-truth |
 | EPUB import Layer B (semantic ascent) | shipped | 2026-07-08 (`4330bfc` + `84fb407` durable-task promotion: book_decompositions row, self-chain, stopRun); remaining: scene enrichment + act re-segmentation |
 | Publish → marketing revalidation (DB trigger → pg_net) | blocked | REVALIDATE_SECRET env not yet set |
