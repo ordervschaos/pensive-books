@@ -18,6 +18,11 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-07 — Attached studio.pensive.me to the pensive-marketing Vercel project `[chore]`
+- **What:** At the author's request, ran `vercel domains add studio.pensive.me` from the linked `apps/marketing` project. Confirmed via `vercel domains inspect`: attached, but unverified — Vercel reports the needed DNS record isn't present yet.
+- **Files/commits:** none (Vercel project config, not a repo change). `pm/STATE.md` outstanding-note updated to reflect this.
+- **PM impact:** STATE.md row updated in place (mechanical truth-keeping, no promotion needed). Still blocking go-live: the author needs to add `A studio.pensive.me → 76.76.21.21` on `pensive.me`'s external DNS provider (NS1/Squarespace, not Vercel-managed nameservers) — I don't have access to that.
+
 ## 2026-08-07 — Committed + pushed the DNA→Studio rename and studio.pensive.me entrance `[ship]`
 - **What:** Landed the work from the prior `[wip]` entry (same day) — DNA→Studio route/UI rename in apps/web, `/studio` books dashboard, and the studio.pensive.me hostname-rewrite landing page in apps/marketing. Pre-push hooks passed clean: typecheck, full test suite (1419 passed/2 skipped), lint (0 errors).
 - **Files/commits:** `20cd616` on `main` (pushed to `origin/main`, was `99cb777`). 28 files changed.
