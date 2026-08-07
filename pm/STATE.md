@@ -76,14 +76,18 @@ edit-reflex, not boredom). The bar: a full book, no edit-reflex.
 | Sequel canon (book-2 constrained by book-1 packet) | shipped | O5 groundwork |
 | Legacy-book → DNA migration | gap | 45 books have real pages + foundations/spine but 0 `book_nodes`; `migrateBookToDna` (their only path) deleted 2026-07-09 after losing its UI trigger in the 2026-07-03 studio consolidation — deliberate tradeoff, see DECISIONS.md. No current path onto the DNA tree for them. |
 
-### Morning Digest (`apps/digest`, digest.pensive.me)
+### Morning Digest (own repo → [`ordervschaos/pensive-digest`](https://github.com/ordervschaos/pensive-digest), digest.pensive.me)
 
-A second product surface, opened 2026-08-01. Separate bounded context, shared kernel (auth, the
-`.pensive.me` cookie, the approved Mailgun sender, `ai_calls`). Compiled-from-sources, the inverse
-stance to the DNA pipeline. See `apps/digest/README.md`; owner checklist in `apps/digest/SETUP.md`.
+A second product surface, opened 2026-08-01. **Left this repo 2026-08-07** — the rows below are kept
+as the history of how it got built; new digest work is catalogued there, not here. Separate bounded
+context, shared kernel (auth, the `.pensive.me` cookie, the approved Mailgun sender, `ai_calls`).
+Compiled-from-sources, the inverse stance to the DNA pipeline. `README.md` / `SETUP.md` now live in
+that repo.
 
 | Project | Status | Notes |
 |---|---|---|
+| **Split into its own repo** | **shipped 2026-08-07** | Owner call: "the user base is not the same." Extraction was cheap because the code was already standalone — the audit (`doc_1786100844096.md`) found **zero** shared-package or cross-app imports, with `lib/pensive.ts` (~55 lines) as the entire outward surface. Fresh init (pre-split history stays here), private, 91 files; install + typecheck + build verified standalone. The 13 `digest_*` migrations **moved** with it (owner chose move over copy) — `supabase/migrations/README.md` now records the cost: `db push` from here is still correct, but this directory alone no longer describes the DB it pushes to. Real work of the split was inherited config becoming owned config (`.gitignore` was one line; **`.env.local` was protected only by the monorepo root's `*.local`** — the one real leak risk, checked before the first commit), plus own lockfile, pinned `packageManager`/`engines`, and dropping the monorepo `ignoreCommand` from `vercel.json`. **Tier 0 only:** still shares the Supabase project, `auth.users`, the `.pensive.me` cookie (the digest has *no login UI*), `user_data.kindle_email`, `ai_calls`, the Mailgun sender and the two pg_cron jobs — separately versioned and deployed, **not** separately operated. Deploy not re-tested: `.vercel/project.json` survived the move so the CLI still targets `prj_05OM…`, but a Root Directory of `apps/digest` on that project would now need clearing |
+| `serial` source kind (a page a day out of a Pensive book) | **removed 2026-08-07** | Owner: not wanted. It was the only code touching `books`/`pages` (and the only writer of `books.digest_bookmarked_page_index`) — i.e. the only *product* tie between the two apps, so cutting it is what made the repo boundary a straight line. Verified against the live DB before removing: 1 digest, 0 stored `serial` sections. Unknown kinds already degrade safely (missing adapter → `[]`; `sectionDetail` has a default branch), and `KIND_SUMMARY: Record<SectionKind, string>` turned "did I get every call site" into a compile error |
 | Pipeline (gather → filter → write → verify → assemble → render → deliver) | shipped | Proven end-to-end to a real Kindle 2026-08-01 (issue #4 via the scheduler path, ~74s) |
 | Post corpus (`digest_posts`, every post pulled) | shipped | Visibility · body reuse · the substrate ranking will need |
 | Readwise source kind | shipped | Per-user token in `digest_user_settings`; quotes bypass the LLM entirely |

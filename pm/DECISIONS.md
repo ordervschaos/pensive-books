@@ -6,6 +6,39 @@
 
 ## Log
 
+### 2026-08-07 — The digest leaves the monorepo; `serial` is cut; the shared database stays
+
+Owner call, on the premise that **the digest's user base is not the books app's user base**. Three
+decisions in one, worth separating because they have different half-lives.
+
+**1. `serial` is removed.** The "read a page a day out of one of your Pensive books" source kind was
+the only code that touched `books`/`pages`, and the only writer of
+`books.digest_bookmarked_page_index`. It was therefore the only *product* tie between the two apps —
+everything else is infrastructure. Owner: not wanted. Cutting it first is what turned the repo
+boundary from a negotiation into a straight line. (Replaces: a cross-context read that would have
+had to become an exported Pensive API the moment the two products diverged for real.)
+
+**2. `apps/digest` → its own repo, fresh history.** Not a service split — a **versioning and
+deployment** split. The audit (`doc_1786100844096.md`) is the evidence it was cheap: zero
+shared-package imports, zero cross-app imports, its own Vercel project since 2026-08-01, and one
+~55-line anti-corruption layer (`lib/pensive.ts`) as the whole outward surface. Fresh init over
+`git subtree split` by owner preference; the pre-split history stays here and stays recoverable.
+
+**3. The Supabase project is NOT split (Tier 0, deliberately).** The digest still rides
+`auth.users`, the shared `.pensive.me` session cookie (**it has no login UI at all** — middleware
+bounces to `app.pensive.me/auth`, and the SPA owns refresh because `navigator.locks` cannot
+coordinate across subdomains), `user_data.kindle_email`, `ai_calls`, the approved Mailgun sending
+domain, and two pg_cron jobs. Tier 1 — own project, own auth, own Kindle OTP, data migration — is
+1–2 weeks of *product* work and was explicitly not attempted. **The digest is separately versioned
+and deployed; it is not separately operated.** Anyone reading "it has its own repo" as "it is
+independent" will be wrong in exactly six places, listed in that repo's README.
+
+Consequence accepted knowingly: the 13 `digest_*` migrations **moved** rather than being copied, so
+`supabase/migrations/` here no longer describes the full schema of the database it pushes to.
+`db push` remains correct (extra remote rows are not an error); a from-scratch rebuild is not.
+`supabase/migrations/README.md` is that caveat written down, and the ownership split between the two
+repos is convention, not mechanism.
+
 ### 2026-08-07 — "Studio" is the external product name; "DNA" stays the internal engine term
 
 Owner call. Building the studio.pensive.me entrance forced a naming decision: routes, page components,
