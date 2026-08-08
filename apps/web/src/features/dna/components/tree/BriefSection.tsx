@@ -24,7 +24,7 @@ function BriefFieldRow({ label, depth, display, onEdit, children }: {
   );
 }
 
-function BriefSection({ brief, onSave, depth, onCollapse }: { brief: Brief | null; onSave: (patch: Partial<Brief>) => Promise<void>; depth: number; onCollapse?: () => void }) {
+function BriefSection({ brief, onSave, depth, onCollapse, hideHeader }: { brief: Brief | null; onSave: (patch: Partial<Brief>) => Promise<void>; depth: number; onCollapse?: () => void; hideHeader?: boolean }) {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -60,13 +60,17 @@ function BriefSection({ brief, onSave, depth, onCollapse }: { brief: Brief | nul
 
   return (
     <>
-      <div style={{ ...detailRowStyle(depth - 1), paddingTop: 6, cursor: onCollapse ? "pointer" : "default" }}
-        onClick={onCollapse} title={onCollapse ? "collapse — the brief is reference, not active work, once foundations are underway" : undefined}>
-        <ConnectorTick depth={depth - 1} />
-        <span style={{ width: 12, flexShrink: 0 }} />
-        {onCollapse && <span style={{ fontSize: 9, color: T.muted, marginRight: 2 }}>▾</span>}
-        <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: T.accent }}>brief — mandate · the constant origin</span>
-      </div>
+      {/* The section's own title row. Suppressed in `bare` mode — the stage card above it already names
+          this rung and owns its collapse, so a second header would read as a nested section. */}
+      {!hideHeader && (
+        <div style={{ ...detailRowStyle(depth - 1), paddingTop: 6, cursor: onCollapse ? "pointer" : "default" }}
+          onClick={onCollapse} title={onCollapse ? "collapse — the brief is reference, not active work, once foundations are underway" : undefined}>
+          <ConnectorTick depth={depth - 1} />
+          <span style={{ width: 12, flexShrink: 0 }} />
+          {onCollapse && <span style={{ fontSize: 9, color: T.muted, marginRight: 2 }}>▾</span>}
+          <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: T.accent }}>brief — mandate · the constant origin</span>
+        </div>
+      )}
 
       {/* idea — the author's raw "what is the book about?" (brief.idea); the logline is DERIVED from this, not equal to it */}
       <BriefFieldRow label="idea" depth={depth} display={briefIdea(brief)} onEdit={() => startEdit("idea", briefIdea(brief) ?? "")}>
@@ -230,10 +234,22 @@ function briefSummary(brief: Brief | null): string {
 // `open` defaults true (a fresh/premise-stage book) so the brief is never surprise-hidden; StudioTreePage
 // persists the toggle per book and defaults it collapsed once the tree is past the premise stage (#4 —
 // the brief is "the constant origin": reference on a drafting book, not work in progress).
-export function BriefOrigin({ brief, onSave, open = true, onToggleOpen }: {
+// `bare` = rendered as the body of a stage card (StageStack): no self-collapse chrome, no title row, and no
+// "↓ derives the SEED below" cue — the ladder's numbered spine says that now.
+export function BriefOrigin({ brief, onSave, open = true, onToggleOpen, bare }: {
   brief: Brief | null; onSave: (patch: Partial<Brief>) => Promise<void>;
-  open?: boolean; onToggleOpen?: (open: boolean) => void;
+  open?: boolean; onToggleOpen?: (open: boolean) => void; bare?: boolean;
 }) {
+  if (bare) {
+    // depth 0, not 1: with the stage card's own gutter in front of it, a second indent level here just
+    // pushed the author's longest prose (the idea, the vision sections) further right for nothing.
+    return (
+      <div style={{ paddingBottom: 4 }}>
+        <BriefSection brief={brief} onSave={onSave} depth={0} hideHeader />
+        <VisionSection brief={brief} onSave={onSave} depth={0} />
+      </div>
+    );
+  }
   if (!open) {
     return (
       <div style={{ borderBottom: `1px solid ${T.borderSoft}`, padding: "8px 16px" }}>

@@ -26,7 +26,7 @@ const ENTITY_GROUPS: { kind: DnaNode["kind"]; label: string }[] = [
 ];
 
 // A clickable "＋ <label>" affordance — adds a node (footer of a group or container).
-function AddRow({ label, depth, onAdd }: { label: string; depth: number; onAdd: () => void | Promise<void> }) {
+export function AddRow({ label, depth, onAdd }: { label: string; depth: number; onAdd: () => void | Promise<void> }) {
   const [busy, setBusy] = useState(false);
   return (
     <div style={detailRowStyle(depth)}>
@@ -165,9 +165,20 @@ export interface TreeView {
   onOpenProseReader: (sceneId: string) => void; // open the prose reader modal for a scene
   onOpenDetails: (nodeId: string) => void; // open the "view details" modal (authoring provenance)
 }
-export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }: {
+// How much of THIS node's subtree to render. The stage stack (stageLadder.ts) slices the singleton spine —
+// seed / premise / pillar — across five ordered cards, so each card shows one node's own fields plus only
+// the children that belong to that rung. Never inherited: children always render "all".
+//   all      — the whole subtree (the default; the classic nested tree)
+//   fields   — NO row of its own: just this node's fields. The stage card's header IS the node's header, so
+//              a TreeRow here would be a second title saying the same thing one indent to the right.
+//   entities — like `fields`, plus the pillar's cast/world registry groups promoted to this level (the
+//              "CAST & WORLD" wrapper is dropped: it had exactly one child group set, so it was an indent
+//              level that carried no choice).
+export type SubtreeScope = "all" | "fields" | "entities";
+
+export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h, scope = "all" }: {
   node: DnaNode; index: Map<string, DnaNode>; nodes: DnaNode[]; depth: number;
-  collapsedSet: Set<string>; openSet: Set<string>; h: TreeView;
+  collapsedSet: Set<string>; openSet: Set<string>; h: TreeView; scope?: SubtreeScope;
 }) {
   const kids = childrenOf(nodes, node.id).sort((a, b) => a.position - b.position);
   const hasKids = kids.length > 0;
@@ -177,11 +188,18 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
   // Staged options force the row open regardless of collapse state — a picker the author never sees is
   // useless, and there's no separate "you have options" affordance elsewhere in the tree.
   const hasOptions = Boolean(node.proposals?.length);
-  const open = hasOptions || (expandable && (hasKids ? !collapsedSet.has(node.id) : openSet.has(node.id)));
+  // `rowless` = a sliced rung in the stage ladder: no TreeRow, so nothing to collapse INTO and no indent to
+  // hang off — always open, and the body sits at this node's own depth instead of one level in.
+  const rowless = scope !== "all";
+  const open = rowless || hasOptions || (expandable && (hasKids ? !collapsedSet.has(node.id) : openSet.has(node.id)));
+  const bodyDepth = rowless ? depth : depth + 1;
   const toggle = () => (hasKids ? h.onToggle(node.id) : h.onToggleDetail(node.id));
-  const fields = specs.map((spec) => <EditableField key={spec.key} node={node} spec={spec} depth={depth + 1} index={index} onJump={h.onJump} searchPattern={h.searchPattern} />);
-  const hidden = <HiddenFieldsRow node={node} index={index} depth={depth + 1} />;
-  const backlinks = <BacklinksRow node={node} backlinks={h.backlinks} depth={depth + 1} onJump={h.onJump} />;
+  // A rung whose ONLY editable field is what the card header already names (the seed = its logline) drops the
+  // label column too — otherwise the same words appear as heading, as label, and as value.
+  const bare = rowless && specs.length === 1;
+  const fields = specs.map((spec) => <EditableField key={spec.key} node={node} spec={spec} depth={bodyDepth} index={index} onJump={h.onJump} searchPattern={h.searchPattern} hideLabel={bare} />);
+  const hidden = <HiddenFieldsRow node={node} index={index} depth={bodyDepth} />;
+  const backlinks = <BacklinksRow node={node} backlinks={h.backlinks} depth={bodyDepth} onJump={h.onJump} />;
   const sub = (items: DnaNode[], d: number) => items.map((child) => (
     <Subtree key={child.id} node={child} index={index} nodes={nodes} depth={d}
       collapsedSet={collapsedSet} openSet={openSet} h={h} />
@@ -192,7 +210,7 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
   // The options picker (any node with staged candidates) renders after this node's own fields, before its
   // children. Generating the candidates is the agent's job (propose_options in the rail); this just picks.
   const lab = open && node.proposals?.length
-    ? <ProposalPicker node={node} nodes={nodes} depth={depth + 1} />
+    ? <ProposalPicker node={node} nodes={nodes} depth={bodyDepth} />
     : null;
   // The hanging "+ next rung" slot for the spine singletons (seed→premise→pillar) — a MANUAL placeholder add,
   // shown once THIS node has real content and its single child rung is still empty. The agent fills it (or
@@ -223,33 +241,48 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
   // can add beats, a beat can add scenes; every other node just renders its editable fields.
   let body: React.ReactNode = null;
   if (open) {
-    if (node.kind === "pillar") {
+    if (rowless && node.kind !== "pillar") {
+      // A sliced rung: this node's own fields only. Its children (and the ghost preview of them) belong to
+      // the NEXT stage card, which renders them itself.
+      body = <>{fields}{hidden}{backlinks}{lab}</>;
+    } else if (node.kind === "pillar") {
       const ladder = kids.filter((c) => !isEntityKind(c.kind));
       const entities = kids.filter((c) => isEntityKind(c.kind));
+      // `flat` = promoted to the pillar's own level (stage ladder); otherwise nested under the wrapper.
+      const flat = scope === "entities";
+      const gd = flat ? bodyDepth : depth + 2; // the per-kind group's depth
+      const perKind = ENTITY_GROUPS.map(({ kind, label }) => {
+        const items = entities.filter((e) => e.kind === kind);
+        const ghosts = kind === "character" ? ghostCast(nodes) : [];
+        return (
+          <NodeGroup key={kind} groupId={`${node.id}::world::${kind}`} label={label} hint={KIND_EXPLAINER[kind]}
+            count={items.length} depth={gd} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
+            action={<GroupAddButton onAdd={() => h.onAdd(node.id, kind)} title={`add ${kind}`} />}
+            footer={phantoms(node.id, kind, gd + 1)}>
+            {sub(items, gd + 1)}
+            <GhostRows items={ghosts} depth={gd + 1} />
+          </NodeGroup>
+        );
+      });
+      const registryGroups = flat ? perKind : (
+        <NodeGroup groupId={`${node.id}::world`} label="cast & world" hint="the registry"
+          count={entities.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow>
+          {perKind}
+        </NodeGroup>
+      );
       body = (
         <>
           {fields}
           {hidden}
           {backlinks}
           {lab}
-          {/* Foundations (cast & world) first — the materials — then the spine built from them. */}
-          <NodeGroup groupId={`${node.id}::world`} label="cast & world" hint="the registry"
-            count={entities.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow>
-            {ENTITY_GROUPS.map(({ kind, label }) => {
-              const items = entities.filter((e) => e.kind === kind);
-              const ghosts = kind === "character" ? ghostCast(nodes) : [];
-              return (
-                <NodeGroup key={kind} groupId={`${node.id}::world::${kind}`} label={label} hint={KIND_EXPLAINER[kind]}
-                  count={items.length} depth={depth + 2} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
-                  action={<GroupAddButton onAdd={() => h.onAdd(node.id, kind)} title={`add ${kind}`} />}
-                  footer={phantoms(node.id, kind, depth + 3)}>
-                  {sub(items, depth + 3)}
-                  <GhostRows items={ghosts} depth={depth + 3} />
-                </NodeGroup>
-              );
-            })}
-          </NodeGroup>
-          <NodeGroup groupId={`${node.id}::story`} label="story" hint="the spine — acts in order"
+          {/* Foundations (cast & world) first — the materials — then the spine built from them.
+              In the stage ladder the "CAST & WORLD" wrapper is DROPPED and its per-kind groups promoted to
+              the card's own level: a group with exactly one possible child set is an indent that carries no
+              choice, and it was pushing every character three levels deep. Under the classic nested tree the
+              wrapper stays, because there it does separate the registry from the spine beside it. */}
+          {registryGroups}
+          {scope === "entities" ? null : <NodeGroup groupId={`${node.id}::story`} label="story" hint="the spine — acts in order"
             count={ladder.length} depth={depth + 1} collapsedSet={collapsedSet} onToggle={h.onToggle} alwaysShow
             footer={<>
               {phantoms(node.id, "act", depth + 2)}
@@ -264,7 +297,7 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
             ) : undefined}>
             {sub(ladder, depth + 2)}
             <GhostRows items={ghostActs(nodes)} depth={depth + 2} />
-          </NodeGroup>
+          </NodeGroup>}
         </>
       );
     } else if (node.kind === "seed") {
@@ -333,6 +366,18 @@ export function Subtree({ node, index, nodes, depth, collapsedSet, openSet, h }:
   // Stale actions — accept/discard for any stale node (staleActions.ts is the one implementation,
   // shared with the FocusPanel).
   const staleActions = staleActionsFor(node, index);
+
+  // A sliced rung has no row of its own — the stage card's header is its header, and it renders the node's
+  // affordances (NodeChips) up there. Proposal marks still land: the OpDiffBlock below is what shows an
+  // agent's proposed edit, and it doesn't depend on the row.
+  if (rowless) {
+    return (
+      <div id={`dna-node-${node.id}`} style={{ background: h.flashId === node.id ? `${T.accent}1a` : undefined, borderRadius: 4, transition: "background 0.4s" }}>
+        {editPatch && <OpDiffBlock node={node} content={editPatch} nodes={nodes} depth={bodyDepth} />}
+        {body}
+      </div>
+    );
+  }
 
   return (
     <div>

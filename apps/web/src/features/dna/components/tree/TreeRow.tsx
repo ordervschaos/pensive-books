@@ -128,25 +128,18 @@ function NodeKebab({ onDelete, items = [] }: { onDelete?: () => void; items?: Ke
   );
 }
 
-// ── Single tree row ──────────────────────────────────────────────────────────
-export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onToggle, onDelete, onAttach, kebabItems, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, flash, issues, dimmed, ctx, onContextFocus, prose, headerActions, staleActions, seq, searchPattern }: {
-  node: DnaNode; index: Map<string, DnaNode>; depth: number; seq?: number; // seq = global reading-order # (beat/scene)
-  expandable: boolean; open: boolean; lockedOpen?: boolean; onToggle: () => void; onDelete?: () => void;
-  onAttach?: () => void; // attach this node to the agent's context tray (always-visible row action, not buried in the kebab)
-  kebabItems?: KebabItem[]; // regen actions, AI options, etc (all go in the ⋮ menu)
-  prose?: ProseRollup | null; // act/beat: rolled-up prose-completion of descendant scenes
-  headerActions?: React.ReactNode; // compact action buttons pinned to the header row
-  staleActions?: StaleActions;
-  // #5 — drag-to-reorder among same-kind siblings. draggable = this row has a grip; canDrop = a valid
-  // sibling is being dragged over it; dragging = this is the row being dragged.
-  draggable?: boolean; dragging?: boolean; canDrop?: boolean;
-  onDragStartRow?: () => void; onDragEndRow?: () => void; onDropRow?: (before: boolean) => void;
-  mark?: "edit" | "delete"; flash?: boolean; // mark = proposed change (#1); flash = jump target (#1)
-  issues?: DnaIssue[]; dimmed?: boolean; // health-lens (#6): this node's lints + dim-when-clean
-  ctx?: "focus" | "consumes" | "consumedBy"; onContextFocus?: () => void; // #7 context-highlight role + the badge trigger
-  searchPattern?: RegExp | null; // #8 — highlight this row's title when the search panel has a live match pattern
+// ── The row's right-hand affordance cluster ──────────────────────────────────
+// Everything a node carries that isn't its title: prose rollup · lint glyph · proposal mark · stale (with
+// its accept/regen popover) · lock · status dot · node id · drag grip · attach-to-agent · kebab.
+// Extracted from TreeRow so the STAGE LADDER can wear it too: cards 2–4 render the singleton spine without
+// a TreeRow at all (the card header names the node), and these affordances move into that header instead of
+// being lost. One implementation, two hosts — the alternative was a second, quietly-diverging control set.
+export function NodeChips({ node, index, prose, issues, mark, staleActions, onAttach, onDelete, kebabItems, draggable, onDragStartRow, onDragEndRow }: {
+  node: DnaNode; index: Map<string, DnaNode>;
+  prose?: ProseRollup | null; issues?: DnaIssue[]; mark?: "edit" | "delete"; staleActions?: StaleActions;
+  onAttach?: () => void; onDelete?: () => void; kebabItems?: KebabItem[];
+  draggable?: boolean; onDragStartRow?: () => void; onDragEndRow?: () => void;
 }) {
-  const [dropEdge, setDropEdge] = useState<"top" | "bottom" | null>(null);
   const [staleCardPos, setStaleCardPos] = useState<{ top: number; right: number } | null>(null);
   const [staleBusy, setStaleBusy] = useState<string | null>(null);
   const staleChipRef = useRef<HTMLSpanElement>(null);
@@ -173,6 +166,113 @@ export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onTo
     ? ([node.parent_id ? index.get(node.parent_id) : null, ...refsOf(node).map((id) => index.get(id))].filter((n): n is DnaNode => !!n))
     : [];
   const stale = isStale(node, index) || (node.kind === "scene" && isProseStale(node));
+  const color = KIND_COLOR[node.kind] ?? T.muted;
+  const hasErr = issues?.some((i) => i.severity === "error") ?? false;
+  const hasIssue = (issues?.length ?? 0) > 0;
+  const markColor = mark === "delete" ? T.bad : mark === "edit" ? T.accent : null;
+
+  return (
+    <span style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: "auto" }}>
+      {prose && <ProseRollupBadge r={prose} />}
+      {hasIssue && <span title={issues!.map((i) => `${i.severity === "error" ? "✕" : "⚠"} ${i.rule}: ${i.message}`).join("\n")}
+        style={{ fontSize: 10, lineHeight: 1, color: hasErr ? T.bad : T.warn, flexShrink: 0 }}>{hasErr ? "▲" : "△"}</span>}
+      {markColor && <span style={{ fontFamily: MONO, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.12em", color: markColor }}>{mark === "delete" ? "− remove" : "✎ edit"}</span>}
+      {stale && (
+        <span ref={staleChipRef} onClick={openStaleCard}
+          style={{ fontFamily: MONO, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.12em", color: T.stale, cursor: staleActions ? "pointer" : "default", userSelect: "none" }}>
+          stale
+        </span>
+      )}
+      {/* Stale card — fixed-position popover anchored to the chip */}
+      {staleCardPos && staleActions && (
+        <>
+          <div style={{ position: "fixed", inset: 0, zIndex: 49 }} onClick={() => setStaleCardPos(null)} />
+          <div style={{ position: "fixed", top: staleCardPos.top, right: staleCardPos.right, zIndex: 50, width: 280, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10, boxShadow: T.shadow, fontFamily: MONO }}
+            onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: T.stale }}>stale</span>
+              <span onClick={() => setStaleCardPos(null)} style={{ fontSize: 11, color: T.muted, cursor: "pointer" }}>✕</span>
+            </div>
+            <span style={{ fontSize: 11, color: T.warmText, lineHeight: 1.5 }}>
+              {isProseStale(node) && !isStale(node, index)
+                ? "prose stale — the scene plan changed since it was written"
+                : "an input changed since this was generated"}
+            </span>
+            {suspects.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <span style={{ fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: T.muted }}>suspects</span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {suspects.map((n) => (
+                    <span key={n.id} style={{ fontSize: 11, color: T.inkSoft, background: T.surface, border: `1px solid ${(KIND_COLOR[n.kind] ?? T.muted)}44`, borderRadius: 3, padding: "1px 6px", display: "inline-flex", gap: 4, alignItems: "center" }}>
+                      <span style={{ color: KIND_COLOR[n.kind] ?? T.muted, fontSize: 9.5, letterSpacing: "0.06em", textTransform: "uppercase", flexShrink: 0 }}>{n.kind}</span>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{nodeTitle(n) || n.id}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 6 }}>
+              {staleActions.onRegen && (
+                <span onClick={() => !staleBusy && void runStale("regen", staleActions.onRegen!)}
+                  style={{ fontSize: 10, letterSpacing: "0.06em", color: staleBusy === "regen" ? T.faint : T.accent, cursor: staleBusy ? "default" : "pointer", border: `1px solid ${T.accent}44`, borderRadius: 4, padding: "3px 10px", background: `${T.accent}0d` }}>
+                  {staleBusy === "regen" ? "…" : "↻ regen"}
+                </span>
+              )}
+              <span onClick={() => !staleBusy && void runStale("approve", staleActions.onApprove)}
+                style={{ fontSize: 10, letterSpacing: "0.06em", color: staleBusy === "approve" ? T.faint : T.good, cursor: staleBusy ? "default" : "pointer", border: `1px solid ${T.good}44`, borderRadius: 4, padding: "3px 10px", background: `${T.good}0d` }}>
+                {staleBusy === "approve" ? "…" : "✓ accept"}
+              </span>
+            </div>
+          </div>
+        </>
+      )}
+      {node.authoring.locked && <span style={{ fontSize: 10, color: color }}>🔒</span>}
+      <span style={{
+        width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+        background: node.authoring.status === "accepted" ? (stale ? T.stale : T.good)
+          : node.authoring.status === "draft" ? T.warn
+            : T.empty,
+      }} title={node.authoring.status ?? "empty"} />
+      <span style={{ fontFamily: MONO, fontSize: 9, color: T.faint, letterSpacing: "0.05em" }}>
+        {node.id}
+      </span>
+      {draggable && (
+        <span draggable
+          onClick={(e) => e.stopPropagation()}
+          onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", node.id); onDragStartRow?.(); }}
+          onDragEnd={(e) => { e.stopPropagation(); onDragEndRow?.(); }}
+          title="drag to reorder" style={{ fontSize: 11, color: T.faint, cursor: "grab", padding: "0 2px", flexShrink: 0, lineHeight: 1 }}>⠿</span>
+      )}
+      {onAttach && (
+        <span onClick={(e) => { e.stopPropagation(); onAttach(); }} title="add to agent context"
+          style={{ fontFamily: MONO, fontSize: 13, color: T.accent, cursor: "pointer", padding: "0 2px", lineHeight: 1, userSelect: "none", flexShrink: 0 }}>
+          ＋
+        </span>
+      )}
+      <NodeKebab onDelete={onDelete} items={kebabItems} />
+    </span>
+  );
+}
+
+// ── Single tree row ──────────────────────────────────────────────────────────
+export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onToggle, onDelete, onAttach, kebabItems, draggable, dragging, canDrop, onDragStartRow, onDragEndRow, onDropRow, mark, flash, issues, dimmed, ctx, onContextFocus, prose, headerActions, staleActions, seq, searchPattern }: {
+  node: DnaNode; index: Map<string, DnaNode>; depth: number; seq?: number; // seq = global reading-order # (beat/scene)
+  expandable: boolean; open: boolean; lockedOpen?: boolean; onToggle: () => void; onDelete?: () => void;
+  onAttach?: () => void; // attach this node to the agent's context tray (always-visible row action, not buried in the kebab)
+  kebabItems?: KebabItem[]; // regen actions, AI options, etc (all go in the ⋮ menu)
+  prose?: ProseRollup | null; // act/beat: rolled-up prose-completion of descendant scenes
+  headerActions?: React.ReactNode; // compact action buttons pinned to the header row
+  staleActions?: StaleActions;
+  // #5 — drag-to-reorder among same-kind siblings. draggable = this row has a grip; canDrop = a valid
+  // sibling is being dragged over it; dragging = this is the row being dragged.
+  draggable?: boolean; dragging?: boolean; canDrop?: boolean;
+  onDragStartRow?: () => void; onDragEndRow?: () => void; onDropRow?: (before: boolean) => void;
+  mark?: "edit" | "delete"; flash?: boolean; // mark = proposed change (#1); flash = jump target (#1)
+  issues?: DnaIssue[]; dimmed?: boolean; // health-lens (#6): this node's lints + dim-when-clean
+  ctx?: "focus" | "consumes" | "consumedBy"; onContextFocus?: () => void; // #7 context-highlight role + the badge trigger
+  searchPattern?: RegExp | null; // #8 — highlight this row's title when the search panel has a live match pattern
+}) {
+  const [dropEdge, setDropEdge] = useState<"top" | "bottom" | null>(null);
   const color = KIND_COLOR[node.kind] ?? T.muted;
   const bg = KIND_BG[node.kind] ?? "transparent";
   const title = nodeTitle(node);
@@ -264,86 +364,10 @@ export function TreeRow({ node, index, depth, expandable, open, lockedOpen, onTo
           </span>
         )}
 
-        {/* Status + stale + locked chips */}
-        <span style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: "auto" }}>
-          {prose && <ProseRollupBadge r={prose} />}
-          {hasIssue && <span title={issues!.map((i) => `${i.severity === "error" ? "✕" : "⚠"} ${i.rule}: ${i.message}`).join("\n")}
-            style={{ fontSize: 10, lineHeight: 1, color: hasErr ? T.bad : T.warn, flexShrink: 0 }}>{hasErr ? "▲" : "△"}</span>}
-          {markColor && <span style={{ fontFamily: MONO, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.12em", color: markColor }}>{mark === "delete" ? "− remove" : "✎ edit"}</span>}
-          {stale && (
-            <span ref={staleChipRef} onClick={openStaleCard}
-              style={{ fontFamily: MONO, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.12em", color: T.stale, cursor: staleActions ? "pointer" : "default", userSelect: "none" }}>
-              stale
-            </span>
-          )}
-          {/* Stale card — fixed-position popover anchored to the chip */}
-          {staleCardPos && staleActions && (
-            <>
-              <div style={{ position: "fixed", inset: 0, zIndex: 49 }} onClick={() => setStaleCardPos(null)} />
-              <div style={{ position: "fixed", top: staleCardPos.top, right: staleCardPos.right, zIndex: 50, width: 280, background: T.raised, border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10, boxShadow: T.shadow, fontFamily: MONO }}
-                onClick={(e) => e.stopPropagation()}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: T.stale }}>stale</span>
-                  <span onClick={() => setStaleCardPos(null)} style={{ fontSize: 11, color: T.muted, cursor: "pointer" }}>✕</span>
-                </div>
-                <span style={{ fontSize: 11, color: T.warmText, lineHeight: 1.5 }}>
-                  {isProseStale(node) && !isStale(node, index)
-                    ? "prose stale — the scene plan changed since it was written"
-                    : "an input changed since this was generated"}
-                </span>
-                {suspects.length > 0 && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    <span style={{ fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: T.muted }}>suspects</span>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                      {suspects.map((n) => (
-                        <span key={n.id} style={{ fontSize: 11, color: T.inkSoft, background: T.surface, border: `1px solid ${(KIND_COLOR[n.kind] ?? T.muted)}44`, borderRadius: 3, padding: "1px 6px", display: "inline-flex", gap: 4, alignItems: "center" }}>
-                          <span style={{ color: KIND_COLOR[n.kind] ?? T.muted, fontSize: 9.5, letterSpacing: "0.06em", textTransform: "uppercase", flexShrink: 0 }}>{n.kind}</span>
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{nodeTitle(n) || n.id}</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <div style={{ display: "flex", gap: 6 }}>
-                  {staleActions.onRegen && (
-                    <span onClick={() => !staleBusy && void runStale("regen", staleActions.onRegen!)}
-                      style={{ fontSize: 10, letterSpacing: "0.06em", color: staleBusy === "regen" ? T.faint : T.accent, cursor: staleBusy ? "default" : "pointer", border: `1px solid ${T.accent}44`, borderRadius: 4, padding: "3px 10px", background: `${T.accent}0d` }}>
-                      {staleBusy === "regen" ? "…" : "↻ regen"}
-                    </span>
-                  )}
-                  <span onClick={() => !staleBusy && void runStale("approve", staleActions.onApprove)}
-                    style={{ fontSize: 10, letterSpacing: "0.06em", color: staleBusy === "approve" ? T.faint : T.good, cursor: staleBusy ? "default" : "pointer", border: `1px solid ${T.good}44`, borderRadius: 4, padding: "3px 10px", background: `${T.good}0d` }}>
-                    {staleBusy === "approve" ? "…" : "✓ accept"}
-                  </span>
-                </div>
-              </div>
-            </>
-          )}
-          {node.authoring.locked && <span style={{ fontSize: 10, color: color }}>🔒</span>}
-          <span style={{
-            width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-            background: node.authoring.status === "accepted" ? (stale ? T.stale : T.good)
-              : node.authoring.status === "draft" ? T.warn
-                : T.empty,
-          }} title={node.authoring.status ?? "empty"} />
-          <span style={{ fontFamily: MONO, fontSize: 9, color: T.faint, letterSpacing: "0.05em" }}>
-            {node.id}
-          </span>
-          {draggable && (
-            <span draggable
-              onClick={(e) => e.stopPropagation()}
-              onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", node.id); onDragStartRow?.(); }}
-              onDragEnd={(e) => { e.stopPropagation(); onDragEndRow?.(); }}
-              title="drag to reorder" style={{ fontSize: 11, color: T.faint, cursor: "grab", padding: "0 2px", flexShrink: 0, lineHeight: 1 }}>⠿</span>
-          )}
-          {onAttach && (
-            <span onClick={(e) => { e.stopPropagation(); onAttach(); }} title="add to agent context"
-              style={{ fontFamily: MONO, fontSize: 13, color: T.accent, cursor: "pointer", padding: "0 2px", lineHeight: 1, userSelect: "none", flexShrink: 0 }}>
-              ＋
-            </span>
-          )}
-          <NodeKebab onDelete={onDelete} items={kebabItems} />
-        </span>
+        {/* Status + stale + locked chips — the shared cluster, also worn by the stage ladder's card headers */}
+        <NodeChips node={node} index={index} prose={prose} issues={issues} mark={mark} staleActions={staleActions}
+          onAttach={onAttach} onDelete={onDelete} kebabItems={kebabItems}
+          draggable={draggable} onDragStartRow={onDragStartRow} onDragEndRow={onDragEndRow} />
       </div>
     </div>
   );

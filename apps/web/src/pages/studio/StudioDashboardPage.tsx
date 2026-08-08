@@ -36,7 +36,7 @@ export default function StudioDashboardPage() {
   const clearSearch = () => setSearchQuery("");
 
   return (
-    <div className="container relative mx-auto max-w-7xl px-6 py-14 space-y-10 md:px-12">
+    <div className="container relative mx-auto max-w-7xl px-6 py-14 md:px-12">
       <header className="flex flex-col items-start justify-between gap-8 md:flex-row md:items-end">
         <div>
           <div className="pv-eyebrow">Studio · books directed with AI</div>
@@ -55,12 +55,14 @@ export default function StudioDashboardPage() {
             {data ? total : "—"}
           </div>
           <div className="pv-mono mt-1.5 text-[10.5px] uppercase tracking-[0.15em] text-[hsl(var(--pv-text-faint))]">
-            studio books
+            {debouncedSearch ? "matching" : "studio books"}
           </div>
         </div>
       </header>
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      {/* Toolbar — a hairline rule anchors it to the grid below so the
+          "New" button doesn't float against the first row of covers. */}
+      <div className="mt-12 flex flex-col gap-3 border-t border-border pt-6 lg:flex-row lg:items-center lg:justify-between">
         <div className="relative min-w-0 flex-1 lg:max-w-md">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[hsl(var(--pv-text-faint))]" />
           <Input
@@ -85,7 +87,7 @@ export default function StudioDashboardPage() {
         <Button
           onClick={() => navigate("/studio/new")}
           size="sm"
-          className="pv-serif h-10 rounded-full bg-foreground px-5 text-[14px] font-normal tracking-[0.01em] text-background hover:opacity-90"
+          className="pv-serif h-10 flex-shrink-0 rounded-full bg-foreground px-5 text-[14px] font-normal tracking-[0.01em] text-background hover:opacity-90"
         >
           <Plus className="mr-1.5 h-4 w-4" />
           New Studio book
@@ -93,19 +95,18 @@ export default function StudioDashboardPage() {
       </div>
 
       {initializing ? (
-        <div className={BOOK_GRID_CLASS}>
-          {Array.from({ length: 8 }).map((_, i) => (
+        <div className={`mt-10 ${BOOK_GRID_CLASS}`}>
+          {Array.from({ length: 12 }).map((_, i) => (
             <div key={i} className="flex flex-col">
               <div className="aspect-[4/5] w-full animate-pulse rounded-xl border border-border/50 bg-muted/50" />
-              <div className="mt-3 min-h-[64px] space-y-1.5 px-0.5">
-                <div className="h-4 w-3/4 animate-pulse rounded bg-muted/60" />
+              <div className="mt-3 px-0.5">
                 <div className="h-3 w-1/2 animate-pulse rounded bg-muted/40" />
               </div>
             </div>
           ))}
         </div>
       ) : books.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-[hsl(var(--pv-surface-2))] py-20 text-center">
+        <div className="mt-10 flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-[hsl(var(--pv-surface-2))] py-20 text-center">
           <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full border border-border">
             <BookOpen className="h-5 w-5 text-[hsl(var(--pv-text-muted))]" />
           </div>
@@ -123,7 +124,7 @@ export default function StudioDashboardPage() {
           )}
         </div>
       ) : (
-        <div className={BOOK_GRID_CLASS}>
+        <div className={`mt-10 ${BOOK_GRID_CLASS}`}>
           {books.map((book) => (
             <div
               key={book.id}

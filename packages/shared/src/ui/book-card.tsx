@@ -90,7 +90,11 @@ export function BookCard({
         </div>
       </div>
 
-      <div className="mt-3 min-h-[64px] px-0.5">
+      {/* The 64px floor keeps captions on a shared baseline when the title +
+          author render below the cover (they wrap to 1–2 lines). When the
+          cover already carries the title there is nothing to reserve for, so
+          the floor would just be dead space under every card. */}
+      <div className={`mt-3 px-0.5 ${coverShowsTitle ? "" : "min-h-[64px]"}`}>
         {!coverShowsTitle && (
           <h3 className="line-clamp-2 break-words font-serif text-[15px] font-semibold leading-snug tracking-tight text-foreground">
             {book.name}

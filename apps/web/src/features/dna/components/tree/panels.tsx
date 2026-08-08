@@ -68,10 +68,14 @@ export function VoiceFeelPanel({ nodes, index, onJump, asPage }: { nodes: DnaNod
 // stages (Idea→Foundations→Structure→Scenes→Prose); buildJourney derives each stage's done|now|locked from
 // the tree, and stageSubsteps names the single next action inside the "now" stage. Clicking a stage reveals
 // + scrolls to its layer (STAGE_KINDS). Pure-derived — no stored progress.
-export function JourneyStrip({ nodes, onGoStage, onGapClick, right }: {
+// `hideStages` drops the stage chips and keeps only "what's left" + the action slot — for the tree tab,
+// where the StageStack's numbered ladder IS the journey and two 5-stage readouts on one screen would be
+// two competing models of the same thing.
+export function JourneyStrip({ nodes, onGoStage, onGapClick, right, hideStages }: {
   nodes: DnaNode[]; onGoStage: (key: StageKey) => void;
   onGapClick?: (key: StageKey) => void; // #14 — turn "what's left" into the work loop: reveal + open the agent
   right?: React.ReactNode; // merged action-bar controls (health pip, tree toggles) — same row as the stages
+  hideStages?: boolean;
 }) {
   const mono = MONO;
   const { stages } = buildJourney(nodes);
@@ -88,7 +92,7 @@ export function JourneyStrip({ nodes, onGoStage, onGapClick, right }: {
     <div style={{ padding: "8px 16px", borderBottom: `1px solid ${T.borderSoft}`, display: "flex", flexDirection: "column", gap: 6 }}>
       {/* The 5 stages — each with its coverage fraction + a progress bar */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 4, flexWrap: "wrap" }}>
-        {stages.map((s, i) => {
+        {!hideStages && stages.map((s, i) => {
           const p = prog[s.key];
           const locked = s.status === "locked";
           const c = hue(s.status, p.partial);

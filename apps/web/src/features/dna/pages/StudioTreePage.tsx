@@ -30,9 +30,8 @@ import { AscendButton } from "@/features/dna/components/tree/AscendButton";
 import { nodeTitle } from "@/features/dna/components/tree/nodeDisplay";
 import { buildSearchPattern, SearchPanel, searchDna } from "@/features/dna/components/tree/search";
 import { indexProposal } from "@/features/dna/components/tree/proposalOverlay";
-import { Subtree } from "@/features/dna/components/tree/Subtree";
+import { StageStack } from "@/features/dna/components/tree/StageStack";
 import { staleActionsFor } from "@/features/dna/components/tree/staleActions";
-import { BriefOrigin } from "@/features/dna/components/tree/BriefSection";
 import { FocusPanel, JourneyStrip, SpineTimeline, VoiceFeelPanel } from "@/features/dna/components/tree/panels";
 import { CharactersPane, StoryPane } from "@/features/dna/components/tree/panes";
 import { CraftNotesPane } from "@/features/dna/components/tree/CraftNotesPane";
@@ -191,18 +190,8 @@ export default function StudioTreePage() {
   const [legendOpen, setLegendOpen] = useState(false);
   // #2 — json/fork/history folded into one overflow menu (developer-grade utilities, used rarely).
   const [overflowOpen, setOverflowOpen] = useState(false);
-  // #4 — the brief collapses once the tree is past the premise stage (it's reference by then, not active
-  // work); persists per book like railOpen/timelineOpen. Unset (new book) falls back to the live journey.
-  const briefKey = `dna-brief-open:${bookId}`;
-  const [briefOpenPref, setBriefOpenPref] = useState<boolean | null>(() => {
-    const v = localStorage.getItem(briefKey);
-    return v === null ? null : v === "1";
-  });
-  const setBriefOpen = useCallback((open: boolean) => {
-    setBriefOpenPref(open);
-    localStorage.setItem(briefKey, open ? "1" : "0");
-  }, [briefKey]);
-
+  // (The brief's own collapse pref moved onto the ladder — StageStack persists one closed-set per book,
+  // covering all five rungs including the brief. See components/tree/StageStack.tsx.)
   const saveBrief = useCallback(async (patch: Partial<Brief>) => {
     const next = { ...brief, ...patch, updated_at: new Date().toISOString() } as Brief;
     setBrief(next);
@@ -626,10 +615,6 @@ export default function StudioTreePage() {
     return n ? `${n.kind}${nodeTitle(n) ? ` · ${nodeTitle(n)}` : ""}` : i.nodeId ?? "";
   };
 
-  // #4 — the brief defaults to collapsed once the tree has moved past the premise stage (it's the constant
-  // origin — reference by then, not active work); an explicit toggle overrides the live journey default.
-  const briefOpen = briefOpenPref ?? journeyNowIndex === 0;
-
   // #2 — json / fork / history: developer-grade + rarely-used utilities, folded into one overflow menu
   // instead of sitting with equal billing next to the core actions.
   const overflowMenu = (
@@ -938,7 +923,7 @@ export default function StudioTreePage() {
       {/* Journey strip — where am I / what's left, merged with the action bar (#5): health pip + the
           tree-only toggles sit in the same row as the stages instead of a whole extra chrome row. */}
       {roots.length > 0 && (
-        <JourneyStrip nodes={nodes} onGoStage={goStage}
+        <JourneyStrip nodes={nodes} onGoStage={goStage} hideStages
           onGapClick={(key) => { goStage(key); setRailOpen(true); }}
           right={
             <>
@@ -953,17 +938,15 @@ export default function StudioTreePage() {
           } />
       )}
 
-      {/* The BRIEF — the ORIGIN (step 0), above the tree. The seed (logline) below is derived from it.
-          Collapses once past the premise stage (#4) — it's reference by then, not active work. */}
-      <BriefOrigin brief={brief} onSave={saveBrief} open={briefOpen} onToggleOpen={setBriefOpen} />
-
-      {/* Tree */}
-      <div style={{ paddingTop: 8, paddingBottom: timelineOpen ? 220 : 48 }}>
-        {roots.map((root) => (
-          <Subtree key={root.id} node={root} index={index} nodes={nodes} depth={0}
-            collapsedSet={collapsedSet} openSet={openSet}
-            h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, issuesByNode, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, seq, searchPattern, proseOpenSet, onToggleProse: toggleProse, onDiscardStory: discardStory, onAttachNode: attachNode, onOpenProseReader: setProseReaderSceneId, onOpenDetails: setDetailsNodeId }} />
-        ))}
+      {/* The LADDER — the same book_nodes tree, re-cut into five ordered stage cards (brief → seed →
+          premise → pillar → story). The singleton spine is flattened into siblings on a numbered rail so
+          the ORDER is stated, not inferred from indentation; only the story's genuine 1:N hierarchy
+          (acts → beats → scenes → prose) still nests, inside card 5. Projection only — the data, the
+          write paths, and what the agent sees are all unchanged. */}
+      <div style={{ paddingTop: 4, paddingBottom: timelineOpen ? 220 : 48 }}>
+        <StageStack nodes={nodes} index={index} brief={brief} onSaveBrief={saveBrief} bookId={bookId}
+          collapsedSet={collapsedSet} openSet={openSet}
+          h={{ onToggle: toggleNode, onToggleDetail: toggleDetail, onAdd: addNode, onDelete: removeNode, onJump: jumpTo, dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDrop: onDropReorder, backlinks, flashId, proposal: proposalView, issuesByNode, contextId, ctxConsumes, ctxConsumedBy, onContextFocus: focusContext, seq, searchPattern, proseOpenSet, onToggleProse: toggleProse, onDiscardStory: discardStory, onAttachNode: attachNode, onOpenProseReader: setProseReaderSceneId, onOpenDetails: setDetailsNodeId }} />
       </div>
       </>)}
       </div>
