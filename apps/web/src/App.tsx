@@ -43,6 +43,7 @@ const StudioMetersPage = lazy(() => import("@/features/dna/pages/StudioMetersPag
 const StudioLedgerPage = lazy(() => import("@/features/dna/pages/StudioLedgerPage"));
 const StudioDashboardPage = lazy(() => import("@/pages/studio/StudioDashboardPage"));
 const DnaArchitecturePage = lazy(() => import("@/features/dna/pages/DnaArchitecturePage"));
+const ReaderMachinePage = lazy(() => import("@/features/reader/pages/ReaderMachinePage"));
 const DraftChanges = lazy(() => import("@/pages/books/show/DraftChanges"));
 const VersionHistoryPage = lazy(() => import("@/pages/books/show/VersionHistoryPage"));
 const BookEdit = lazy(() => import("@/pages/books/edit/BookEdit"));
@@ -191,6 +192,8 @@ export default function App() {
                         <Route path="/books/new" element={<NewBook />} />
                         <Route path="/studio" element={<StudioDashboardPage />} />
                         <Route path="/studio/new" element={<StudioNewBookPage />} />
+                        {/* Reader Machine P0 — book-agnostic, runs entirely client-side */}
+                        <Route path="/reader" element={<ReaderMachinePage />} />
                         <Route path="/books/:bookSlug/versions/:versionId/pages/:pageSlug" element={<VersionPageView />} />
                         <Route path="/books/:bookSlug/versions/:versionId" element={<VersionPreview />} />
                         <Route path="/books/:bookSlug/versions" element={<VersionHistoryPage />} />

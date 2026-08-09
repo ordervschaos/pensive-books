@@ -1,0 +1,4036 @@
+{
+  "chapter": "Chapter 1",
+  "units": 305,
+  "deltas": [
+    {
+      "i": 0,
+      "gist": "Conscription Day is deadly; narrator fears it's their last day.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "narrator",
+          "kind": "character",
+          "name": "unknown",
+          "note": "first-person protagonist"
+        },
+        {
+          "op": "entity",
+          "id": "conscription_day",
+          "kind": "concept",
+          "name": "Conscription Day",
+          "note": "deadliest day"
+        },
+        {
+          "op": "believe",
+          "about": "narrator",
+          "claim": "this might be my last sunrise",
+          "ground": "told"
+        },
+        {
+          "op": "open",
+          "qid": "why_deadly",
+          "text": "Why is Conscription Day the deadliest?",
+          "kind": "mystery",
+          "heat": 2
+        }
+      ]
+    },
+    {
+      "i": 1,
+      "gist": "Narrator struggles with pack while climbing stairs to General Sorrengail's office, reflecting on their insufficient training.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "stone_fortress",
+          "kind": "place",
+          "name": "stone fortress",
+          "note": "narrator's home"
+        },
+        {
+          "op": "move",
+          "to": "stone_fortress"
+        },
+        {
+          "op": "entity",
+          "id": "general_sorrengail",
+          "kind": "character",
+          "name": "General Sorrengail"
+        },
+        {
+          "op": "fact",
+          "key": "protagonist_training_months",
+          "value": "6",
+          "about": "narrator"
+        }
+      ]
+    },
+    {
+      "i": 2,
+      "gist": "Narrator curses their likelihood of failure.",
+      "ops": []
+    },
+    {
+      "i": 3,
+      "gist": "The conscripts are elite, with many preparing their whole lives for the Riders Quadrant.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "navarre",
+          "kind": "place",
+          "name": "Navarre",
+          "note": "kingdom"
+        },
+        {
+          "op": "entity",
+          "id": "riders_quadrant",
+          "kind": "concept",
+          "name": "Riders Quadrant",
+          "note": "elite dragon rider path"
+        },
+        {
+          "op": "fact",
+          "key": "competitors_preparation",
+          "value": "many prepared since birth",
+          "about": "riders_quadrant"
+        }
+      ]
+    },
+    {
+      "i": 4,
+      "ops": []
+    },
+    {
+      "i": 5,
+      "gist": "Guards ignore narrator, which is normal and preferred.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "guards",
+          "kind": "character",
+          "name": "guards",
+          "note": "expressionless hallway guards"
+        },
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "guards"
+          ]
+        },
+        {
+          "op": "believe",
+          "about": "narrator",
+          "claim": "being ignored is the best possible scenario",
+          "ground": "shown"
+        }
+      ]
+    },
+    {
+      "i": 6,
+      "gist": "Basgiath War College is cruel to everyone, even those with mothers in command.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "fortress_name",
+          "value": "Basgiath War College",
+          "about": "stone_fortress"
+        },
+        {
+          "op": "fact",
+          "key": "college_cruelty",
+          "value": "not kind to anyone"
+        },
+        {
+          "op": "open",
+          "qid": "is_sorrengail_mother",
+          "text": "Is General Sorrengail the narrator's mother?",
+          "kind": "mystery",
+          "heat": 2
+        }
+      ]
+    },
+    {
+      "i": 7,
+      "gist": "Navarre trains officers in four quadrants for three years to fight Poromiel's gryphon riders; dragons ensure the weak perish.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "poromiel",
+          "kind": "place",
+          "name": "Poromiel",
+          "note": "kingdom invading Navarre"
+        },
+        {
+          "op": "entity",
+          "id": "gryphon_riders",
+          "kind": "faction",
+          "name": "gryphon riders",
+          "note": "Poromiel's airborne fighters"
+        },
+        {
+          "op": "entity",
+          "id": "dragons",
+          "kind": "concept",
+          "name": "dragons",
+          "note": "ensure weak don't survive Riders Quadrant"
+        },
+        {
+          "op": "fact",
+          "key": "officer_training_years",
+          "value": "3"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "riders_quadrant"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 8,
+      "gist": "Mira, a bold woman who should be at the border, argues with the general about sending someone (likely the narrator) to die.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "mira",
+          "kind": "character",
+          "name": "Mira",
+          "note": "bold woman arguing with general, supposed to be at border"
+        },
+        {
+          "op": "fact",
+          "key": "mira_location",
+          "value": "supposed to be at Eastern Wing border",
+          "about": "mira"
+        },
+        {
+          "op": "open",
+          "qid": "why_send_her_to_die",
+          "text": "Why is the general sending the narrator to die?",
+          "kind": "threat",
+          "heat": 3
+        }
+      ]
+    },
+    {
+      "i": 9,
+      "gist": "Narrator prepares to enter the office.",
+      "ops": []
+    },
+    {
+      "i": 10,
+      "gist": "Narrator enters the office nearly falling, hearing Mira's dire warning.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "sorrengail_office",
+          "kind": "place",
+          "name": "General Sorrengail's office"
+        },
+        {
+          "op": "move",
+          "to": "sorrengail_office"
+        },
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "mira",
+            "general_sorrengail"
+          ]
+        },
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "body",
+          "detail": "pack shifts, nearly topples them"
+        }
+      ]
+    },
+    {
+      "i": 11,
+      "gist": "The general curses; I grab the couch.",
+      "ops": []
+    },
+    {
+      "i": 12,
+      "gist": "Mira calls General Sorrengail 'Mom', revealing she is our mother.",
+      "ops": [
+        {
+          "op": "answer",
+          "qid": "is_sorrengail_mother"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 13,
+      "gist": "I'm mortified that Mira is already trying to save me; I know I need it.",
+      "ops": [
+        {
+          "op": "believe",
+          "about": "narrator",
+          "claim": "I need saving",
+          "ground": "told"
+        }
+      ]
+    },
+    {
+      "i": 14,
+      "gist": "I don't want anything to do with the Riders Quadrant.",
+      "ops": [
+        {
+          "op": "believe",
+          "about": "narrator",
+          "claim": "I don't want this (Riders Quadrant)",
+          "ground": "told"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "riders_quadrant"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 15,
+      "gist": "I'd rather have gone to the army, but I'll manage.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "rider_admission_test",
+          "value": "failing sends you to army"
+        },
+        {
+          "op": "believe",
+          "about": "narrator",
+          "claim": "I can handle myself",
+          "ground": "told"
+        }
+      ]
+    },
+    {
+      "i": 16,
+      "gist": "Mira looks at me with worried brown eyes and braces my shoulders.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "mira",
+          "channel": "sight",
+          "detail": "worried brown eyes"
+        }
+      ]
+    },
+    {
+      "i": 17,
+      "gist": "I'm just glad to see Mira, my sister, after years.",
+      "ops": [
+        {
+          "op": "relate",
+          "from": "narrator",
+          "to": "mira",
+          "kind": "sister",
+          "valence": 2
+        },
+        {
+          "op": "fact",
+          "key": "sisters_reunited_after_years",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "i": 18,
+      "gist": "Mira steps back and tells our mother she can't do this.",
+      "ops": []
+    },
+    {
+      "i": 19,
+      "gist": "Mom says it's already done; no reprieve.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_assigned_riders",
+          "value": "final"
+        }
+      ]
+    },
+    {
+      "i": 20,
+      "gist": "I shouldn't have expected mercy from her.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "general_sorrengail_merciless",
+          "value": "famous for lack of mercy"
+        }
+      ]
+    },
+    {
+      "i": 21,
+      "gist": "Mira says Violet trained as a scribe, not a rider.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_original_path",
+          "value": "scribe"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 22,
+      "gist": "Mom says I'm nothing like Mira, sees right through me.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "general_sorrengail",
+          "channel": "sight",
+          "detail": "narrowed, appraising eyes"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "dragons"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 23,
+      "gist": "Mira is 26 and resembles Mom.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "mira_age",
+          "value": "26",
+          "about": "mira"
+        },
+        {
+          "op": "believe",
+          "about": "mira",
+          "claim": "younger version of mother",
+          "ground": "told"
+        }
+      ]
+    },
+    {
+      "i": 24,
+      "gist": "Mira is tall, muscular, with short golden-brown hair, and carries Mom's arrogance.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "mira",
+          "channel": "sight",
+          "detail": "tall, strong, powerful muscles, golden-brown hair shorn short, skin glowing with health"
+        },
+        {
+          "op": "believe",
+          "about": "mira",
+          "claim": "arrogant, unwavering conviction she belongs in sky",
+          "ground": "told"
+        }
+      ]
+    },
+    {
+      "i": 25,
+      "gist": "The narrator feels physically inadequate, and Mom's head shake confirms it.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "narrator_body",
+          "value": "short, frail, no muscle, feels vulnerable",
+          "about": "narrator"
+        },
+        {
+          "op": "affect",
+          "tension": 6,
+          "warmth": -2
+        }
+      ]
+    },
+    {
+      "i": 26,
+      "gist": "Mom criticizes the narrator's pale coloring, blaming a fever that stole her color and strength.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "sight",
+          "detail": "long braid, brown at top fading to steely silver at ends"
+        },
+        {
+          "op": "fact",
+          "key": "fever_caused_paleness_weakness",
+          "value": "true",
+          "about": "narrator"
+        }
+      ]
+    },
+    {
+      "i": 27,
+      "gist": "Father was a scribe and made the library the narrator's second home; Mom was an instructor.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "dad",
+          "kind": "character",
+          "name": "Dad",
+          "note": "scribe, father"
+        },
+        {
+          "op": "relate",
+          "from": "narrator",
+          "to": "dad",
+          "kind": "father",
+          "valence": 2
+        },
+        {
+          "op": "relate",
+          "from": "general_sorrengail",
+          "to": "dad",
+          "kind": "spouse",
+          "valence": 2
+        },
+        {
+          "op": "fact",
+          "key": "mom_past_role",
+          "value": "Basgiath instructor",
+          "about": "general_sorrengail"
+        }
+      ]
+    },
+    {
+      "i": 28,
+      "gist": "The library is the only place that feels like home, where the narrator still feels her late father's presence.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "library",
+          "kind": "place",
+          "name": "Archives/library",
+          "note": "Dad's library, narrator's second home"
+        },
+        {
+          "op": "fact",
+          "key": "dad_dead",
+          "value": "over a year ago, heart failure",
+          "about": "dad"
+        }
+      ]
+    },
+    {
+      "i": 29,
+      "gist": "Mom used to be softer and kinder for her family when Dad was alive.",
+      "ops": [
+        {
+          "op": "believe",
+          "about": "general_sorrengail",
+          "claim": "softer and kinder for family when Dad was alive",
+          "ground": "shown"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "dad"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 30,
+      "gist": "She claims her father was a scribe.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "dad_was_scribe",
+          "value": "true",
+          "about": "dad"
+        },
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "body",
+          "detail": "back sore from pack, relief as pack drops"
+        }
+      ]
+    },
+    {
+      "i": 31,
+      "gist": "Mom reveals she's a rider and forbids Violet from joining the Scribe Quadrant.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "general_sorrengail_is_rider",
+          "value": "true",
+          "about": "general_sorrengail"
+        },
+        {
+          "op": "fact",
+          "key": "violet_age",
+          "value": "20",
+          "about": "narrator"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "conscription_day"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 32,
+      "gist": "Riders are top of the military hierarchy and dragons roast people for fun.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "riders_social_rank",
+          "value": "top of hierarchy",
+          "about": "riders_quadrant"
+        },
+        {
+          "op": "fact",
+          "key": "dragons_roast_people",
+          "value": "true",
+          "about": "dragons"
+        }
+      ]
+    },
+    {
+      "i": 33,
+      "gist": "Mom threatens to forcibly put Violet on the parapet if she tries to become a scribe.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "parapet",
+          "kind": "concept",
+          "name": "parapet entry test"
+        },
+        {
+          "op": "fact",
+          "key": "mom_will_force_violet_onto_parapet",
+          "value": "true",
+          "about": "general_sorrengail"
+        },
+        {
+          "op": "affect",
+          "tension": 8,
+          "warmth": -3
+        }
+      ]
+    },
+    {
+      "i": 34,
+      "ops": [
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "body",
+          "detail": "stomach turns over, nauseated"
+        }
+      ]
+    },
+    {
+      "i": 35,
+      "gist": "Mira argues that Dad wouldn't want this.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "mira",
+          "channel": "sight",
+          "detail": "color flushing up her neck"
+        },
+        {
+          "op": "believe",
+          "about": "mira",
+          "claim": "Dad would not want Violet forced into Riders Quadrant",
+          "ground": "told"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "dad"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 36,
+      "gist": "Mom coldly dismisses Dad's potential wishes as irrelevant.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "mom_dismisses_dads_wishes",
+          "value": "true",
+          "about": "general_sorrengail"
+        }
+      ]
+    },
+    {
+      "i": 37,
+      "gist": "Violet believes arguing is futile because Mom never listens.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "mom_never_listens_to_violet",
+          "value": "true",
+          "about": "general_sorrengail"
+        },
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "body",
+          "detail": "sucks in a breath"
+        }
+      ]
+    },
+    {
+      "i": 38,
+      "gist": "Mira lists Violet's physical weaknesses and notes Mom respects her arguing but not Violet's.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_broken_arm_this_year",
+          "value": "true",
+          "about": "narrator"
+        },
+        {
+          "op": "fact",
+          "key": "violet_sprains_often",
+          "value": "true",
+          "about": "narrator"
+        },
+        {
+          "op": "fact",
+          "key": "violet_too_short_for_dragon",
+          "value": "true",
+          "about": "narrator"
+        },
+        {
+          "op": "fact",
+          "key": "mom_respects_mira_arguing",
+          "value": "true",
+          "about": "general_sorrengail"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "riders_quadrant",
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 39,
+      "gist": "Violet feels betrayed that Mira is emphasizing her weaknesses.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "body",
+          "detail": "fingernails bite into palms, fists clenched"
+        },
+        {
+          "op": "relate",
+          "from": "narrator",
+          "to": "mira",
+          "kind": "sister",
+          "valence": -1
+        },
+        {
+          "op": "open",
+          "qid": "sister_hurting_feeling",
+          "text": "Why is Mira being so blunt about Violet's weaknesses?",
+          "kind": "irony",
+          "heat": 2
+        }
+      ]
+    },
+    {
+      "i": 40,
+      "gist": "Mira calls Violet fragile",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_fragile",
+          "value": "true",
+          "about": "narrator"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 41,
+      "gist": "dragons incinerate fragile women instead of bonding them",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "dragons_incinerate_fragile",
+          "value": "true",
+          "about": "dragons"
+        }
+      ]
+    },
+    {
+      "i": 42,
+      "gist": "Mom remarks on Violet's small size, scanning her ill-fitting clothes",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "sight",
+          "detail": "cream belted tunic and pants, generous fit"
+        }
+      ]
+    },
+    {
+      "i": 43,
+      "ops": []
+    },
+    {
+      "i": 44,
+      "gist": "Mom claims Violet endures more pain than Mira and is the most capable of surviving the Riders Quadrant",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_high_pain_tolerance",
+          "value": "true",
+          "about": "narrator"
+        },
+        {
+          "op": "believe",
+          "about": "general_sorrengail",
+          "claim": "Violet is the most capable of her children to survive the Riders Quadrant",
+          "ground": "told"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "riders_quadrant",
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 45,
+      "ops": []
+    },
+    {
+      "i": 46,
+      "gist": "Violet asks for the death count on Conscription Day",
+      "ops": [
+        {
+          "op": "open",
+          "qid": "conscription_day_death_toll",
+          "text": "How many rider candidates die on Conscription Day?",
+          "kind": "mystery",
+          "heat": 2
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "conscription_day"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 47,
+      "gist": "Mira accuses Mom of being eager to bury another child, implying a previous death",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "another_child_died",
+          "value": "true",
+          "about": "general_sorrengail"
+        },
+        {
+          "op": "affect",
+          "tension": 8,
+          "warmth": -4
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 48,
+      "gist": "Mom uses storm-wielding signet power through her dragon Aimsir, dropping room temperature",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "aimsir",
+          "kind": "character",
+          "name": "Aimsir",
+          "note": "general's dragon"
+        },
+        {
+          "op": "fact",
+          "key": "mom_signets_storm_wielding",
+          "value": "true",
+          "about": "general_sorrengail"
+        },
+        {
+          "op": "relate",
+          "from": "general_sorrengail",
+          "to": "aimsir",
+          "kind": "bonded_dragon",
+          "valence": 1
+        },
+        {
+          "op": "sense",
+          "about": "sorrengail_office",
+          "channel": "body",
+          "detail": "temperature plummets"
+        }
+      ]
+    },
+    {
+      "i": 49,
+      "gist": "Violet remembers brother Brennan, who died five years ago in the Tyrrish rebellion; Mom loved him most",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "brennan",
+          "kind": "character",
+          "name": "Brennan",
+          "note": "dead brother"
+        },
+        {
+          "op": "entity",
+          "id": "tyrrish_rebellion",
+          "kind": "concept",
+          "name": "Tyrrish rebellion",
+          "note": "southern rebellion"
+        },
+        {
+          "op": "fact",
+          "key": "brennan_died_tyrrish_rebellion",
+          "value": "5 years ago",
+          "about": "brennan"
+        },
+        {
+          "op": "relate",
+          "from": "general_sorrengail",
+          "to": "brennan",
+          "kind": "mother-son",
+          "valence": 2
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 50,
+      "gist": "Dad also loved Brennan and his chest pains began after Brennan's death",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "dad_chest_pains_triggered_by_brennan_death",
+          "value": "true",
+          "about": "dad"
+        },
+        {
+          "op": "relate",
+          "from": "dad",
+          "to": "brennan",
+          "kind": "father-son",
+          "valence": 2
+        }
+      ]
+    },
+    {
+      "i": 51,
+      "gist": "Mom glares at Mira with threatening expression",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "general_sorrengail",
+          "channel": "sight",
+          "detail": "jaw tightens, eyes threaten retribution"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 52,
+      "ops": []
+    },
+    {
+      "i": 53,
+      "gist": "Mira is a lieutenant.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "mira_rank",
+          "value": "lieutenant",
+          "about": "mira"
+        }
+      ]
+    },
+    {
+      "i": 54,
+      "gist": "Mira leaves the office.",
+      "ops": [
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "general_sorrengail"
+          ]
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 55,
+      "gist": "First time alone with mom in months.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "alone_with_mom_months",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "i": 56,
+      "gist": "Mom touches her cheek, says she's like dad, and reveals Violet's top-quarter exam scores, while the temperature rises.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "touch",
+          "detail": "Mom brushes her cheek"
+        },
+        {
+          "op": "fact",
+          "key": "violet_exam_speed_agility",
+          "value": "top quarter",
+          "about": "narrator"
+        },
+        {
+          "op": "sense",
+          "about": "general_sorrengail",
+          "channel": "body",
+          "detail": "temperature rises around her"
+        },
+        {
+          "op": "fact",
+          "key": "mom_says_violet_like_dad",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "i": 57,
+      "ops": []
+    },
+    {
+      "i": 58,
+      "gist": "Mom declares a three-year no-acknowledgment policy.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "mom_no_acknowledgement_years",
+          "value": "3"
+        }
+      ]
+    },
+    {
+      "i": 59,
+      "ops": []
+    },
+    {
+      "i": 60,
+      "gist": "Cadets will target Violet because she's the general's daughter.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "cadets_target_violet",
+          "value": "true",
+          "about": "narrator"
+        }
+      ]
+    },
+    {
+      "i": 61,
+      "gist": "Violet has been training with Major Gillstead.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "major_gillstead",
+          "kind": "character",
+          "name": "Major Gillstead"
+        },
+        {
+          "op": "fact",
+          "key": "training_with_gillstead",
+          "value": "months",
+          "about": "narrator"
+        }
+      ]
+    },
+    {
+      "i": 62,
+      "gist": "Mom references Threshing and says she'll be a cadet by sunset.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "threshing",
+          "kind": "concept",
+          "name": "Threshing"
+        },
+        {
+          "op": "fact",
+          "key": "cadet_by_sunset",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "i": 63,
+      "ops": []
+    },
+    {
+      "i": 64,
+      "ops": []
+    },
+    {
+      "i": 65,
+      "ops": []
+    },
+    {
+      "i": 66,
+      "gist": "She leaves the office into the hallway.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "office_hallway",
+          "kind": "place",
+          "name": "hallway outside General's office"
+        },
+        {
+          "op": "move",
+          "to": "office_hallway"
+        },
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "guards"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 67,
+      "gist": "Mira calls the General crazy.",
+      "ops": [
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "guards",
+            "mira"
+          ]
+        },
+        {
+          "op": "believe",
+          "about": "general_sorrengail",
+          "claim": "is batshit crazy",
+          "ground": "told"
+        }
+      ]
+    },
+    {
+      "i": 68,
+      "ops": []
+    },
+    {
+      "i": 69,
+      "gist": "They have an hour and thousands of candidates wait outside.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "candidate_report_deadline_hours",
+          "value": "1"
+        },
+        {
+          "op": "fact",
+          "key": "candidates_waiting_outside",
+          "value": "thousands"
+        }
+      ]
+    },
+    {
+      "i": 70,
+      "gist": "They arrive at her room.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "violet_room",
+          "kind": "place",
+          "name": "Violet's room"
+        },
+        {
+          "op": "move",
+          "to": "violet_room"
+        },
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 71,
+      "gist": "Her room has been packed up.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_belongings_packed_into_crates",
+          "value": "true"
+        },
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "body",
+          "detail": "stomach sinks to the hardwood floor"
+        }
+      ]
+    },
+    {
+      "i": 72,
+      "ops": [
+        {
+          "op": "touch",
+          "ids": [
+            "riders_quadrant",
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 73,
+      "ops": []
+    },
+    {
+      "i": 74,
+      "ops": []
+    },
+    {
+      "i": 75,
+      "ops": []
+    },
+    {
+      "i": 76,
+      "gist": "Brennan did something for Mira that still brings grief.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "brennan_did_something_for_mira",
+          "value": "true",
+          "about": "brennan"
+        }
+      ]
+    },
+    {
+      "i": 77,
+      "gist": "Violet can't handle a sword but is lightning-quick with daggers.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_dagger_speed",
+          "value": "lightning quick"
+        },
+        {
+          "op": "fact",
+          "key": "violet_cannot_sword",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "i": 78,
+      "gist": "Mira gives Violet new rider boots and a black uniform.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "new_boots",
+          "kind": "object",
+          "name": "rider boots",
+          "note": "rubber-bottomed, given by Mira"
+        },
+        {
+          "op": "entity",
+          "id": "black_uniform",
+          "kind": "object",
+          "name": "black rider uniform"
+        },
+        {
+          "op": "relate",
+          "from": "new_boots",
+          "to": "narrator",
+          "kind": "given_to",
+          "valence": 0
+        },
+        {
+          "op": "relate",
+          "from": "black_uniform",
+          "to": "narrator",
+          "kind": "given_to",
+          "valence": 0
+        }
+      ]
+    },
+    {
+      "i": 79,
+      "ops": []
+    },
+    {
+      "i": 80,
+      "ops": []
+    },
+    {
+      "i": 81,
+      "ops": [
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 82,
+      "gist": "Mira says Violet's pack is too heavy and her boots are a death trap.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_boots_dangerous",
+          "value": "true",
+          "about": "narrator"
+        }
+      ]
+    },
+    {
+      "i": 83,
+      "gist": "Mira had rider boots made for Violet as a contingency; old boots would cause slipping on the parapet.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_original_boots_slippery",
+          "value": "true"
+        },
+        {
+          "op": "fact",
+          "key": "mira_had_rider_boots_made",
+          "value": "true"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "new_boots"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 84,
+      "gist": "Violet saves her favorite book of dark fables.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "dark_fables_book",
+          "kind": "object",
+          "name": "collection of dark fables",
+          "note": "Violet's favorite"
+        }
+      ]
+    },
+    {
+      "i": 85,
+      "gist": "Mira challenges whether the book is worth dying for.",
+      "ops": [
+        {
+          "op": "open",
+          "qid": "worth_dying_for_books",
+          "text": "Is Violet willing to die for her books?",
+          "kind": "desire",
+          "heat": 2
+        }
+      ]
+    },
+    {
+      "i": 86,
+      "gist": "Violet laments that she should be embracing books, not discarding them.",
+      "ops": []
+    },
+    {
+      "i": 87,
+      "gist": "Mira describes the lethal parapet and coldly tells Violet she'll die, showing her own ruthless survival.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "parapet_width_inches",
+          "value": "18",
+          "about": "parapet"
+        },
+        {
+          "op": "fact",
+          "key": "parapet_height_feet",
+          "value": "200",
+          "about": "parapet"
+        },
+        {
+          "op": "fact",
+          "key": "rain_expected",
+          "value": "true"
+        },
+        {
+          "op": "believe",
+          "about": "mira",
+          "claim": "shrewd, cunning, a touch cruel",
+          "ground": "shown"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "threshing"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 88,
+      "gist": "Violet clings to the fables book because Dad gave it to her.",
+      "ops": [
+        {
+          "op": "recall",
+          "id": "dad"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "dragons"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 89,
+      "gist": "Mira mentions dark-wielding vermin and wyvern from the fables.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "wyvern",
+          "kind": "concept",
+          "name": "wyvern",
+          "note": "two-legged dragons from the fables"
+        }
+      ]
+    },
+    {
+      "i": 90,
+      "gist": "Violet corrects the term: venin, not vermin.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "venin",
+          "kind": "concept",
+          "name": "venin",
+          "note": "dark-wielders from the fables, not vermin"
+        }
+      ]
+    },
+    {
+      "i": 91,
+      "gist": "Mira reveals Dad tried to save her too, and forces Violet to choose: die a scribe or live as a rider.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "dad_tried_to_save_violet",
+          "value": "true"
+        },
+        {
+          "op": "fact",
+          "key": "mira_tried_to_save_violet",
+          "value": "true"
+        },
+        {
+          "op": "open",
+          "qid": "how_dad_tried_to_save_violet",
+          "text": "How did Dad try to save Violet from the Riders Quadrant?",
+          "kind": "mystery",
+          "heat": 2
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "dragons",
+            "dad"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 92,
+      "ops": []
+    },
+    {
+      "i": 93,
+      "gist": "Violet keeps the other book and calls Mira a pain in the ass, showing affection.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "other_book",
+          "kind": "object",
+          "name": "other book",
+          "note": "the book Violet keeps while ditching the fables"
+        }
+      ]
+    },
+    {
+      "i": 94,
+      "gist": "Mira asks why Violet kept the other book, promising to keep her alive.",
+      "ops": [
+        {
+          "op": "open",
+          "qid": "why_keep_other_book",
+          "text": "Why did Violet keep the other book?",
+          "kind": "desire",
+          "heat": 1
+        }
+      ]
+    },
+    {
+      "i": 95,
+      "ops": []
+    },
+    {
+      "i": 96,
+      "gist": "they have forty-five minutes until the event",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "time_until_event_minutes",
+          "value": "45"
+        }
+      ]
+    },
+    {
+      "i": 97,
+      "ops": []
+    },
+    {
+      "i": 98,
+      "ops": []
+    },
+    {
+      "i": 99,
+      "gist": "Violet feels like an imposter in the gear",
+      "ops": [
+        {
+          "op": "believe",
+          "about": "narrator",
+          "claim": "I feel like an imposter",
+          "ground": "shown"
+        }
+      ]
+    },
+    {
+      "i": 100,
+      "ops": []
+    },
+    {
+      "i": 101,
+      "gist": "The vest has hidden sheaths along the ribs",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "hidden_sheaths",
+          "kind": "object",
+          "name": "hidden sheaths in vest"
+        },
+        {
+          "op": "sense",
+          "about": "hidden_sheaths",
+          "channel": "touch",
+          "detail": "diagonal along rib cage"
+        }
+      ]
+    },
+    {
+      "i": 102,
+      "ops": []
+    },
+    {
+      "i": 103,
+      "gist": "She has only four daggers",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_dagger_count",
+          "value": "4"
+        }
+      ]
+    },
+    {
+      "i": 104,
+      "ops": []
+    },
+    {
+      "i": 105,
+      "gist": "She also has thigh sheaths; the blades are easily accessible",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "thigh_sheaths",
+          "kind": "object",
+          "name": "thigh sheaths in pants"
+        }
+      ]
+    },
+    {
+      "i": 106,
+      "gist": "She looks like a rider but still feels like a scribe",
+      "ops": [
+        {
+          "op": "believe",
+          "about": "narrator",
+          "claim": "I still feel like a scribe",
+          "ground": "shown"
+        }
+      ]
+    },
+    {
+      "i": 107,
+      "gist": "Mira repacks my bag, discarding sentimentals, then braids my hair.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "rucksack_repacked_by_mira",
+          "value": "true",
+          "about": "narrator"
+        }
+      ]
+    },
+    {
+      "i": 108,
+      "ops": []
+    },
+    {
+      "i": 109,
+      "ops": []
+    },
+    {
+      "i": 110,
+      "gist": "Mira reveals she designed a vest with Teine's dragon scales for me.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "teine",
+          "kind": "character",
+          "name": "Teine",
+          "note": "Mira's dragon"
+        },
+        {
+          "op": "entity",
+          "id": "dragon_scale_vest",
+          "kind": "object",
+          "name": "dragon-scale vest",
+          "note": "vest with Teine's scales sewn in, worn by Violet"
+        },
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "touch",
+          "detail": "Mira tugs her braid painfully tight"
+        }
+      ]
+    },
+    {
+      "i": 111,
+      "ops": [
+        {
+          "op": "touch",
+          "ids": [
+            "teine"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 112,
+      "gist": "A rider with size-altering powers shrunk the scales.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "rider_size_manipulation_exists",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "i": 113,
+      "ops": []
+    },
+    {
+      "i": 114,
+      "gist": "I joke about size; I've only been with two men.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_lover_count",
+          "value": "2",
+          "about": "narrator"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 115,
+      "gist": "My silver-tipped hair makes me a target.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_hair_unique_silver",
+          "value": "true",
+          "about": "narrator"
+        },
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "touch",
+          "detail": "tugs braid and pulls strands tight"
+        }
+      ]
+    },
+    {
+      "i": 116,
+      "gist": "My hair is the only healthy part of me, and my eyes are a strange hazel.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_eye_color",
+          "value": "light hazel of varying blues and ambers",
+          "about": "narrator"
+        },
+        {
+          "op": "fact",
+          "key": "violet_hair_only_healthy_thing",
+          "value": "true",
+          "about": "narrator"
+        }
+      ]
+    },
+    {
+      "i": 117,
+      "ops": []
+    },
+    {
+      "i": 118,
+      "gist": "Mira says Violet is the smartest woman she knows.",
+      "ops": [
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 119,
+      "gist": "Mira says Violet's brain is her best weapon.",
+      "ops": []
+    },
+    {
+      "i": 120,
+      "ops": []
+    },
+    {
+      "i": 121,
+      "gist": "Mira asks if Violet has read the Codex, the riders' rule book.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "codex",
+          "kind": "object",
+          "name": "Codex",
+          "note": "rule book for Riders Quadrant"
+        }
+      ]
+    },
+    {
+      "i": 122,
+      "gist": "The Codex is short because riders have trouble obeying rules.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "codex_length",
+          "value": "shorter than other divisions",
+          "about": "codex"
+        },
+        {
+          "op": "believe",
+          "about": "riders_quadrant",
+          "claim": "have trouble obeying rules",
+          "ground": "suspected"
+        }
+      ]
+    },
+    {
+      "i": 123,
+      "gist": "Mira reveals that cadets can kill at any time to improve Threshing odds because dragons are limited.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "rider_murder_allowed",
+          "value": "cadets can kill at any time"
+        },
+        {
+          "op": "fact",
+          "key": "threshing_odds",
+          "value": "fewer cadets means better odds",
+          "about": "threshing"
+        },
+        {
+          "op": "fact",
+          "key": "dragons_willing_to_bond",
+          "value": "never enough dragons willing to bond",
+          "about": "threshing"
+        },
+        {
+          "op": "fact",
+          "key": "cadets_will_try_to_kill",
+          "value": "true"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "dragons"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 124,
+      "gist": "Mira warns that sleeping isn't safe despite Article Three, so sleep in the vest.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "codex_article_three_sleep_attack",
+          "value": "executable offense to attack sleeping cadet",
+          "about": "codex"
+        }
+      ]
+    },
+    {
+      "i": 125,
+      "gist": "Violet worries that rider black is supposed to be earned.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "rider_black_earned",
+          "value": "must be earned, not given"
+        }
+      ]
+    },
+    {
+      "i": 126,
+      "gist": "Mira says tight clothes prevent wind from catching.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "parapet_wind_catches_cloth",
+          "value": "wind catches loose cloth like a sail",
+          "about": "parapet"
+        }
+      ]
+    },
+    {
+      "i": 127,
+      "ops": []
+    },
+    {
+      "i": 128,
+      "ops": []
+    },
+    {
+      "i": 129,
+      "gist": "Mira says being a Sorrengail is enough justification.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "sorrengail_name_powerful",
+          "value": "true",
+          "about": "general_sorrengail"
+        }
+      ]
+    },
+    {
+      "i": 130,
+      "ops": []
+    },
+    {
+      "i": 131,
+      "ops": []
+    },
+    {
+      "i": 132,
+      "gist": "Mira says there's no cheating after the turret, only survival and death.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "post_turret_no_rules",
+          "value": "once you climb the turret, there is no cheating, only survival and death"
+        }
+      ]
+    },
+    {
+      "i": 133,
+      "gist": "time until event drops to 30 minutes",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "time_until_event_minutes",
+          "value": "30"
+        }
+      ]
+    },
+    {
+      "i": 134,
+      "ops": []
+    },
+    {
+      "i": 135,
+      "ops": []
+    },
+    {
+      "i": 136,
+      "ops": []
+    },
+    {
+      "i": 137,
+      "gist": "Violet descends through halls, sees candidates and roads; empty roads are for the dead.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "empty_roads_for_bodies",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "i": 138,
+      "ops": []
+    },
+    {
+      "i": 139,
+      "gist": "They reach the last corner before the courtyard.",
+      "ops": [
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 140,
+      "gist": "Mira yanks Violet into a tight hug.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "touch",
+          "detail": "Mira yanks her into a tight hug"
+        }
+      ]
+    },
+    {
+      "i": 141,
+      "gist": "Mira says I love you, voice shakes, mentions death roll; they embrace tighter.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "death_roll",
+          "kind": "concept",
+          "name": "death roll"
+        },
+        {
+          "op": "sense",
+          "about": "mira",
+          "channel": "sound",
+          "detail": "voice shakes as she says I love you"
+        }
+      ]
+    },
+    {
+      "i": 142,
+      "ops": []
+    },
+    {
+      "i": 143,
+      "ops": []
+    },
+    {
+      "i": 144,
+      "ops": []
+    },
+    {
+      "i": 145,
+      "gist": "We walk into the crowded courtyard inside the main gate.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "courtyard",
+          "kind": "place",
+          "name": "courtyard inside main gate"
+        },
+        {
+          "op": "move",
+          "to": "courtyard"
+        },
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 146,
+      "gist": "The courtyard is full of instructors and commanders; each quadrant has its own entrance, and riders have a citadel.",
+      "ops": [
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "mira",
+            "general_sorrengail"
+          ]
+        },
+        {
+          "op": "fact",
+          "key": "main_gate_no_cadets",
+          "value": "main gate is the only door no cadet enters today"
+        },
+        {
+          "op": "fact",
+          "key": "riders_have_citadel",
+          "value": "true",
+          "about": "riders_quadrant"
+        }
+      ]
+    },
+    {
+      "i": 147,
+      "ops": []
+    },
+    {
+      "i": 148,
+      "ops": [
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 149,
+      "gist": "Mira tells me to find Dain Aetos.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "dain_aetos",
+          "kind": "character",
+          "name": "Dain Aetos"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 150,
+      "gist": "I've missed Dain, my friend who might be something more.",
+      "ops": [
+        {
+          "op": "relate",
+          "from": "narrator",
+          "to": "dain_aetos",
+          "kind": "friend",
+          "valence": 2
+        },
+        {
+          "op": "fact",
+          "key": "violet_dain_separated_year",
+          "value": "they haven't seen each other in a year"
+        },
+        {
+          "op": "believe",
+          "about": "narrator",
+          "claim": "Dain could be more than a friend",
+          "ground": "suspected"
+        }
+      ]
+    },
+    {
+      "i": 151,
+      "gist": "Dain is a second-year cadet and Mira thinks he'll protect me.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "dain_year",
+          "value": "second-year",
+          "about": "dain_aetos"
+        },
+        {
+          "op": "fact",
+          "key": "mira_out_of_quadrant_years",
+          "value": "3",
+          "about": "mira"
+        },
+        {
+          "op": "believe",
+          "about": "mira",
+          "claim": "Dain will keep Violet safe",
+          "ground": "shown"
+        }
+      ]
+    },
+    {
+      "i": 152,
+      "ops": []
+    },
+    {
+      "i": 153,
+      "ops": []
+    },
+    {
+      "i": 154,
+      "ops": []
+    },
+    {
+      "i": 155,
+      "ops": []
+    },
+    {
+      "i": 156,
+      "gist": "They leave the fortress and enter the organized chaos outside.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "fortress_exterior",
+          "kind": "place",
+          "name": "exterior of fortress"
+        },
+        {
+          "op": "move",
+          "to": "fortress_exterior"
+        },
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 157,
+      "gist": "Candidates come from six provinces and must pass an entrance exam to avoid becoming infantry fodder.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "candidate_provinces",
+          "value": "6"
+        },
+        {
+          "op": "fact",
+          "key": "candidate_selection",
+          "value": "volunteer, sentenced, conscripted"
+        },
+        {
+          "op": "fact",
+          "key": "entrance_exam",
+          "value": "written and agility test"
+        },
+        {
+          "op": "fact",
+          "key": "pass_exam_avoids_infantry_fodder",
+          "value": "true"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "navarre"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 158,
+      "gist": "The college is built into the mountain, with battlements, turrets, and bells.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "college_built_into_mountain",
+          "value": "true"
+        },
+        {
+          "op": "fact",
+          "key": "college_battlements_protect_keep",
+          "value": "true"
+        },
+        {
+          "op": "fact",
+          "key": "college_turrets_at_corners",
+          "value": "4"
+        },
+        {
+          "op": "fact",
+          "key": "turret_houses_bells",
+          "value": "one of the corner turrets"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 159,
+      "gist": "The crowd splits between Infantry, Healer, and Scribe Quadrants; Violet envies the scribes.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "infantry_quadrant_entrance",
+          "value": "northern turret"
+        },
+        {
+          "op": "fact",
+          "key": "healer_quadrant_entrance",
+          "value": "southern gate"
+        },
+        {
+          "op": "fact",
+          "key": "scribe_quadrant_entrance",
+          "value": "central tunnel"
+        },
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "body",
+          "detail": "envy clenches chest at seeing scribes"
+        }
+      ]
+    },
+    {
+      "i": 160,
+      "gist": "Rider candidates must climb the tower to enter.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "rider_entrance_fortified_door",
+          "value": "true"
+        },
+        {
+          "op": "fact",
+          "key": "rider_candidates_climb",
+          "value": "true"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "riders_quadrant"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 161,
+      "gist": "Violet joins the sign-in line and dares to look up.",
+      "ops": [
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 162,
+      "gist": "The parapet is a stone bridge high above, separating rider candidates from cadets.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "parapet_bridge",
+          "kind": "place",
+          "name": "parapet bridge",
+          "note": "stone bridge crossing valley, leads to Riders Quadrant citadel"
+        },
+        {
+          "op": "sense",
+          "about": "parapet_bridge",
+          "channel": "sight",
+          "detail": "stone bridge high above, crossing river-bottomed valley"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "riders_quadrant"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 163,
+      "ops": []
+    },
+    {
+      "i": 164,
+      "ops": []
+    },
+    {
+      "i": 165,
+      "gist": "Candidates disappear through a door into the turret.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "turret_entrance",
+          "kind": "place",
+          "name": "turret entrance",
+          "note": "door that candidates pass through before the parapet"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 166,
+      "gist": "A couple retreats, and only a few dozen candidates remain ahead.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "roll_keepers",
+          "kind": "character",
+          "name": "roll-keepers"
+        },
+        {
+          "op": "fact",
+          "key": "no_parents_ahead",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "i": 167,
+      "gist": "Mira gives more advice: don't look down, balance with arms, drop pack if needed.",
+      "ops": [
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 168,
+      "gist": "Violet panics, considers letting others go first.",
+      "ops": []
+    },
+    {
+      "i": 169,
+      "gist": "Mira insists: cross now before fear takes hold.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "tower_waiting_increases_fear",
+          "value": "true"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 170,
+      "gist": "The bell chimes eight o'clock.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "time",
+          "value": "8am"
+        }
+      ]
+    },
+    {
+      "i": 171,
+      "gist": "The crowd has separated into quadrants to sign the roll.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "crowds_separated_into_quadrants",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "i": 172,
+      "gist": "Mira warns: forge alliances, not friendships.",
+      "ops": [
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 173,
+      "gist": "new candidate: a woman with braids resembling Amari",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "candidate_woman_braids",
+          "kind": "character",
+          "name": "woman candidate with braids"
+        }
+      ]
+    },
+    {
+      "i": 174,
+      "gist": "muscular blond man also ahead",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "blond_candidate",
+          "kind": "character",
+          "name": "muscular blond candidate"
+        }
+      ]
+    },
+    {
+      "i": 175,
+      "gist": "Violet spots someone at the roll-keeping desk and whispers",
+      "ops": [
+        {
+          "op": "open",
+          "qid": "who_is_he_at_desk",
+          "text": "Who is the person at the roll-keeping desk that makes Violet whisper?",
+          "kind": "mystery",
+          "heat": 2
+        }
+      ]
+    },
+    {
+      "i": 176,
+      "gist": "it's a separatist's kid with a rebellion relic",
+      "ops": [
+        {
+          "op": "answer",
+          "qid": "who_is_he_at_desk"
+        },
+        {
+          "op": "entity",
+          "id": "separatist_kid",
+          "kind": "character",
+          "name": "separatist kid"
+        },
+        {
+          "op": "entity",
+          "id": "rebellion_relic",
+          "kind": "concept",
+          "name": "rebellion relic"
+        },
+        {
+          "op": "fact",
+          "key": "rebellion_relic_location",
+          "value": "shimmering mark on wrist",
+          "about": "separatist_kid"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 177,
+      "gist": "dragon relics are honor marks, rebellion relics look different",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "dragon_relic",
+          "kind": "concept",
+          "name": "dragon relic"
+        },
+        {
+          "op": "fact",
+          "key": "rebellion_relic_appearance",
+          "value": "swirls and slashes, more warning than claiming"
+        }
+      ]
+    },
+    {
+      "i": 178,
+      "ops": []
+    },
+    {
+      "i": 179,
+      "gist": "General Melgren's dragon marked them as punishment",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "general_melgren",
+          "kind": "character",
+          "name": "General Melgren"
+        },
+        {
+          "op": "fact",
+          "key": "melgren_dragon_marked_kids",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "i": 180,
+      "ops": []
+    },
+    {
+      "i": 181,
+      "gist": "Xaden Riorson is dangerous, stay away",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "tyrrendor",
+          "kind": "place",
+          "name": "Tyrrendor"
+        },
+        {
+          "op": "entity",
+          "id": "xaden_riorson",
+          "kind": "character",
+          "name": "Xaden Riorson"
+        },
+        {
+          "op": "fact",
+          "key": "most_marked_kids_tyrrendor",
+          "value": "true"
+        },
+        {
+          "op": "open",
+          "qid": "why_stay_away_xaden",
+          "text": "Why stay away from Xaden Riorson?",
+          "kind": "threat",
+          "heat": 3
+        }
+      ]
+    },
+    {
+      "i": 182,
+      "gist": "Xaden Riorson's name shocks Violet",
+      "ops": []
+    },
+    {
+      "i": 183,
+      "gist": "Xaden Riorson is a third-year and will kill Violet for her name.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "xaden_year",
+          "value": "third-year",
+          "about": "xaden_riorson"
+        },
+        {
+          "op": "believe",
+          "about": "xaden_riorson",
+          "claim": "will kill violet if he finds out who she is",
+          "ground": "told"
+        }
+      ]
+    },
+    {
+      "i": 184,
+      "gist": "I voice the question: why is Xaden here if his father was the Great Betrayer?",
+      "ops": [
+        {
+          "op": "open",
+          "qid": "why_xaden_here",
+          "text": "Why is Xaden Riorson at the Riders Quadrant?",
+          "kind": "mystery",
+          "heat": 2
+        }
+      ]
+    },
+    {
+      "i": 185,
+      "gist": "Children of rebellion leaders were conscripted; Xaden survived to become wingleader.",
+      "ops": [
+        {
+          "op": "answer",
+          "qid": "why_xaden_here"
+        },
+        {
+          "op": "fact",
+          "key": "rebellion_leaders_children_conscripted",
+          "value": "true"
+        },
+        {
+          "op": "fact",
+          "key": "xaden_rank",
+          "value": "wingleader",
+          "about": "xaden_riorson"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 186,
+      "ops": []
+    },
+    {
+      "i": 187,
+      "gist": "Mira tells me to find Dain to get into his squad, and stay away from Xaden.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "xaden_allegiance",
+          "value": "sworn to Navarre",
+          "about": "xaden_riorson"
+        },
+        {
+          "op": "believe",
+          "about": "dain_aetos",
+          "claim": "can put Violet in his squad",
+          "ground": "told"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "navarre"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 188,
+      "ops": []
+    },
+    {
+      "i": 189,
+      "gist": "We reach the roll table; Captain Fitzgibbons recognizes me.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "marked_rider_table",
+          "kind": "character",
+          "name": "marked rider at roll table"
+        },
+        {
+          "op": "entity",
+          "id": "fitzgibbons",
+          "kind": "character",
+          "name": "Captain Fitzgibbons"
+        },
+        {
+          "op": "present",
+          "ids": [
+            "mira",
+            "marked_rider_table",
+            "fitzgibbons"
+          ]
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "riders_quadrant"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 190,
+      "ops": []
+    },
+    {
+      "i": 191,
+      "gist": "Fitzgibbons thought I was meant for the Scribe Quadrant.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_meant_for_scribe_quadrant",
+          "value": "true"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "fitzgibbons"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 192,
+      "ops": []
+    },
+    {
+      "i": 193,
+      "ops": [
+        {
+          "op": "touch",
+          "ids": [
+            "general_sorrengail",
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 194,
+      "ops": []
+    },
+    {
+      "i": 195,
+      "gist": "The marked rider hero-worships Mira.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "marked_rider_table",
+          "channel": "smell",
+          "detail": "hero worship"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira",
+            "fitzgibbons"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 196,
+      "ops": []
+    },
+    {
+      "i": 197,
+      "gist": "A cadet mocks Violet's chances.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "snickering_cadet",
+          "kind": "character",
+          "name": "snickering cadet"
+        }
+      ]
+    },
+    {
+      "i": 198,
+      "gist": "Mira is a decorated war hero.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "mira_fought_at_strythmore",
+          "value": "true",
+          "about": "mira"
+        },
+        {
+          "op": "fact",
+          "key": "mira_order_of_the_talon",
+          "value": "true",
+          "about": "mira"
+        }
+      ]
+    },
+    {
+      "i": 199,
+      "ops": []
+    },
+    {
+      "i": 200,
+      "gist": "Mira touches Violet's back.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "mira",
+          "channel": "touch",
+          "detail": "hand at small of back"
+        }
+      ]
+    },
+    {
+      "i": 201,
+      "gist": "Violet sees the dark turret and wants to flee.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "turret_entrance",
+          "channel": "sight",
+          "detail": "ominously dark"
+        },
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "body",
+          "detail": "urge to run"
+        }
+      ]
+    },
+    {
+      "i": 202,
+      "ops": []
+    },
+    {
+      "i": 203,
+      "ops": []
+    },
+    {
+      "i": 204,
+      "gist": "Mira leaves Violet at the turret.",
+      "ops": [
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "candidate_woman_braids",
+            "snickering_cadet"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 205,
+      "ops": []
+    },
+    {
+      "i": 206,
+      "gist": "Violet enters the turret.",
+      "ops": [
+        {
+          "op": "move",
+          "to": "turret_entrance"
+        },
+        {
+          "op": "sense",
+          "about": "turret_entrance",
+          "channel": "sight",
+          "detail": "dim light from equidistant windows along curved staircase"
+        }
+      ]
+    },
+    {
+      "i": 207,
+      "ops": []
+    },
+    {
+      "i": 208,
+      "gist": "The staircase has no railing.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "stone_staircase",
+          "kind": "place",
+          "name": "stone staircase to parapet"
+        },
+        {
+          "op": "sense",
+          "about": "stone_staircase",
+          "channel": "touch",
+          "detail": "no railing, hand on stone wall"
+        }
+      ]
+    },
+    {
+      "i": 209,
+      "ops": []
+    },
+    {
+      "i": 210,
+      "gist": "Violet thinks Dylan might be okay because his mother held on tight.",
+      "ops": [
+        {
+          "op": "believe",
+          "about": "blond_candidate",
+          "claim": "might be decent because mother held on tight",
+          "ground": "shown"
+        }
+      ]
+    },
+    {
+      "i": 211,
+      "ops": []
+    },
+    {
+      "i": 212,
+      "ops": []
+    },
+    {
+      "i": 213,
+      "ops": []
+    },
+    {
+      "i": 214,
+      "gist": "Two fell last year, three counting the one landed on.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "staircase_deaths_last_year",
+          "value": "3",
+          "about": "stone_staircase"
+        }
+      ]
+    },
+    {
+      "i": 215,
+      "gist": "Her eyes are brown.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "candidate_woman_braids",
+          "channel": "sight",
+          "detail": "brown eyes"
+        }
+      ]
+    },
+    {
+      "i": 216,
+      "gist": "250 steps.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "staircase_step_count",
+          "value": "250",
+          "about": "stone_staircase"
+        }
+      ]
+    },
+    {
+      "i": 217,
+      "gist": "Her name is Rhiannon Matthias.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "name",
+          "value": "Rhiannon Matthias",
+          "about": "candidate_woman_braids"
+        }
+      ]
+    },
+    {
+      "i": 218,
+      "gist": "The blond guy is Dylan.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "name",
+          "value": "Dylan",
+          "about": "blond_candidate"
+        }
+      ]
+    },
+    {
+      "i": 219,
+      "gist": "She gives her name as Violet, ignoring Mira's advice to avoid friendships.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "narrator_name",
+          "value": "Violet",
+          "about": "narrator"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 220,
+      "gist": "Dylan, a candidate, is excited for Conscription Day.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "dylan",
+          "kind": "character",
+          "name": "Dylan",
+          "note": "candidate"
+        },
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "candidate_woman_braids",
+            "snickering_cadet",
+            "dylan"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 221,
+      "gist": "She notes the Riders Quadrant only accepts volunteers.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "riders_quadrant_only_volunteers",
+          "value": "true",
+          "about": "riders_quadrant"
+        }
+      ]
+    },
+    {
+      "i": 222,
+      "gist": "Rhiannon is the woman with braids; she can't wait to ride a dragon.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "candidate_woman_braids_name",
+          "value": "Rhiannon",
+          "about": "candidate_woman_braids"
+        }
+      ]
+    },
+    {
+      "i": 223,
+      "gist": "Violet does not want to ride a dragon, deterred by the odds.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_wants_dragon",
+          "value": "false",
+          "about": "narrator"
+        }
+      ]
+    },
+    {
+      "i": 224,
+      "gist": "Dylan's mother wanted him to be a healer.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "dylan_mom_wanted_healer",
+          "value": "true",
+          "about": "dylan"
+        }
+      ]
+    },
+    {
+      "i": 225,
+      "gist": "Rhiannon's twin Raegan is married and expecting; her parents supported her choice.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "rhiannon_parents_supportive",
+          "value": "true",
+          "about": "candidate_woman_braids"
+        },
+        {
+          "op": "fact",
+          "key": "rhiannon_twin_name",
+          "value": "Raegan",
+          "about": "candidate_woman_braids"
+        }
+      ]
+    },
+    {
+      "i": 226,
+      "gist": "She was 'volun-told,' meaning she didn't volunteer.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_volunteered",
+          "value": "false",
+          "about": "narrator"
+        }
+      ]
+    },
+    {
+      "i": 227,
+      "ops": []
+    },
+    {
+      "i": 228,
+      "gist": "She notes the once-snickering candidate now sweating; riders get better pay and uniform leniency.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "snickering_cadet",
+          "channel": "sight",
+          "detail": "sweating and red, no longer snickering"
+        },
+        {
+          "op": "fact",
+          "key": "riders_better_pay",
+          "value": "true",
+          "about": "riders_quadrant"
+        },
+        {
+          "op": "fact",
+          "key": "riders_uniform_leniency",
+          "value": "true",
+          "about": "riders_quadrant"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "dylan"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 229,
+      "gist": "Only rules that apply to riders are in the Codex.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "codex_only_rider_rules",
+          "value": "true",
+          "about": "codex"
+        }
+      ]
+    },
+    {
+      "i": 230,
+      "ops": []
+    },
+    {
+      "i": 231,
+      "ops": []
+    },
+    {
+      "i": 232,
+      "gist": "Riders can marry sooner than other quadrants.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "riders_marry_sooner",
+          "value": "true",
+          "about": "riders_quadrant"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "dylan"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 233,
+      "gist": "Riders marry right after graduation to continue bloodlines; most successful riders are legacies.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "riders_marry_after_graduation",
+          "value": "true",
+          "about": "riders_quadrant"
+        },
+        {
+          "op": "fact",
+          "key": "most_successful_riders_legacies",
+          "value": "true",
+          "about": "riders_quadrant"
+        }
+      ]
+    },
+    {
+      "i": 234,
+      "gist": "Riders tend to die younger than other quadrants.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "riders_die_sooner",
+          "value": "true",
+          "about": "riders_quadrant"
+        }
+      ]
+    },
+    {
+      "i": 235,
+      "gist": "Dylan wears an engagement ring for his girlfriend, planning to propose after graduation.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "dylan_ring",
+          "kind": "object",
+          "name": "engagement ring"
+        },
+        {
+          "op": "fact",
+          "key": "dylan_engaged",
+          "value": "true",
+          "about": "dylan"
+        }
+      ]
+    },
+    {
+      "i": 236,
+      "ops": []
+    },
+    {
+      "i": 237,
+      "ops": []
+    },
+    {
+      "i": 238,
+      "ops": []
+    },
+    {
+      "i": 239,
+      "ops": []
+    },
+    {
+      "i": 240,
+      "gist": "Rhiannon's feet click against the stone steps.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "candidate_woman_braids",
+          "channel": "sound",
+          "detail": "feet clicking against stone steps"
+        }
+      ]
+    },
+    {
+      "i": 241,
+      "gist": "The top doorway is in sight with muddled light; storm clouds threaten.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "turret_entrance",
+          "channel": "sight",
+          "detail": "doorway full of muddled light at top of steps"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 242,
+      "ops": []
+    },
+    {
+      "i": 243,
+      "ops": []
+    },
+    {
+      "i": 244,
+      "gist": "Rhiannon's boot soles are smooth, just like my old ones.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "candidate_woman_braids",
+          "channel": "sight",
+          "detail": "boot soles are smooth"
+        },
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "body",
+          "detail": "stomach sinks like a rock"
+        },
+        {
+          "op": "fact",
+          "key": "rhiannon_boots_smooth",
+          "value": "true",
+          "about": "candidate_woman_braids"
+        }
+      ]
+    },
+    {
+      "i": 245,
+      "ops": []
+    },
+    {
+      "i": 246,
+      "ops": []
+    },
+    {
+      "i": 247,
+      "ops": []
+    },
+    {
+      "i": 248,
+      "gist": "Rhiannon's shoe size is 8.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "rhiannon_shoe_size",
+          "value": "8",
+          "about": "candidate_woman_braids"
+        }
+      ]
+    },
+    {
+      "i": 249,
+      "gist": "I offer to trade my left boot, keeping the right with a dagger; my shoe size is 7.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_shoe_size",
+          "value": "7",
+          "about": "narrator"
+        },
+        {
+          "op": "fact",
+          "key": "right_boot_has_dagger",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "i": 250,
+      "ops": []
+    },
+    {
+      "i": 251,
+      "ops": [
+        {
+          "op": "touch",
+          "ids": [
+            "new_boots"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 252,
+      "ops": []
+    },
+    {
+      "i": 253,
+      "gist": "Three candidates are already crossing the parapet, arms out.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "parapet_bridge",
+          "channel": "sight",
+          "detail": "three candidates crossing with arms stretched wide"
+        }
+      ]
+    },
+    {
+      "i": 254,
+      "ops": []
+    },
+    {
+      "i": 255,
+      "gist": "They swap left boots, and a shove sends Violet onto the open-air platform.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "shoving_cadet",
+          "kind": "character",
+          "name": "shoving cadet",
+          "note": "the guy behind Violet who shoves her"
+        },
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "candidate_woman_braids",
+            "dylan",
+            "shoving_cadet"
+          ]
+        },
+        {
+          "op": "fact",
+          "key": "violet_wears_rhiannon_left_boot",
+          "value": "true",
+          "about": "narrator"
+        }
+      ]
+    },
+    {
+      "i": 256,
+      "gist": "His grating voice dismisses her.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "shoving_cadet",
+          "channel": "sound",
+          "detail": "voice grates on my last nerve"
+        }
+      ]
+    },
+    {
+      "i": 257,
+      "gist": "She dismisses him, feeling wind and humidity, grateful for Mira's braid suggestion.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "touch",
+          "detail": "wind whips at skin, midsummer humidity thick"
+        },
+        {
+          "op": "recall",
+          "id": "mira"
+        }
+      ]
+    },
+    {
+      "i": 258,
+      "gist": "The turret top reveals the intimidating drop; she knows the parapet kills 15% and tests balance for dragon riding.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "parapet_death_rate_percent",
+          "value": "15",
+          "about": "parapet"
+        },
+        {
+          "op": "fact",
+          "key": "parapet_tests_balance_for_dragon_riding",
+          "value": "true",
+          "about": "parapet"
+        }
+      ]
+    },
+    {
+      "i": 259,
+      "gist": "She thinks others accept the risk for glory or arrogance.",
+      "ops": []
+    },
+    {
+      "i": 260,
+      "gist": "She isn’t in either camp.",
+      "ops": []
+    },
+    {
+      "i": 261,
+      "gist": "Nauseous, she follows along the edge, fingers on stone.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "body",
+          "detail": "nausea, holding stomach, breathing exercises"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "dylan"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 262,
+      "gist": "Violet's heart stops at the sight of a third rider.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "rider_with_ripped_sleeves",
+          "kind": "character",
+          "name": "rider with ripped sleeves"
+        },
+        {
+          "op": "entity",
+          "id": "rider_with_mohawk",
+          "kind": "character",
+          "name": "rider with mohawk"
+        },
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "candidate_woman_braids",
+            "dylan",
+            "rider_with_ripped_sleeves",
+            "rider_with_mohawk",
+            "xaden_riorson"
+          ]
+        },
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "body",
+          "detail": "heart stops at sight of third rider"
+        }
+      ]
+    },
+    {
+      "i": 263,
+      "gist": "Her heart stops.",
+      "ops": []
+    },
+    {
+      "i": 264,
+      "gist": "The rider is devastatingly handsome.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "xaden_riorson",
+          "channel": "sight",
+          "detail": "tall, black windblown hair, dark brows, strong jaw, tawny skin, dark stubble, muscular, gold-flecked onyx eyes, harsh carved features, perfect mouth"
+        }
+      ]
+    },
+    {
+      "i": 265,
+      "gist": "She finds him the most exquisite.",
+      "ops": [
+        {
+          "op": "believe",
+          "about": "xaden_riorson",
+          "claim": "most exquisite man Violet has ever seen",
+          "ground": "shown"
+        }
+      ]
+    },
+    {
+      "i": 266,
+      "ops": []
+    },
+    {
+      "i": 267,
+      "gist": "The scar makes him even hotter.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "xaden_scar",
+          "value": "diagonal across left brow and cheek",
+          "about": "xaden_riorson"
+        }
+      ]
+    },
+    {
+      "i": 268,
+      "gist": "He's trouble, reminding her of Mira's warning.",
+      "ops": []
+    },
+    {
+      "i": 269,
+      "gist": "She forgets the reason for the warning.",
+      "ops": [
+        {
+          "op": "open",
+          "qid": "why_stay_away_xaden",
+          "text": "Why stay away from Xaden Riorson?",
+          "kind": "threat",
+          "heat": 3
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 270,
+      "gist": "Dylan begins crossing.",
+      "ops": [
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "candidate_woman_braids",
+            "rider_with_ripped_sleeves",
+            "rider_with_mohawk",
+            "xaden_riorson"
+          ]
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "dylan"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 271,
+      "gist": "The rider is Xaden Riorson.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "xaden_is_third_rider",
+          "value": "true",
+          "about": "xaden_riorson"
+        }
+      ]
+    },
+    {
+      "i": 272,
+      "ops": [
+        {
+          "op": "touch",
+          "ids": [
+            "xaden_riorson"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 273,
+      "gist": "Rhiannon urges her forward.",
+      "ops": []
+    },
+    {
+      "i": 274,
+      "gist": "Xaden's rebellion relic curls from his wrist to his jawline, and he locks eyes with Violet.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "xaden_riorson",
+          "channel": "sight",
+          "detail": "rebellion relic curls from left wrist up neck to jawline"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "rebellion_relic"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 275,
+      "gist": "He seems to have heard her whisper despite the wind.",
+      "ops": [
+        {
+          "op": "affect",
+          "tension": 8,
+          "warmth": -2
+        }
+      ]
+    },
+    {
+      "i": 276,
+      "gist": "Xaden recognizes her as a Sorrengail and steps closer.",
+      "ops": [
+        {
+          "op": "affect",
+          "tension": 9,
+          "warmth": -3
+        }
+      ]
+    },
+    {
+      "i": 277,
+      "gist": "He is massively tall.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "xaden_riorson",
+          "channel": "sight",
+          "detail": "more than four inches over six feet tall"
+        }
+      ]
+    },
+    {
+      "i": 278,
+      "gist": "His hatred is palpable.",
+      "ops": [
+        {
+          "op": "believe",
+          "about": "xaden_riorson",
+          "claim": "he hates Violet",
+          "ground": "shown"
+        },
+        {
+          "op": "affect",
+          "tension": 9,
+          "warmth": -4
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 279,
+      "gist": "Rhiannon steps forward.",
+      "ops": []
+    },
+    {
+      "i": 280,
+      "gist": "He states her identity.",
+      "ops": [
+        {
+          "op": "touch",
+          "ids": [
+            "general_sorrengail"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 281,
+      "gist": "She throws his father back at him.",
+      "ops": []
+    },
+    {
+      "i": 282,
+      "gist": "Terrified he'll throw her off the turret.",
+      "ops": [
+        {
+          "op": "open",
+          "qid": "will_xaden_throw_her",
+          "text": "Will Xaden throw Violet off the turret?",
+          "kind": "threat",
+          "heat": 2
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 283,
+      "gist": "Xaden reveals her mother captured his father and oversaw his execution.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "general_sorrengail_captured_fen_riorson",
+          "value": "true"
+        },
+        {
+          "op": "fact",
+          "key": "general_sorrengail_oversaw_execution_fen_riorson",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "i": 284,
+      "gist": "She claims his father killed her brother Brennan.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "fen_riorson",
+          "kind": "character",
+          "name": "Fen Riorson"
+        },
+        {
+          "op": "fact",
+          "key": "brennan_killed_by_fen_riorson",
+          "value": "true",
+          "about": "fen_riorson"
+        }
+      ]
+    },
+    {
+      "i": 285,
+      "gist": "He scans her for weaknesses, mentions her sister is a rider.",
+      "ops": []
+    },
+    {
+      "i": 286,
+      "gist": "Rhiannon links Violet's confrontation to Xaden's leathers",
+      "ops": []
+    },
+    {
+      "i": 287,
+      "gist": "Violet vows to cross for Mira's sake",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "violet_determined_to_cross",
+          "value": "true"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 288,
+      "gist": "Xaden tenses, ready to strike",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "xaden_riorson",
+          "channel": "body",
+          "detail": "hands clench into fists, body tenses"
+        }
+      ]
+    },
+    {
+      "i": 289,
+      "gist": "Violet braces for him to throw her",
+      "ops": []
+    },
+    {
+      "i": 290,
+      "gist": "Rhiannon asks if Violet is all right",
+      "ops": []
+    },
+    {
+      "i": 291,
+      "gist": "Xaden asks if they are friends",
+      "ops": [
+        {
+          "op": "open",
+          "qid": "xaden_thinks_violet_rhiannon_friends",
+          "text": "Does Xaden see Violet and Rhiannon as friends?",
+          "kind": "mystery",
+          "heat": 1
+        }
+      ]
+    },
+    {
+      "i": 292,
+      "gist": "Rhiannon says they met on the stairs",
+      "ops": []
+    },
+    {
+      "i": 293,
+      "gist": "Xaden notices the mismatched shoes",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "xaden_noticed_shoe_swap",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "i": 294,
+      "gist": "Xaden relaxes, dropping the immediate threat",
+      "ops": [
+        {
+          "op": "answer",
+          "qid": "will_xaden_throw_her",
+          "subverted": true
+        }
+      ]
+    },
+    {
+      "i": 295,
+      "gist": "Violet asks if he will kill her",
+      "ops": []
+    },
+    {
+      "i": 296,
+      "gist": "Rain pours down in a deluge",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "rain_now",
+          "value": "true"
+        },
+        {
+          "op": "open",
+          "qid": "rain_makes_parapet_slick",
+          "text": "Will rain make the parapet even deadlier?",
+          "kind": "threat",
+          "heat": 2
+        }
+      ]
+    },
+    {
+      "i": 297,
+      "gist": "Dylan slips off the parapet",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "dylan",
+          "channel": "sight",
+          "detail": "slips"
+        },
+        {
+          "op": "fact",
+          "key": "dylan_slipped",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "i": 298,
+      "gist": "The narrator gasps in shock.",
+      "ops": []
+    },
+    {
+      "i": 299,
+      "gist": "Dylan catches himself momentarily.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "dylan",
+          "channel": "sight",
+          "detail": "hooks arms over stone, feet kicking for purchase"
+        }
+      ]
+    },
+    {
+      "i": 300,
+      "gist": "Rhiannon shouts encouragement.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "candidate_woman_braids",
+          "channel": "sound",
+          "detail": "shouts 'Pull yourself up, Dylan!'"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "dylan"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 301,
+      "gist": "Dylan falls to his death.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "dylan_fell",
+          "value": "true",
+          "about": "dylan"
+        },
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "candidate_woman_braids",
+            "rider_with_ripped_sleeves",
+            "rider_with_mohawk",
+            "xaden_riorson"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 302,
+      "ops": []
+    },
+    {
+      "i": 303,
+      "gist": "Xaden watches her with an unreadable expression.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "xaden_riorson",
+          "channel": "sight",
+          "detail": "watching silently, unreadable expression"
+        },
+        {
+          "op": "open",
+          "qid": "xaden_unreadable_stare",
+          "text": "What is Xaden thinking while watching her after Dylan's fall?",
+          "kind": "mystery",
+          "heat": 2
+        }
+      ]
+    },
+    {
+      "i": 304,
+      "gist": "Xaden says he expects the parapet to kill her, so he won't bother killing her himself.",
+      "ops": [
+        {
+          "op": "believe",
+          "about": "xaden_riorson",
+          "claim": "He expects the parapet to kill Violet, so he won't waste energy killing her",
+          "ground": "told"
+        },
+        {
+          "op": "answer",
+          "qid": "xaden_unreadable_stare"
+        }
+      ]
+    }
+  ]
+}

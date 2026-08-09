@@ -1,0 +1,333 @@
+{
+  "chapter": "Chapter 1",
+  "units": 24,
+  "deltas": [
+    {
+      "i": 0,
+      "ops": []
+    },
+    {
+      "i": 1,
+      "ops": []
+    },
+    {
+      "i": 2,
+      "ops": []
+    },
+    {
+      "i": 3,
+      "ops": []
+    },
+    {
+      "i": 4,
+      "ops": []
+    },
+    {
+      "i": 5,
+      "ops": []
+    },
+    {
+      "i": 6,
+      "ops": []
+    },
+    {
+      "i": 7,
+      "ops": []
+    },
+    {
+      "i": 8,
+      "ops": []
+    },
+    {
+      "i": 9,
+      "ops": []
+    },
+    {
+      "i": 10,
+      "ops": []
+    },
+    {
+      "i": 11,
+      "gist": "The general curses and I grab the couch for balance.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "narrator",
+          "kind": "character",
+          "name": "I"
+        },
+        {
+          "op": "entity",
+          "id": "general",
+          "kind": "character",
+          "name": "The General"
+        },
+        {
+          "op": "sense",
+          "about": "general",
+          "channel": "sound",
+          "detail": "curses"
+        },
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "general"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 12,
+      "gist": "Mira rushes to my side, calling the general 'Mom'.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "mira",
+          "kind": "character",
+          "name": "Mira"
+        },
+        {
+          "op": "relate",
+          "from": "narrator",
+          "to": "general",
+          "kind": "mother",
+          "valence": -1
+        },
+        {
+          "op": "relate",
+          "from": "narrator",
+          "to": "mira",
+          "kind": "sister",
+          "valence": 2
+        },
+        {
+          "op": "present",
+          "ids": [
+            "narrator",
+            "general",
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 13,
+      "gist": "I'm mortified; Mira's only been back five minutes and is already saving me – because I need it.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "body",
+          "detail": "cheeks heat with mortification"
+        },
+        {
+          "op": "believe",
+          "about": "narrator",
+          "claim": "I need saving",
+          "ground": "shown"
+        },
+        {
+          "op": "fact",
+          "key": "mira_returned",
+          "value": "5 minutes ago",
+          "about": "mira"
+        }
+      ]
+    },
+    {
+      "i": 14,
+      "gist": "I want nothing to do with the Riders Quadrant.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "riders_quadrant",
+          "kind": "faction",
+          "name": "Riders Quadrant"
+        },
+        {
+          "op": "fact",
+          "key": "wants_riders",
+          "value": "false",
+          "about": "narrator"
+        }
+      ]
+    },
+    {
+      "i": 15,
+      "gist": "I should have failed the Basgiath test and joined the army; I can handle myself.",
+      "ops": [
+        {
+          "op": "entity",
+          "id": "basgiath",
+          "kind": "place",
+          "name": "Basgiath"
+        },
+        {
+          "op": "fact",
+          "key": "quadrant",
+          "value": "Riders",
+          "about": "narrator"
+        }
+      ]
+    },
+    {
+      "i": 16,
+      "gist": "Mira says 'Oh, Violet' – that's my name – and braces my shoulders.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "name",
+          "value": "Violet",
+          "about": "narrator"
+        },
+        {
+          "op": "sense",
+          "about": "mira",
+          "channel": "sight",
+          "detail": "worried brown eyes"
+        },
+        {
+          "op": "sense",
+          "about": "narrator",
+          "channel": "touch",
+          "detail": "Mira braces my shoulders"
+        }
+      ]
+    },
+    {
+      "i": 17,
+      "gist": "I'm glad to see my sister Mira after years; she might be here to say goodbye.",
+      "ops": [
+        {
+          "op": "relate",
+          "from": "narrator",
+          "to": "mira",
+          "kind": "sister",
+          "valence": 2
+        },
+        {
+          "op": "fact",
+          "key": "last_seen",
+          "value": "years ago",
+          "about": "narrator"
+        },
+        {
+          "op": "open",
+          "qid": "mira_goodbye",
+          "text": "Why is Mira saying goodbye?",
+          "kind": "mystery",
+          "heat": 1
+        }
+      ]
+    },
+    {
+      "i": 18,
+      "gist": "Mira almost hugs me, then steps back and tells our mother 'You can't do this.'",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "mira",
+          "channel": "sight",
+          "detail": "eyes soften, fingers flex, steps back"
+        },
+        {
+          "op": "open",
+          "qid": "what_mom_did",
+          "text": "What did the general do that Mira says she can't do?",
+          "kind": "mystery",
+          "heat": 2
+        }
+      ]
+    },
+    {
+      "i": 19,
+      "gist": "Mom says it's already done, with a shrug.",
+      "ops": [
+        {
+          "op": "sense",
+          "about": "general",
+          "channel": "sight",
+          "detail": "black uniform shrugs"
+        }
+      ]
+    },
+    {
+      "i": 20,
+      "gist": "I had hoped for a reprieve, but Mom is famously merciless.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "reputation",
+          "value": "merciless",
+          "about": "general"
+        }
+      ]
+    },
+    {
+      "i": 21,
+      "gist": "Mira says Violet trained as a scribe, not a rider, and demands she undo it.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "training",
+          "value": "scribe",
+          "about": "narrator"
+        },
+        {
+          "op": "answer",
+          "qid": "what_mom_did"
+        },
+        {
+          "op": "touch",
+          "ids": [
+            "mira"
+          ]
+        }
+      ]
+    },
+    {
+      "i": 22,
+      "gist": "Mom calls Mira 'Lieutenant Sorrengail', and her dragon-like eyes appraise us.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "rank",
+          "value": "Lieutenant",
+          "about": "mira"
+        },
+        {
+          "op": "fact",
+          "key": "surname",
+          "value": "Sorrengail",
+          "about": "mira"
+        },
+        {
+          "op": "sense",
+          "about": "general",
+          "channel": "sight",
+          "detail": "narrowed appraising eyes like carved dragons"
+        },
+        {
+          "op": "open",
+          "qid": "what_mom_sees",
+          "text": "What does the general see when she looks at Violet and Mira?",
+          "kind": "mystery",
+          "heat": 1
+        }
+      ]
+    },
+    {
+      "i": 23,
+      "gist": "Mira is a younger version of their mother.",
+      "ops": [
+        {
+          "op": "fact",
+          "key": "mira_looks_like_mother",
+          "value": "true",
+          "about": "mira"
+        }
+      ]
+    }
+  ]
+}

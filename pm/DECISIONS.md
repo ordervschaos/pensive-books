@@ -6,6 +6,49 @@
 
 ## Log
 
+### 2026-08-09 — Reader model: GWT as architecture, IIT rejected, emotion derived not asked
+
+Prompted by "can IIT / global workspace theory give us the model of the reader's mind — context +
+memory + current events generating emotion and understanding?" Research note:
+`.doc_1786257284000_consciousness_theories_reader_model.md`.
+
+**1. Global Workspace is adopted — as a software architecture, not as a truth claim.** Baars
+designed GWT as a computational pattern, and its usefulness to a reader simulator does not depend on
+it being the right account of human brains. It names a real defect in what we shipped:
+`workingSet` is a *passive readout* ("everything above activation 0.15" — ~15 entities on a dense
+page, which no reader holds), where GWT requires a **capacity-limited, threshold-gated workspace
+that is broadcast back as the interpretive frame for the next unit**. `forwardPass.carry()` currently
+ships ~90 entities into the next window; the replacement is hot-workspace + cued-retrieval store.
+Cheaper prompt, scales to a whole novel, and it makes **unresolved-reference detection** possible —
+a unit naming something neither ignited nor retrievable is a comprehension break, which we cannot
+currently see at all. (Replaces: the flat undifferentiated carry.)
+
+**2. IIT is rejected for engineering use.** Three independent blockers, any one disqualifying: Φ is
+super-exponential to compute (published values are ~10-element toy networks); it is
+substrate-relative and **explicitly assigns Φ≈0 to feed-forward networks**, which is exactly what
+the forward pass is — so Φ language would be *backwards*, not merely imprecise; and it measures the
+integration of the machine rather than of the story model, which is the thing we care about. One
+idea survives as **labelled inspiration, never as Φ**: irreducibility as a quality bar, computed on
+our own graph as `load-bearing-ness(e)` = how much the model degrades if `e` is removed (relations
+lost, facts orphaned, questions rendered unanswerable). It composes with `importance` by measuring
+*structural load* where that measures *attention*.
+
+**3. Affect will be derived, not asked.** The current `{op:"affect", tension, warmth}` asks the model
+"how does this feel?" — the read-out view of emotion. Barrett's constructed-emotion account (and the
+predictive-processing frame the question actually described) says tension is manufactured by the
+collision of the event with what the reader already cares about, so it should fall out of state we
+already hold: `Σ heat(open threat) × activation(thing threatened) × workspace proximity`. The model's
+answer is retained only as a **sanity check** — where derived and asserted disagree is itself a
+finding, the same shape as the "asserted, not embodied" lint the DNA stack already runs. (Replaces:
+affect as a judged property of the prose.)
+
+**Standing caveat.** Neither theory is settled. The COGITATE adversarial collaboration (*Nature*
+642:133–142, 2025; n=256; both camps pre-registered their own divergent predictions) found **neither
+theory's core predictions survived intact** — IIT contradicted by absent sustained posterior
+synchronization, GNWT by absent ignition at stimulus offset. IIT also drew a 124-signatory
+"pseudoscience" letter in 2023. So: borrow the architecture, never cite the neuroscience as
+authority for a product decision.
+
 ### 2026-08-07 — The digest leaves the monorepo; `serial` is cut; the shared database stays
 
 Owner call, on the premise that **the digest's user base is not the books app's user base**. Three

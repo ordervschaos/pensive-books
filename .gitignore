@@ -42,6 +42,7 @@ scripts/.dna-*.json
 scripts/.dna-*.md
 scripts/.dna-*.out
 scripts/.eval-*
+scripts/.reader-machine/
 scripts/.agent-run-*.json
 scripts/.agent-eval-*.json
 scripts/.agent-suite-*.json
