@@ -18,6 +18,26 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-10 — Reader Machine demo: admin-only full-text inspection `[ship]`
+- **What:** `/reader`'s pre-filled run intentionally ships Fourth Wing measurements without the
+  manuscript (copyright — see DemoFixture.tsx), so most of the unit table/timeline showed
+  "— text not shipped —" past unit 12. User asked to fill in the missing text; flagged that doing
+  so in the public bundle would mean shipping most of a copyrighted novel to every visitor, so
+  scoped it to admin-only inspection instead. Built: a private `reader-admin` Storage bucket +
+  RLS policy gated on `admin_users` (migration `20260810120000_reader_admin_storage.sql`,
+  applied directly via psql — `db push` is still blocked, same pre-existing history drift as
+  2026-08-09), a one-off generator/uploader (`scripts/reader-admin-fixture.mts`, full 305-unit/
+  7,883-word chapter, re-runnable, output never committed to the repo), and a client-side
+  `useAdminFullText` hook in `ReaderMachinePage.tsx` that fetches and merges full text into the
+  unit stream only when `useAdmin().isAdmin && demo` — non-admins' browsers never request the
+  object. Verified server-side with real JWTs: admin download → 200 with full text; non-admin
+  and anon → 404 NoSuchKey (Storage RLS masks existence, fail-closed).
+- **Files/commits:** `apps/web/src/features/reader/pages/ReaderMachinePage.tsx`,
+  `scripts/reader-admin-fixture.mts`, `supabase/migrations/20260810120000_reader_admin_storage.sql`
+  (commit 95ab345).
+- **PM impact:** none — inspection tooling, not a roadmap item. Same open `db push` migration-history
+  drift noted 2026-08-09 still unresolved, still deliberately left alone.
+
 ## 2026-08-10 — Publish button in DNA Studio `[ship]`
 - **What:** Added a "publish →" button to the DNA Studio top bar (next to "read →"). It renders the
   tree onto pages via the existing `reconcileDna` (skipped if already public — unpublish doesn't need
