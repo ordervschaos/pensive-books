@@ -9,7 +9,7 @@
 //
 // The pipeline itself lives in ../lib/readerMachine.ts, which scripts/reader-machine.mts also
 // imports — one implementation, no twin to drift.
-import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   analyzeChapter, castCurve, readEpub,
@@ -19,6 +19,8 @@ import { invokeFn } from "@/lib/localFn";
 import { planWindows, runForwardPass, type ForwardProgress, type TraceCall } from "../lib/forwardPass";
 import { type UnitDelta } from "../lib/brain";
 import { BrainTimeline } from "../components/BrainTimeline";
+import { useAdmin } from "@/hooks/use-admin";
+import { supabase } from "@/integrations/supabase/client";
 
 // ── palette ──────────────────────────────────────────────────────────────────────────────────────
 // Validated with the dataviz validator (all-pairs, both modes): categorical slots 1–3 for the three
@@ -107,6 +109,26 @@ const LENSES: Lens[] = [
   { key: "questions", title: "Questions", note: "literal “?” — the dumb baseline P1 must beat", pick: (u) => u.questions, fmt: (n) => n.toFixed(1) },
 ];
 
+// The public demo fixture ships measurements only (see DemoFixture.tsx). The full text of the same
+// chapter lives in a PRIVATE Storage bucket for admin inspection — gated by admin_users RLS, never
+// bundled into the web build (supabase/migrations/20260810120000_reader_admin_storage.sql, generated
+// by scripts/reader-admin-fixture.mts). Fetched only when both the demo is loaded AND the viewer is
+// an admin, so a non-admin's browser never even requests it.
+function useAdminFullText(enabled: boolean): Map<number, string> | null {
+  const [text, setText] = useState<Map<number, string> | null>(null);
+  useEffect(() => {
+    if (!enabled) { setText(null); return; }
+    let cancelled = false;
+    supabase.storage.from("reader-admin").download("fourth-wing-ch1-fulltext.json").then(async ({ data, error }) => {
+      if (cancelled || error || !data) return;
+      const parsed = JSON.parse(await data.text()) as { units: { i: number; text: string }[] };
+      if (!cancelled) setText(new Map(parsed.units.map((u) => [u.i, u.text])));
+    });
+    return () => { cancelled = true; };
+  }, [enabled]);
+  return text;
+}
+
 // ── page ─────────────────────────────────────────────────────────────────────────────────────────
 export default function ReaderMachinePage() {
   const [book, setBook] = useState<ReaderBook | null>(null);
@@ -114,6 +136,8 @@ export default function ReaderMachinePage() {
   const [demo, setDemo] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { isAdmin } = useAdmin();
+  const adminFullText = useAdminFullText(demo && isAdmin);
 
   const load = useCallback(async (file: File) => {
     setBusy(true); setError(null); setDemo(false); setBook(null); setAnalysis(null);
@@ -159,7 +183,13 @@ export default function ReaderMachinePage() {
 
         {demo && (
           <Suspense fallback={<p className="mt-8 text-sm" style={{ color: "var(--ink-3)" }}>loading the pre-filled run…</p>}>
-            <DEMO render={(a: Analysis, d: UnitDelta[]) => <Report analysis={a} deltas={d} />} />
+            <DEMO render={(a: Analysis, d: UnitDelta[]) => (
+              <Report
+                analysis={adminFullText ? { ...a, units: a.units.map((u) => ({ ...u, text: adminFullText.get(u.i) ?? u.text })) } : a}
+                deltas={d}
+                adminInspecting={!!adminFullText}
+              />
+            )} />
           </Suspense>
         )}
 
@@ -227,7 +257,7 @@ function ChapterPicker({ labels, active, onPick }: { labels: string[]; active: n
 }
 
 // ── report ───────────────────────────────────────────────────────────────────────────────────────
-function Report({ analysis, deltas }: { analysis: Analysis; deltas?: UnitDelta[] }) {
+function Report({ analysis, deltas, adminInspecting }: { analysis: Analysis; deltas?: UnitDelta[]; adminInspecting?: boolean }) {
   const { units, chapter, cast, words, rawFragments, span } = analysis;
 
   const series = useMemo(() => {
@@ -314,7 +344,13 @@ function Report({ analysis, deltas }: { analysis: Analysis; deltas?: UnitDelta[]
         : <ForwardPass units={units} />}
 
       <h3 className="mb-1 mt-10 text-sm font-semibold">Unit stream</h3>
-      {units.some((u) => !u.text) && (
+      {adminInspecting && (
+        <p className="mb-3 text-xs" style={{ color: "var(--kind-dialogue)" }}>
+          Admin inspection: full manuscript text loaded from private storage. Never shipped to
+          non-admin visitors — see DemoFixture.tsx.
+        </p>
+      )}
+      {!adminInspecting && units.some((u) => !u.text) && (
         <p className="mb-3 text-xs" style={{ color: "var(--ink-3)" }}>
           The pre-filled run ships measurements, not the manuscript — text is kept for the opening
           units only. Load the epub yourself to see every unit’s prose; it stays in your browser.
