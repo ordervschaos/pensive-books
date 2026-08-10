@@ -20,6 +20,7 @@ import { buildJourney, dnaHealth, DNA_STAGES, STAGE_KINDS, type StageKey } from 
 import { useToast } from "@/hooks/use-toast";
 import { useBookPermissions } from "@/hooks/use-book-permissions";
 import { reconcileDna } from "@/features/dna/lib/novelDnaRender";
+import { PublishingDialog } from "@/components/book/PublishingDialog";
 import { MONO, QuickToggle, SERIF, setConsoleTheme, T } from "@/features/dna/components/tree/treeChrome";
 import { PanelLeft } from "lucide-react";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -96,6 +97,7 @@ export default function StudioTreePage() {
   }, [permLoading, hasAccess, canEdit, bookSlug, navigate]);
 
   const [bookName, setBookName] = useState<string>("");
+  const [isPublic, setIsPublic] = useState<boolean>(false);
   const [settings, setSettings] = useState<BookSettings>({});
   const [nodes, setNodes] = useState<DnaNode[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -220,10 +222,11 @@ export default function StudioTreePage() {
     void (async () => {
       const [{ data: nodeRows, error: nodesErr }, { data: book, error: bookErr }] = await Promise.all([
         supabase.from("book_nodes").select("*").eq("book_id", bookId).order("position"),
-        supabase.from("books").select("name, author, brief").eq("id", bookId).maybeSingle(),
+        supabase.from("books").select("name, author, brief, is_public").eq("id", bookId).maybeSingle(),
       ]);
       if (nodesErr || bookErr) { setError((nodesErr ?? bookErr)?.message ?? "error"); return; }
       setBookName(book?.name ?? "");
+      setIsPublic(book?.is_public ?? false);
       const loadedBrief = (book?.brief as Brief | null) ?? null;
       setBrief(loadedBrief);
       setSettings({ title: book?.name ?? undefined, author: (book?.author as string | null) ?? undefined,
@@ -277,9 +280,10 @@ export default function StudioTreePage() {
   useEffect(() => {
     if (!bookId) return;
     let t: ReturnType<typeof setTimeout> | null = null;
-    const reload = () => void supabase.from("books").select("name, author, brief").eq("id", bookId).maybeSingle().then(({ data: book }) => {
+    const reload = () => void supabase.from("books").select("name, author, brief, is_public").eq("id", bookId).maybeSingle().then(({ data: book }) => {
       if (!book) return;
       setBookName(book.name ?? "");
+      setIsPublic(book.is_public ?? false);
       const loadedBrief = (book.brief as Brief | null) ?? null;
       setBrief(loadedBrief);
       setSettings((prev) => ({ ...prev, title: book.name ?? undefined, author: (book.author as string | null) ?? undefined,
@@ -336,6 +340,19 @@ export default function StudioTreePage() {
     try { await reconcileDna(bookId); window.location.href = `/books/${bookSlug}`; }
     catch (e) { toast({ title: "Couldn't render", description: String((e as Error)?.message ?? e), variant: "destructive" }); setRendering(null); }
   }, [bookId, bookSlug, rendering, toast]);
+  // Publish: render the tree onto pages first (so the published draft is never stale), then hand off to
+  // the same PublishingDialog every other book surface uses — it owns the commit/version flow, the
+  // >=1 page / >=100 word gate, and the is_public toggle (which fires the revalidation trigger). Skip the
+  // render when already public — the user is here to unpublish, not to refresh a live draft.
+  const [publishOpen, setPublishOpen] = useState(false);
+  const openPublish = useCallback(async () => {
+    if (!bookId || rendering) return;
+    if (isPublic) { setPublishOpen(true); return; }
+    setRendering("render");
+    try { await reconcileDna(bookId); setPublishOpen(true); }
+    catch (e) { toast({ title: "Couldn't render", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+    finally { setRendering(null); }
+  }, [bookId, isPublic, rendering, toast]);
 
   // ── Fork ──────────────────────────────────────────────────────────────────────
   const [forking, setForking] = useState(false);
@@ -759,6 +776,15 @@ export default function StudioTreePage() {
             }}>
             {rendering === "read" ? "reading…" : "read →"}
           </button>
+          <button onClick={() => void openPublish()} disabled={!!rendering} title={isPublic ? "Manage publishing" : "Render the tree onto pages and publish the book"}
+            style={{
+              display: "flex", alignItems: "center", gap: 5, cursor: rendering ? "default" : "pointer",
+              background: isPublic ? "transparent" : `${T.accent}14`, border: `1px solid ${T.accent}55`, borderRadius: 6, padding: "3px 10px",
+              fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.08em", textTransform: "uppercase",
+              color: rendering ? T.faint : T.accent, marginRight: 6,
+            }}>
+            {rendering === "render" ? "publishing…" : isPublic ? "published ✓" : "publish →"}
+          </button>
           <QuickToggle active={searchOpen} accent={T.accent} icon="⌕" label="Search" title="Search ( / )" onClick={() => setSearchOpen((v) => !v)} />
           {/* The app-wide theme picker — the studio renders its own chrome (no main nav), so it
               mounts here too; picking "Terminal" flips the studio to the dark console skin. */}
@@ -959,6 +985,13 @@ export default function StudioTreePage() {
           onAttachNode={attachNode}
         />
       )}
+      <PublishingDialog
+        bookId={bookId}
+        bookName={bookName}
+        isPublic={isPublic}
+        open={publishOpen}
+        onOpenChange={setPublishOpen}
+      />
     </div>
   );
 }

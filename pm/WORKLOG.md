@@ -18,6 +18,15 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-10 — Publish button in DNA Studio `[ship]`
+- **What:** Added a "publish →" button to the DNA Studio top bar (next to "read →"). It renders the
+  tree onto pages via the existing `reconcileDna` (skipped if already public — unpublish doesn't need
+  a fresh render), then opens the same `PublishingDialog` used elsewhere in the app, so the
+  ≥1 page/≥100 word gate, commit/version flow, `is_public` toggle, and revalidation trigger all reuse
+  existing plumbing — no new dialog, edge function, or DB trigger needed.
+- **Files/commits:** `apps/web/src/features/dna/pages/StudioTreePage.tsx` (uncommitted).
+- **PM impact:** none — small, self-contained; not a Now-slot item, no STATE/ROADMAP change.
+
 ## 2026-08-09 — Publish gate: enforce ≥1 page / ≥100 words `[ship]`
 - **What:** Closed the gap from the earlier audit. Unpublished the 2 flagged low-word books (668,
   812). Built an actual two-layer publish gate so `is_public` can't flip false→true for a book with
