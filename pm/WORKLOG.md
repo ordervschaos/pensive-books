@@ -18,6 +18,35 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-09 — Publish gate: enforce ≥1 page / ≥100 words `[ship]`
+- **What:** Closed the gap from the earlier audit. Unpublished the 2 flagged low-word books (668,
+  812). Built an actual two-layer publish gate so `is_public` can't flip false→true for a book with
+  no pages or <100 words: (1) DB trigger `trg_enforce_publish_minimums` on `books` (BEFORE UPDATE),
+  backed by new `tiptap_node_text`/`tiptap_word_count` SQL functions that mirror the client's
+  `jsonToText`/`getWordCountFromContent` exactly — verified word-for-word against book 727's real
+  content after an initial jsonpath (`$.**.text`) approach was found to double-count nested text
+  nodes; (2) client-side check in `PublishingDialog.tsx` (`checkPublishingStatus`) that shows a
+  friendly error before even starting the commit/version flow. Verified live: publish attempts on
+  1373 (0 pages) and 668 (14 words) now raise `check_violation`; book 727 (71,556 words) publishes
+  unaffected.
+- **Files/commits:** `supabase/migrations/20260809150000_enforce_publish_minimums.sql` (applied
+  directly via psql, not `supabase db push` — see note below), `apps/web/src/components/book/PublishingDialog.tsx`.
+- **PM impact:** none beyond this entry — no roadmap item, just a correctness fix. Side-finding
+  worth a look: `supabase db push` currently fails — remote migration history has entries
+  (20260801120000 .. 20260803180000) with no matching file in `supabase/migrations/` or
+  `migrations_archive/`, so pushes are blocked until someone reconciles history (`supabase
+  migration repair` or `db pull`). Didn't touch it — that's a deliberate call on shared migration
+  history, not mine to make solo.
+
+## 2026-08-09 — Audit published books for page/word minimums `[chore]`
+- **What:** Queried all `is_public=true` books for page count + manuscript word count; unpublished
+  book 1373 ("The Life Of Not Give Up") which had 0 pages. Flagged 2 more (668, 812) under 100
+  words but left published pending owner confirmation. No code changes — the ≥1 page/≥100 word
+  publish rule is not yet enforced anywhere in the app.
+- **Files/commits:** DB-only (`books.is_public` update via service role); no repo changes.
+- **PM impact:** none yet — open question back to owner on whether to (a) unpublish the 2 flagged
+  low-word books and (b) build an actual publish-time gate (client + DB check) for this rule.
+
 ## 2026-08-09 — Research: IIT / GWT / predictive processing as engineering for the reader model `[decision]`
 - **What:** Owner asked whether integrated information theory and global workspace theory can ground the reader-mind model ("context/memory + current events generating emotions/understanding"). Researched and answered in `.doc_1786257284000_consciousness_theories_reader_model.md`. **Verdict: adopt GWT as architecture, reject IIT as engineering, and note that the owner's own sentence describes a third theory (predictive processing / Barrett's constructed emotion) that is the most useful of the three.**
 - **Why GWT:** it was designed as a computational architecture, and it names a real defect in what we built — `workingSet` is a passive readout ("everything above 0.15", ~15 entities on a dense page), where GWT requires a capacity-limited, threshold-gated workspace that is **broadcast back as the interpretive frame for the next unit**. Today `carry()` ships ~90 entities forward; a reader interprets against the few currently ignited plus whatever the text cues. Splitting carry into hot-workspace + cued-store is cheaper, scales to a novel, and makes **unresolved-reference detection** possible (a unit naming something neither ignited nor retrievable = comprehension break) — currently invisible.

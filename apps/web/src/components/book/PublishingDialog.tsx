@@ -23,7 +23,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { getWordCountFromContent } from "@/utils/tiptapHelpers";
 import { Loader2, CheckCircle2, Globe, Lock, AlertTriangle } from "lucide-react";
+
+const MIN_WORD_COUNT = 100;
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
@@ -96,6 +99,34 @@ export function PublishingDialog({
   const checkPublishingStatus = async () => {
     try {
       setStep(PublishingStep.CHECKING);
+
+      const { data: pages, error: pagesError } = await supabase
+        .from("pages")
+        .select("page_type, content")
+        .eq("book_id", bookId)
+        .eq("archived", false);
+
+      if (pagesError) throw pagesError;
+
+      if (!pages || pages.length === 0) {
+        setErrorMessage("This book has no pages yet. Add at least one page before publishing.");
+        setStep(PublishingStep.ERROR);
+        return;
+      }
+
+      const wordCount = pages.reduce(
+        (sum, page) =>
+          sum + (page.page_type === "text" && page.content ? getWordCountFromContent(page.content) : 0),
+        0
+      );
+
+      if (wordCount < MIN_WORD_COUNT) {
+        setErrorMessage(
+          `This book only has ${wordCount} word${wordCount === 1 ? "" : "s"}. Write at least ${MIN_WORD_COUNT} words before publishing.`
+        );
+        setStep(PublishingStep.ERROR);
+        return;
+      }
 
       // Small delay to ensure any recent commits have been fully processed
       // This prevents race conditions when publishing immediately after committing
