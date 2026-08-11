@@ -1,3 +1,4 @@
+import { Extension } from '@tiptap/core';
 import { StarterKit } from '@tiptap/starter-kit';
 import { Link } from '@tiptap/extension-link';
 import { Image } from '@tiptap/extension-image';
@@ -15,6 +16,19 @@ import type { EditorView } from '@tiptap/pm/view';
 import type { Slice } from '@tiptap/pm/model';
 
 export const lowlight = createLowlight(common);
+
+// Cmd/Ctrl+]  and Cmd/Ctrl+[ are the conventional indent/outdent shortcut, but in Chrome
+// they double as browser back/forward. Bind them explicitly to list indentation and swallow
+// the event so they don't trigger navigation while the editor is focused.
+const ListIndentShortcuts = Extension.create({
+  name: 'listIndentShortcuts',
+  addKeyboardShortcuts() {
+    return {
+      'Mod-]': () => this.editor.commands.sinkListItem('listItem'),
+      'Mod-[': () => this.editor.commands.liftListItem('listItem'),
+    };
+  },
+});
 
 // Type for the image upload function
 type ImageUploadFn = (file: File) => {
@@ -36,6 +50,7 @@ export const getEditorConfig = (
       Title,
       SmartTypography,
       AudioBlocks,
+      ListIndentShortcuts,
       PageLink.configure({
         onPageLinkClick,
       }),
