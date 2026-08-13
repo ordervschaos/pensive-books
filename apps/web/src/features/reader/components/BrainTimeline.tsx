@@ -410,7 +410,7 @@ function OpRow({ op, state }: { op: Op; state: BrainState }) {
   const label: Record<Op["op"], string> = {
     entity: "meets", fact: "learns", believe: "reads", relate: "ties", move: "goes",
     present: "sees", sense: "feels", open: "wonders", answer: "resolves", touch: "notices",
-    recall: "remembers", affect: "feels",
+    recall: "remembers", ground: "clicks", affect: "feels",
   };
   let body = "";
   switch (op.op) {
@@ -425,6 +425,7 @@ function OpRow({ op, state }: { op: Op; state: BrainState }) {
     case "answer": body = `${op.qid}${op.subverted ? " (subverted)" : ""}${op.note ? ` — ${op.note}` : ""}`; break;
     case "touch": body = op.ids.map(nameOf).join(", "); break;
     case "recall": body = nameOf(op.id); break;
+    case "ground": body = `${op.note}${op.ref ? ` — ${op.ref.replace(/_/g, " ")}` : ""}`; break;
     case "affect": body = `tension ${op.tension}, warmth ${op.warmth}`; break;
   }
   return (

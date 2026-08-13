@@ -44,7 +44,7 @@ interface CarryState {
 // The opcode set, mirrored from features/reader/lib/brain.ts. Kept as a server-side allowlist so an
 // unrecognised op is DROPPED rather than folded — same fail-closed instinct as read-facts' entity
 // registry check: a hallucinated op must never reach the reader model as if it were a reading.
-const OPS = new Set(["entity", "fact", "believe", "relate", "move", "present", "sense", "open", "answer", "touch", "recall", "affect"]);
+const OPS = new Set(["entity", "fact", "believe", "relate", "move", "present", "sense", "open", "answer", "touch", "recall", "ground", "affect"]);
 const KINDS = new Set(["character", "place", "object", "faction", "concept"]);
 // Kind ALIASES. The model reaches for the obvious English word ("person", "event") rather than the
 // schema's token, and rejecting those threw away otherwise perfect readings. Mapping is strictly
@@ -59,6 +59,7 @@ const KIND_ALIAS: Record<string, string> = {
 const CHANNELS = new Set(["sight", "sound", "smell", "touch", "taste", "body"]);
 const QKINDS = new Set(["mystery", "threat", "desire", "irony"]);
 const GROUNDS = new Set(["shown", "told", "suspected"]);
+const GROUND_BASES = new Set(["fact", "recap"]);
 
 // Coerces numbers/booleans too: a model writing `"value": true` for a fact is stating something
 // perfectly real, and dropping it over its JSON type would be pedantry at the cost of a reading.
@@ -92,6 +93,9 @@ Deno.serve(async (req: Request) => {
     // Ids the model may reference. Anything it invents mid-window must be declared with an `entity`
     // op first; ops naming an unknown id are dropped below, so the fold can never orphan a reference.
     const known = new Set(entities.map((e) => e.id));
+    // Same fail-closed idea for `ground`'s fact ref: a fact key that resolves to nothing carried (or
+    // asserted earlier in this window) folds into a dangling edge, so it is dropped rather than kept.
+    const knownFacts = new Set(facts.map((f) => f.key));
 
     const carried =
       `WHAT YOU ALREADY KNOW (everything you have read up to unit ${units[0].i}):\n\n` +
@@ -139,6 +143,12 @@ Deno.serve(async (req: Request) => {
           "  {\"op\":\"open\",\"qid\":\"<snake_case>\",\"text\":\"<what you want to know>\",\"kind\":\"mystery|threat|desire|irony\",\"heat\":1-3}\n" +
           "  {\"op\":\"answer\",\"qid\":\"<an open qid>\",\"subverted\":<true if answered against its own implication>}\n" +
           "  {\"op\":\"recall\",\"id\":\"<id>\"}                        the prose deliberately hauls back something gone quiet.\n" +
+          "  {\"op\":\"ground\",\"basis\":\"fact|recap\",\"ref\":\"<fact key, required iff basis=fact>\",\"note\":\"<why this only lands now>\"}\n" +
+          "      THIS unit only makes sense because of something you already know — not a person or place " +
+          "stirring back to life (that is `recall`), but a FACT paying off, or the general shape of everything " +
+          "read so far (\"recap\", no ref needed). Fire this on the PAYOFF unit, never the setup — you cannot " +
+          "know at the moment something is planted that it will matter later, so do not guess forward. Skip it " +
+          "for ordinary description with no dependency on the past; that is just prose, not an op.\n" +
           "  {\"op\":\"affect\",\"tension\":0-10,\"warmth\":-5..5}       only when it MOVES; it carries forward otherwise.\n\n" +
           "Also give each unit a short `gist`: one clause, in your voice, on what changed for you (\"her own " +
           "mother signed the order\"). Omit it for units that only carry rhythm.\n\n" +
@@ -169,7 +179,7 @@ Deno.serve(async (req: Request) => {
       for (const o of Array.isArray(d.ops) ? d.ops : []) {
         const { name, op } = unwrap(o as Record<string, unknown>);
         if (!OPS.has(name)) continue;
-        const clean = validate(name, op, known);
+        const clean = validate(name, op, known, knownFacts);
         if (clean) ops.push(clean);
       }
       deltas.push({ i: d.i, ...(str(d.gist, 160) ? { gist: str(d.gist, 160)! } : {}), ops });
@@ -250,7 +260,7 @@ function unwrap(raw: Record<string, unknown>): { name: string; op: Record<string
  * already known or declared earlier in THIS window — an op pointing at nothing would fold into a
  * dangling reference, so it is dropped and the rest of the unit kept (degrade, never corrupt).
  */
-function validate(name: string, op: Record<string, unknown>, known: Set<string>): Record<string, unknown> | null {
+function validate(name: string, op: Record<string, unknown>, known: Set<string>, knownFacts: Set<string>): Record<string, unknown> | null {
   const id = (v: unknown): string | null => {
     const s = str(v, 60)?.toLowerCase().replace(/[^a-z0-9_]/g, "_");
     return s && known.has(s) ? s : null;
@@ -270,6 +280,7 @@ function validate(name: string, op: Record<string, unknown>, known: Set<string>)
       const value = str(op.value, 200);
       if (!key || !value) return null;
       const about = id(op.about);
+      knownFacts.add(key);   // declared here ⇒ referenceable by a `ground` op later in this window
       return { op: name, key, value, ...(about ? { about } : {}) };
     }
     case "believe": {
@@ -314,6 +325,17 @@ function validate(name: string, op: Record<string, unknown>, known: Set<string>)
     case "recall": {
       const rid = id(op.id);
       return rid ? { op: name, id: rid, ...(str(op.note, 160) ? { note: str(op.note, 160) } : {}) } : null;
+    }
+    case "ground": {
+      const basis = str(op.basis, 10)?.toLowerCase();
+      const note = str(op.note, 200);
+      if (!basis || !GROUND_BASES.has(basis) || !note) return null;
+      if (basis === "fact") {
+        const ref = str(op.ref, 60)?.toLowerCase().replace(/[^a-z0-9_]/g, "_");
+        if (!ref || !knownFacts.has(ref)) return null;   // a payoff must point at a fact actually carried
+        return { op: name, basis, ref, note };
+      }
+      return { op: name, basis, note };   // "recap" — diffuse on purpose, no ref to validate
     }
     case "affect": {
       const tension = num(op.tension, 0, 10), warmth = num(op.warmth, -5, 5);

@@ -24,6 +24,16 @@ export type SenseChannel = "sight" | "sound" | "smell" | "touch" | "taste" | "bo
 export type QuestionKind = "mystery" | "threat" | "desire" | "irony";
 /** How the reader came to believe something — shown beats told beats suspected. */
 export type Ground = "shown" | "told" | "suspected";
+/**
+ * What a unit's causal grounding traces to. Deliberately excludes entities — reactivating a person,
+ * place, or object already has its own op (`recall`); this is for the cases that aren't a re-
+ * activatable thing: a fact paying off, or the diffuse shape of everything read so far. `unit` (a
+ * pinpointed earlier moment that isn't a fact) is NOT in this set on purpose: the carried state a
+ * window receives is entities/facts/questions only — no raw per-unit ledger survives compaction —
+ * so a model has nothing to validate a bare unit reference against. Adding it needs carrying a gist
+ * ledger forward first, not just a new enum value.
+ */
+export type GroundBasis = "fact" | "recap";
 
 export type Op =
   /** A thing enters the reader's model for the first time. */
@@ -48,6 +58,15 @@ export type Op =
   | { op: "touch"; ids: string[] }
   /** Something earlier is deliberately recalled — a callback the reader is asked to hold. */
   | { op: "recall"; id: string; note?: string }
+  /**
+   * THIS unit's content only makes sense because of something already established — not a person,
+   * place, or object stirring back to life (`recall`'s job), but a fact paying off, or the general
+   * shape of everything read so far. Always fired at the unit where the connection becomes visible,
+   * pointing BACKWARD: a setup unit never forward-declares its own future importance, the same
+   * asymmetry `recall` already relies on. Distinct from mere immersion (`sense`), which carries no
+   * dependency on prior state at all.
+   */
+  | { op: "ground"; basis: GroundBasis; ref?: string; note: string }
   /** The felt state. tension 0–10, warmth −5…+5. */
   | { op: "affect"; tension: number; warmth: number };
 
@@ -120,6 +139,16 @@ export interface Fact {
   at: number;
 }
 
+/** One `ground` op, folded — a causal edge from the unit where it was recognised back to its basis. */
+export interface Grounding {
+  /** The PAYOFF unit — where the connection became visible, never the setup unit. */
+  at: number;
+  basis: GroundBasis;
+  /** A fact key, present when basis is "fact"; absent (diffuse) when basis is "recap". */
+  ref?: string;
+  note: string;
+}
+
 export interface BrainState {
   /** The unit this snapshot is AFTER. −1 = before the first line. */
   at: number;
@@ -132,11 +161,13 @@ export interface BrainState {
   /** Who is on stage now. */
   present: string[];
   affect: { tension: number; warmth: number };
+  /** Every `ground` op read so far, in reading order — the causal graph's edge list. */
+  groundings: Grounding[];
 }
 
 export const emptyBrain = (): BrainState => ({
   at: -1, entities: {}, facts: {}, relations: [], questions: [],
-  place: null, present: [], affect: { tension: 0, warmth: 0 },
+  place: null, present: [], affect: { tension: 0, warmth: 0 }, groundings: [],
 });
 
 // ── decay ────────────────────────────────────────────────────────────────────────────────────────
@@ -230,6 +261,12 @@ export function step(s: BrainState, delta: UnitDelta): BrainState {
           touch(s.entities[op.id], delta.i, SPIKE * 2);
           s.entities[op.id].recalls.push(delta.i);
         }
+        break;
+      case "ground":
+        // A fact does not decay (facts are canon, not attention), so unlike `recall` there is no
+        // activation to spike here — just the edge itself, which is the whole point: this is the
+        // causal graph's edge list, read back retrospectively via `groundedIn`, never at fold time.
+        s.groundings.push({ at: delta.i, basis: op.basis, ref: op.ref, note: op.note });
         break;
       case "affect":
         s.affect = { tension: op.tension, warmth: op.warmth };
@@ -337,6 +374,15 @@ export const ranked = (s: BrainState): { entity: Entity; score: number }[] =>
   Object.values(s.entities)
     .map((entity) => ({ entity, score: importance(s, entity.id) }))
     .sort((a, b) => b.score - a.score);
+
+/**
+ * Every unit that later paid a fact off, oldest first — the same retrospective move as
+ * `entity.recalls`, generalised to facts. A fact does not know at assertion time whether it will
+ * matter again; this is where that gets revealed, by scanning forward through the groundings that
+ * named it rather than by anything stamped on the fact itself.
+ */
+export const groundedIn = (s: BrainState, factKey: string): Grounding[] =>
+  s.groundings.filter((g) => g.basis === "fact" && g.ref === factKey);
 
 /**
  * GROUPING, derived rather than declared. Connected components of the relation graph: the clumps a
@@ -459,6 +505,8 @@ export interface BrainDiff {
   wondered: Question[];
   resolved: Question[];
   tied: Relation[];
+  /** `ground` ops that fired on this frame — this unit's causal dependency on earlier material. */
+  grounded: Grounding[];
   sensed: { entity: Entity; channel: SenseChannel; detail: string }[];
   believed: { entity: Entity; claim: string; ground: Ground }[];
   moved: { from: Entity | null; to: Entity | null } | null;
@@ -490,6 +538,7 @@ export function diffBrains(prev: BrainState, next: BrainState): BrainDiff {
     wondered: next.questions.filter((q) => !prevOpen.has(q.qid) && nextOpen.has(q.qid)),
     resolved: next.questions.filter((q) => prevOpen.has(q.qid) && !nextOpen.has(q.qid)),
     tied: next.relations.filter((r) => r.at === next.at),
+    grounded: next.groundings.filter((g) => g.at === next.at),
     sensed: Object.values(next.entities).flatMap((e) =>
       e.senses.filter((s) => s.at === next.at).map((s) => ({ entity: e, channel: s.channel, detail: s.detail }))),
     believed: Object.values(next.entities).flatMap((e) =>
@@ -508,8 +557,8 @@ export function diffBrains(prev: BrainState, next: BrainState): BrainDiff {
 /** Did this unit change anything at all? Used to mark the "nothing happened" frames honestly. */
 export const diffIsEmpty = (d: BrainDiff): boolean =>
   !d.met.length && !d.recalled.length && !d.learned.length && !d.revised.length && !d.wondered.length &&
-  !d.resolved.length && !d.tied.length && !d.sensed.length && !d.believed.length && !d.moved &&
-  !d.entered.length && !d.left.length && !d.felt && !d.woke.length;
+  !d.resolved.length && !d.tied.length && !d.grounded.length && !d.sensed.length && !d.believed.length &&
+  !d.moved && !d.entered.length && !d.left.length && !d.felt && !d.woke.length;
 
 /** What is live in the reader's head right now, loudest first — the working set. */
 export const workingSet = (s: BrainState, min = 0.15): Entity[] =>

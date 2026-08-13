@@ -18,6 +18,43 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-08-11 — Reader Machine: causal grounding as a new `ground` op `[ship]`
+- **What:** Added the axis discussed in earlier sessions — was a unit's content causally earned by
+  something established before it, vs. pure immersion/description with no dependency on the past.
+  New `ground` op in `brain.ts` (`basis: "fact" | "recap"`, optional `ref`, required `note`),
+  deliberately excluding entities (that's already `recall`'s job) and excluding pinpointed earlier
+  UNITS (the carried state a forward-pass window receives is entities/facts/questions only — no
+  raw per-unit ledger survives compaction, so the model has nothing to validate a bare unit
+  reference against; would need carrying a gist ledger forward first, noted as a fast-follow, not
+  built now). Key design point, resolved mid-conversation: the op is ALWAYS fired at the payoff
+  unit, pointing backward — never forward-declared at the setup unit, which cannot know its own
+  future importance without lookahead the architecture forbids. So a unit's causal status is a
+  derived/retrospective read (`groundedIn`), same principle as `importance()`. Wired end-to-end:
+  fold + derived read + `BrainDiff.grounded` in `brain.ts` (4 new tests, 25/25 passing), server
+  allowlist/validation/prompt in `read-trace/index.ts` (fact refs validated against carried +
+  in-window facts, same fail-closed pattern as entity ids), UI surfacing in `WhatJustHappened.tsx`
+  and `BrainTimeline.tsx`'s op glossary. Deployed `read-trace` and live-smoke-tested with a real
+  model call: a quietly-planted fact 2 units back correctly produced `{op:"ground", basis:"fact",
+  ref:"east_door_sticky", note:"..."}` on the payoff unit, while a control case with an open
+  question correctly used `answer` instead (the model choosing the more specific existing op —
+  good sign the two don't collide).
+- **Files/commits:** `apps/web/src/features/reader/lib/brain.ts`, `brain.test.ts`,
+  `apps/web/src/features/reader/components/{WhatJustHappened,BrainTimeline}.tsx`,
+  `supabase/functions/read-trace/index.ts` (deployed).
+- **PM impact:** none — Reader Machine is exploratory tooling, not on the roadmap. Note for later:
+  the existing demo fixture (`fourth-wing-ch1-trace.json`) predates this op, so it has zero
+  `ground` ops until re-swept — that costs real model spend (~30 sequential calls), not done here,
+  needs an explicit go-ahead.
+
+## 2026-08-11 — List indent shortcut stolen by Chrome back/forward `[chore]`
+- **What:** Cmd/Ctrl+]/[ (conventional indent/outdent) had no binding in the TipTap editor, so
+  the keydown fell through to Chrome's back/forward navigation instead of indenting list items.
+  Added a small `ListIndentShortcuts` extension binding Mod-]/Mod-[ to `sinkListItem`/
+  `liftListItem`; only preventDefaults when the command succeeds, so navigation still works
+  outside list items.
+- **Files/commits:** `apps/web/src/components/editor/config/editorConfig.ts` (3ed11aa).
+- **PM impact:** none — isolated editor UX fix, not tied to a Now item.
+
 ## 2026-08-10 — Reader Machine demo: admin-only full-text inspection `[ship]`
 - **What:** `/reader`'s pre-filled run intentionally ships Fourth Wing measurements without the
   manuscript (copyright — see DemoFixture.tsx), so most of the unit table/timeline showed

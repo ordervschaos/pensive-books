@@ -64,6 +64,11 @@ export function WhatJustHappened({ diff, empty, unread }: { diff: BrainDiff; emp
           {r.from} → {r.to}: {r.kind}
         </Row>
       ))}
+      {diff.grounded.map((g, i) => (
+        <Row key={`g${i}`} verb="clicks" tone="warm">
+          {g.note}{g.ref ? <span style={{ color: "var(--ink-3)" }}> — {g.ref.replace(/_/g, " ")}</span> : null}
+        </Row>
+      ))}
       {diff.wondered.map((q, i) => (
         <Row key={`w${i}`} verb="wonders" tone="warm">{q.text} <span style={{ color: "var(--ink-3)" }}>[{q.kind}]</span></Row>
       ))}

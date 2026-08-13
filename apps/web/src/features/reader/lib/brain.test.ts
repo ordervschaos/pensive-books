@@ -3,8 +3,8 @@
 // forgetting, retrospective importance, causality, and immersion ≠ knowledge.
 import { describe, it, expect } from "vitest";
 import {
-  clusters, DECAY, diffBrains, diffIsEmpty, foldTo, immersion, importance, openQuestions, pull, step,
-  emptyBrain, tracks, workingSet, type UnitDelta,
+  clusters, DECAY, diffBrains, diffIsEmpty, foldTo, groundedIn, immersion, importance, openQuestions, pull,
+  step, emptyBrain, tracks, workingSet, type UnitDelta,
 } from "./brain";
 
 const meet = (i: number, id: string, name = id): UnitDelta =>
@@ -105,6 +105,41 @@ describe("importance is retrospective", () => {
     // Both entities look identical when introduced one unit apart…
     const early = foldTo([meet(0, "mira"), meet(1, "extra")], 1);
     expect(importance(early, "mira")).toBe(importance(early, "extra"));
+  });
+});
+
+describe("grounding is retrospective, like importance", () => {
+  it("records the causal edge at the payoff unit, not the fact's own", () => {
+    const s = foldTo([
+      { i: 0, ops: [{ op: "fact", key: "eastern_wing", value: "she's stationed there" }] },
+      ...Array.from({ length: 5 }, (_, k) => quiet(k + 1)),
+      { i: 6, ops: [{ op: "ground", basis: "fact", ref: "eastern_wing", note: "that's why she's late" }] },
+    ], 6);
+    expect(s.groundings).toEqual([
+      { at: 6, basis: "fact", ref: "eastern_wing", note: "that's why she's late" },
+    ]);
+    expect(groundedIn(s, "eastern_wing")).toHaveLength(1);
+  });
+
+  it("a fact with no later payoff is never grounded in anything", () => {
+    const s = foldTo([{ i: 0, ops: [{ op: "fact", key: "quadrant", value: "rider" }] }], 0);
+    expect(groundedIn(s, "quadrant")).toHaveLength(0);
+  });
+
+  it("a recap grounding has no ref — the basis is diffuse, not a single fact", () => {
+    const s = foldTo([{ i: 0, ops: [{ op: "ground", basis: "recap", note: "everything since the gate" }] }], 0);
+    expect(s.groundings[0].ref).toBeUndefined();
+    expect(groundedIn(s, "quadrant")).toHaveLength(0);
+  });
+
+  it("shows up in the frame-to-frame diff, and counts as something happening", () => {
+    const deltas: UnitDelta[] = [
+      { i: 0, ops: [{ op: "fact", key: "eastern_wing", value: "she's stationed there" }] },
+      { i: 1, ops: [{ op: "ground", basis: "fact", ref: "eastern_wing", note: "that's why she's late" }] },
+    ];
+    const d = diffBrains(foldTo(deltas, 0), foldTo(deltas, 1));
+    expect(d.grounded).toEqual([{ at: 1, basis: "fact", ref: "eastern_wing", note: "that's why she's late" }]);
+    expect(diffIsEmpty(d)).toBe(false);
   });
 });
 
