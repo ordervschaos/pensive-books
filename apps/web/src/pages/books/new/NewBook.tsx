@@ -18,7 +18,6 @@ interface BookDraft {
   author: string;
   cover_url: string | null;
   show_text_on_cover: boolean;
-  is_public: boolean;
   // Cover tone (used only when there is no uploaded cover image — fills the
   // preview with a flat colour the writer can pick from the swatch row).
   cover_tone: string | null;
@@ -51,7 +50,6 @@ const NewBook = () => {
     author: "",
     cover_url: null,
     show_text_on_cover: true,
-    is_public: false,
     cover_tone: null,
   });
 
@@ -89,7 +87,6 @@ const NewBook = () => {
           name: book.name.trim(),
           subtitle: book.subtitle.trim() || null,
           author: (book.author || authorDefault).trim() || null,
-          is_public: book.is_public,
           cover_url: book.cover_url,
           show_text_on_cover: book.show_text_on_cover,
         })
@@ -415,22 +412,10 @@ const NewBook = () => {
             />
           </Field>
 
-          <div className="mb-9 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Visibility" tight>
-              <div className="flex flex-1 items-center justify-between">
-                <select
-                  value={book.is_public ? "public" : "private"}
-                  onChange={(e) =>
-                    setBook((p) => ({ ...p, is_public: e.target.value === "public" }))
-                  }
-                  className="pv-serif w-full appearance-none bg-transparent text-[16px] text-foreground outline-none"
-                >
-                  <option value="private">Private · only you</option>
-                  <option value="public">Public · in the Library</option>
-                </select>
-                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-text-muted))]" />
-              </div>
-            </Field>
+          {/* No visibility control here: a book only becomes public through the
+              publishing flow, which commits a version first. Flipping is_public
+              at creation left books listed in the Library that 404 on open. */}
+          <div className="mb-9 grid grid-cols-1 gap-4">
             <Field label="Category" tight>
               <div className="flex flex-1 items-center justify-between">
                 <span className="pv-serif text-[16px] italic text-[hsl(var(--pv-text-faint))]">

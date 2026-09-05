@@ -98,6 +98,10 @@ const getLibraryBooksPageCached = unstable_cache(
       })
       .eq("is_public", true)
       .eq("is_archived", false)
+      // Listings must match the detail page, which 404s a book with no published
+      // version. Without this a book flipped public but never committed shows up
+      // in the library and dead-ends on click.
+      .not("published_version_id", "is", null)
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -119,6 +123,10 @@ const getFeaturedBooksCached = unstable_cache(
       .select("id, name, author, subtitle, cover_url, show_text_on_cover, content_tags")
       .eq("is_public", true)
       .eq("is_archived", false)
+      // Listings must match the detail page, which 404s a book with no published
+      // version. Without this a book flipped public but never committed shows up
+      // in the library and dead-ends on click.
+      .not("published_version_id", "is", null)
       .order("created_at", { ascending: false })
       .limit(10);
 
@@ -160,6 +168,10 @@ const getPublicBooksByOwnerCached = unstable_cache(
       .eq("owner_id", userId)
       .eq("is_public", true)
       .eq("is_archived", false)
+      // Listings must match the detail page, which 404s a book with no published
+      // version. Without this a book flipped public but never committed shows up
+      // in the library and dead-ends on click.
+      .not("published_version_id", "is", null)
       .order("created_at", { ascending: false });
 
     if (error) {
