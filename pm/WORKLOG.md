@@ -18,6 +18,21 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-09-05 — Library no longer lists books that 404 on open `[ship]`
+- **What:** pensive.me/library advertised dead links — the listing queries filtered on
+  `is_public ∧ ¬is_archived` while the detail page also requires `published_version_id`
+  (it reads a `book_versions`/`page_versions` snapshot, not live rows). 3 of 24 public
+  books were in that state (1399, 1430, 1431). Fixed predicate parity, and closed the
+  writer that created the state: New Book's "Public · in the Library" option wrote
+  `is_public` at INSERT with no version and no pages, bypassing `PublishingDialog`
+  (commit version → publish version → flip `is_public`).
+- **Files/commits:** `ccec8f0` — `apps/marketing/lib/public-books.ts` (3 listing queries),
+  `apps/web/src/pages/books/new/NewBook.tsx` (visibility selector removed).
+- **PM impact:** none — unplanned bug fix, no Now slot touched. Offered but not built:
+  a DB `CHECK (NOT is_public OR published_version_id IS NOT NULL)` to make the invariant
+  unviolable rather than merely unreachable through the UI; awaiting the author's call.
+
+
 ## 2026-08-11 — Reader Machine: causal grounding as a new `ground` op `[ship]`
 - **What:** Added the axis discussed in earlier sessions — was a unit's content causally earned by
   something established before it, vs. pure immersion/description with no dependency on the past.
