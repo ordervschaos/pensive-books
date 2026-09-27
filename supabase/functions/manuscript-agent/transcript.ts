@@ -65,6 +65,34 @@ function trailingReadRun(steps: AgentStep[]): number {
 const FORCE_COMMIT_AFTER_READS = 15;
 const FORCE_COMMIT_SENTINEL = "[force-commit]";
 
+// Trailing 'read' steps NOT yet distilled by a record_notes call ('finding' resets it). Feeds the
+// record-notes nudge: reads that pile up unrecorded get pruned by compaction and re-read forever
+// (seen live: a 74-page coherence sweep re-read the same pages after the prune).
+function unrecordedReadRun(steps: AgentStep[]): number {
+  let n = 0;
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const t = steps[i].t;
+    if (t === "read") { n++; continue; }
+    if (t === "note") continue;
+    break;
+  }
+  return n;
+}
+const RECORD_NOTES_AFTER_READS = 3;
+const RECORD_NOTES_SENTINEL = "[record-notes]";
+
+// A completion with no text and no tool call — the model spent its whole output budget thinking
+// (reasoning tiers bill it inside max_tokens). Prodded once; a second empty reply ends the turn with
+// an honest note instead of a silent idle.
+const EMPTY_REPLY_SENTINEL = "[empty-reply]";
+
+/** True when the newest user message is the harness prod `sentinel` (not the author). */
+function lastUserIsProd(transcript: unknown[], sentinel: string): boolean {
+  const last = transcript[transcript.length - 1] as { role?: string; content?: unknown[] } | undefined;
+  if (last?.role !== "user" || !Array.isArray(last.content)) return false;
+  return last.content.some((b) => (b as { type?: string; text?: string })?.type === "text" && String((b as { text?: string }).text ?? "").startsWith(sentinel));
+}
+
 /** Request-time cache breakpoints: the first user message and the last block of the latest message. */
 function withCacheBreakpoints(transcript: unknown[]): unknown[] {
   // deno-lint-ignore no-explicit-any
@@ -89,7 +117,7 @@ function latestAuthorAsk(transcript: unknown[]): string {
     const texts = m.content
       .filter((b) => (b as { type?: string })?.type === "text")
       .map((b) => String((b as { text?: unknown }).text ?? "").trim())
-      .filter((t) => t && !t.startsWith(FORCE_COMMIT_SENTINEL));
+      .filter((t) => t && !t.startsWith(FORCE_COMMIT_SENTINEL) && !t.startsWith(RECORD_NOTES_SENTINEL) && !t.startsWith(EMPTY_REPLY_SENTINEL));
     if (texts.length) return texts.join("\n").trim();
   }
   return "";
@@ -107,4 +135,4 @@ function withBookState(msgs: unknown[], state: string, task = ""): unknown[] {
   return msgs;
 }
 
-export { FORCE_COMMIT_AFTER_READS, FORCE_COMMIT_SENTINEL, compactTranscript, latestAuthorAsk, notesBlock, trailingReadRun, withBookState, withCacheBreakpoints };
+export { EMPTY_REPLY_SENTINEL, FORCE_COMMIT_AFTER_READS, FORCE_COMMIT_SENTINEL, RECORD_NOTES_AFTER_READS, RECORD_NOTES_SENTINEL, compactTranscript, lastUserIsProd, latestAuthorAsk, notesBlock, trailingReadRun, unrecordedReadRun, withBookState, withCacheBreakpoints };

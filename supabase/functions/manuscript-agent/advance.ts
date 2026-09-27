@@ -12,7 +12,7 @@ import { ROW_COLS, type AgentStep, type ManuscriptChange, type Pending, type Run
 import { TOOLS } from "./tools.ts";
 import { bookState, toolResults, validateProposal } from "./exec-tools.ts";
 import { SYSTEM, TITLE_SYSTEM } from "./prompts.ts";
-import { FORCE_COMMIT_AFTER_READS, FORCE_COMMIT_SENTINEL, compactTranscript, latestAuthorAsk, notesBlock, trailingReadRun, withBookState, withCacheBreakpoints } from "./transcript.ts";
+import { EMPTY_REPLY_SENTINEL, FORCE_COMMIT_AFTER_READS, FORCE_COMMIT_SENTINEL, RECORD_NOTES_AFTER_READS, RECORD_NOTES_SENTINEL, compactTranscript, lastUserIsProd, latestAuthorAsk, notesBlock, trailingReadRun, unrecordedReadRun, withBookState, withCacheBreakpoints } from "./transcript.ts";
 
 const MAX_TURNS = 20;
 const CALL_TIMEOUT_MS = 140_000;
@@ -93,13 +93,18 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
     }, 1000);
     const signal = AbortSignal.any([AbortSignal.timeout(callTimeoutMs), cancelCtrl.signal]);
 
+    // After an empty reply (budget eaten by thinking) the retry runs at LOW effort: DeepSeek honours
+    // reasoning_effort, so this is the one lever that actually leaves room for an answer.
+    const afterEmpty = lastUserIsProd(baseTranscript, EMPTY_REPLY_SENTINEL);
     let resp;
     try {
       resp = await callLLM({
         model,
-        max_tokens: 6000,
+        // 8000, not 6000: on the reasoning tiers thinking bills INSIDE max_tokens, and a whole-book
+        // read (60k+ input) burned all 6000 on thought and returned nothing (ai_calls 14448).
+        max_tokens: 8000,
         thinking: { type: "adaptive" },
-        output_config: { effort: "medium" },
+        output_config: { effort: afterEmpty ? "low" : "medium" },
         system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
         tools: TOOLS,
         messages: withBookState(withCacheBreakpoints(baseTranscript), state, authorAsk),
@@ -193,6 +198,12 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
     if (toolUses.length) {
       const results = await toolResults(service, row.book_id, toolUses, steps);
       transcript.push({ role: "user", content: results });
+      // Fold-on-read: reads that pile up unrecorded get pruned by compaction and re-read forever.
+      // Nudge to bank them well before the force-commit backstop below.
+      const unrecorded = unrecordedReadRun(steps);
+      if (unrecorded >= RECORD_NOTES_AFTER_READS && trailingReadRun(steps) < FORCE_COMMIT_AFTER_READS) {
+        transcript.push({ role: "user", content: [{ type: "text", text: `${RECORD_NOTES_SENTINEL} You've done ${unrecorded} reads without banking anything. Call record_notes NOW — one line per thing you learned (per page or per thread) — the raw pages above get pruned as this conversation grows, and anything unrecorded is lost (that's what makes you re-read the same pages). Batch it with your next reads in the same turn.` }] });
+      }
       if (trailingReadRun(steps) >= FORCE_COMMIT_AFTER_READS) {
         transcript.push({ role: "user", content: [{ type: "text", text: `${FORCE_COMMIT_SENTINEL} You've done ${trailingReadRun(steps)} reads in a row without replying or proposing — stop gathering. Propose what you can from what you've read, answer the author, or call finish and say what's blocking you.` }] });
       }
@@ -200,7 +211,19 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
       return "continue";
     }
 
-    // No tool at all: a plain conversational reply — the turn is complete.
+    // No tool and no text: an EMPTY completion — the output budget went entirely to thinking (seen live:
+    // stop_reason max_tokens, 6000 output tokens, "" content, after a whole-book read). Going idle here
+    // would look like the agent read everything and said nothing. Prod once (the retry runs at low
+    // effort); a second empty reply ends the turn with an honest note instead of silence.
+    if (!spoke) {
+      if (!afterEmpty) {
+        transcript.push({ role: "user", content: [{ type: "text", text: `${EMPTY_REPLY_SENTINEL} Your reply came back EMPTY — you used the whole output budget thinking. Answer NOW in plain prose, briefly: bank what you found with record_notes (one line per finding), then reply, propose_changes, or finish. Keep the thinking short.` }] });
+        await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
+        return "continue";
+      }
+      steps.push({ t: "note", label: "I ran out of room twice before I could answer — the book is large and I tried to hold too much at once. Ask me again with a narrower scope (a chapter, a character, a thread), or tell me to work in passes and bank notes as I go." });
+    }
+    // Otherwise a plain conversational reply — the turn is complete.
     await service.from("book_agent_runs").update({ status: "idle", transcript, steps }).eq("id", runId);
     return "stop";
   } catch (e) {
