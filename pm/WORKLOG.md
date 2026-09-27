@@ -18,6 +18,11 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-09-27 — manuscript-agent: empty assistant message poisoned the thread `[chore]`
+- **What:** Follow-on to the empty-completion fix: the empty reply had been STORED as an assistant message with no blocks, which DeepSeek rejects on every later request (400 "content or tool_calls must be set") — the thread was dead until archived. Seen again in a fresh session on 727 (where the new record_notes nudge was visibly working). Fix: store a placeholder text block for an empty completion, and `sanitizeTranscript` at turn start heals threads that already carry one. Deployed. Note: `book-agent` has the same latent storage shape; not touched.
+- **Files/commits:** `supabase/functions/manuscript-agent/{advance,transcript}.ts`; commit above.
+- **PM impact:** none. The structural answer is the context-budget design (DECISIONS 2026-09-27), still awaiting ratification.
+
 ## 2026-09-27 — Context-budget design for the manuscript agent (not built) `[decision]`
 - **What:** Owner named the book-727 failure as "the exact trap to solve": one growing transcript vs. three budgets (input, output-with-reasoning-inside, ~140s wall clock). Proposed design, ratification pending: (1) hard per-call CONTEXT_BUDGET with ordered compaction + ephemeral reads (fold-on-read as a rule); (2) per-page cached digests (gist in `<book>`, `read_digests` tool) — the page twin of the DNA `prose_digest`; (3) `scan_book` map-reduce for whole-book asks; (4) effort-by-turn-shape + continuation on truncated replies; (5) router text so the model picks by book size/ask shape. "Increase the limits" kept as table stakes, not the fix. Success criteria on 727 in the doc. Recommended build order 1→5.
 - **Files/commits:** `doc_1790512000000_context_budget.md` (untracked, design only; no code).
