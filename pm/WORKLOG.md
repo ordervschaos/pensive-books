@@ -18,6 +18,11 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-09-27 — Context-budget design for the manuscript agent (not built) `[decision]`
+- **What:** Owner named the book-727 failure as "the exact trap to solve": one growing transcript vs. three budgets (input, output-with-reasoning-inside, ~140s wall clock). Proposed design, ratification pending: (1) hard per-call CONTEXT_BUDGET with ordered compaction + ephemeral reads (fold-on-read as a rule); (2) per-page cached digests (gist in `<book>`, `read_digests` tool) — the page twin of the DNA `prose_digest`; (3) `scan_book` map-reduce for whole-book asks; (4) effort-by-turn-shape + continuation on truncated replies; (5) router text so the model picks by book size/ask shape. "Increase the limits" kept as table stakes, not the fix. Success criteria on 727 in the doc. Recommended build order 1→5.
+- **Files/commits:** `doc_1790512000000_context_budget.md` (untracked, design only; no code).
+- **PM impact:** DECISIONS.md entry (owner framing + proposed invariant). ROADMAP untouched until the owner ratifies the build.
+
 ## 2026-09-27 — manuscript-agent: empty-completion + fold-on-read fixes `[chore]`
 - **What:** First real use (book 727, "look for story coherence") ended after ten read batches with no reply — the last call returned an EMPTY completion (6000 output tokens, all reasoning, `stop_reason max_tokens`; DeepSeek bills thinking inside max_tokens) and the loop went idle as if it had answered. It also never banked notes, so compaction made it re-read pages. Fixed: empty completion → one `[empty-reply]` prod (retry at low effort), second one → honest note; `[record-notes]` nudge after 3 unrecorded reads + "work in passes" prompt guidance; max_tokens 8000. Deployed.
 - **Files/commits:** `supabase/functions/manuscript-agent/{advance,transcript,prompts}.ts`; commit above.

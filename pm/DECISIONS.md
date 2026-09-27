@@ -6,6 +6,17 @@
 
 ## Log
 
+### 2026-09-27 — Context is a budget, not a hope (manuscript agent; proposed, awaiting build ratification)
+
+Owner: the book-727 empty-completion run "is the exact trap we should solve for" — raise limits AND
+summarise-and-recall so work is split into chunks and no call's context is ever too big, with
+different strategies for large input vs large output, applied when needed. Design in
+`doc_1790512000000_context_budget.md`. The proposed invariant: **no single call exceeds a fixed
+CONTEXT_BUDGET, and nothing the agent knows lives only in the transcript.** Mechanisms: ephemeral reads
++ mandatory fold, cached per-page digests, `scan_book` map-reduce, effort-by-shape + continuation,
+a size-aware router. Limits are raised too (max_tokens 8000) but not relied on: the wall clock is fixed
+and reasoning scales with input. Not yet built; recommended order budget → digests → scan → output.
+
 ### 2026-09-27 — A second agent per book, over pages not DNA; it may only stage
 
 Owner directive: "the book page as is must be accessible by an AI agent — a new feature with
