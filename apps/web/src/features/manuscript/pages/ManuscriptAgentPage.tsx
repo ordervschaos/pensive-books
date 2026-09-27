@@ -37,6 +37,15 @@ export default function ManuscriptAgentPage() {
     table: "book_agent_runs", bookId, select: MANUSCRIPT_RUN_SELECT, match: { kind: "manuscript" }, activeStatuses: ["running"], staleMs: 6 * 60 * 1000, enabled: !!bookId,
   });
   const staged = useMemo(() => (Array.isArray(run?.proposals) ? run!.proposals! : []) as ManuscriptChange[], [run]);
+  // Belt and braces under Realtime: while a turn is in flight, re-read the row every few seconds. Seen live
+  // (2026-09-27): a tab whose Realtime channel silently missed the turn-ending UPDATE sat on "thinking…"
+  // with three changes already staged server-side. One cheap PostgREST select bounds that to ~5s.
+  const active = run?.status === "running" || run?.status === "awaiting_input";
+  useEffect(() => {
+    if (!active) return;
+    const t = setInterval(refetchRun, 5000);
+    return () => clearInterval(t);
+  }, [active, refetchRun]);
   const runId = run?.id ?? null;
 
   // ── Selection: the URL carries it (?page=<id> | ?page=book | ?add=<changeId>) so a chat unit can deep-link. ──
@@ -85,6 +94,9 @@ export default function ManuscriptAgentPage() {
     window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
   };
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Every resolution (canvas or chat) ends by clearing busyId — re-read the run row then, rather than
+  // trusting Realtime to echo our own proposals write back (seen dropped live, leaving a phantom "1 staged").
+  useEffect(() => { if (busyId === null) refetchRun(); }, [busyId, refetchRun]);
   const [saving, setSaving] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
 

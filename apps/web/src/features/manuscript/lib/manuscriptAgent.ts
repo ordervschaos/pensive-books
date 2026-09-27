@@ -132,7 +132,7 @@ async function updateChange(runId: number, change: ManuscriptChange, verb: "appl
 export function changeLabel(c: ManuscriptChange, pages: ManuscriptPage[]): string {
   const p = (id: number) => { const pg = pages.find((x) => x.id === id); return pg ? `p${pg.page_index + 1} "${(pg.title ?? "").trim() || "Untitled"}"` : `page #${id}`; };
   switch (c.kind) {
-    case "page_edit": return `${c.title != null ? "retitle + edit" : "edit"} ${p(c.pageId)}`;
+    case "page_edit": return `${c.title != null ? (c.after === c.before ? "retitle" : "retitle + edit") : "edit"} ${p(c.pageId)}`;
     case "page_add": return `add ${c.pageType === "section" ? "section" : "page"} "${c.title}"`;
     case "page_delete": return `delete ${p(c.pageId)}`;
     case "book_edit": return `${c.field} → "${c.after}"`;

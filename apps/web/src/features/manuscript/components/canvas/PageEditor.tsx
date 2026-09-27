@@ -13,6 +13,11 @@ import type { EditorJSON } from "@/types/editor";
 import { docTitle } from "../../lib/manuscriptText";
 import { savePageDoc, type ManuscriptPage } from "../../lib/manuscriptAgent";
 
+// Key-sorted JSON, so a doc and its jsonb round-trip compare equal.
+function canon(v: unknown): string {
+  return JSON.stringify(v, (_k, val) => (val && typeof val === "object" && !Array.isArray(val) ? Object.fromEntries(Object.keys(val).sort().map((k) => [k, (val as Record<string, unknown>)[k]])) : val));
+}
+
 export function PageEditor({ page, bookId, editable, onSaving }: { page: ManuscriptPage; bookId: number; editable: boolean; onSaving?: (saving: boolean) => void }) {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -30,15 +35,25 @@ export function PageEditor({ page, bookId, editable, onSaving }: { page: Manuscr
     return () => { saveRef.current?.flush(); };
   }, [page.id, onSaving, toast]);
 
+  // `known` = the doc this editor and the server agree on (as JSON text). The editor's own edits
+  // advance it; a server-side change is taken only when the editor hasn't diverged from it — i.e.
+  // there are no unsaved local edits to protect. Focus is NOT the test: the editor autofocuses on
+  // mount, and a focused-but-untouched editor holding a pre-accept snapshot would otherwise keep
+  // stale text and, on the next keystroke, save it back over the accepted change.
+  // (jsonb canonicalises key order, so equality is over a key-sorted serialisation.)
+  const known = useRef<string>(canon(page.content));
+  const dirty = useRef(false); // local edits since the last time editor and server agreed
   const editor = useEditor(
-    getEditorConfig(page.content, (json) => saveRef.current?.(json), editable, editable, uploadImage, String(bookId), (pid, bid) => navigate(`/books/${bid}/pages/${pid}`)),
+    getEditorConfig(page.content, (json) => { dirty.current = true; known.current = canon(json); saveRef.current?.(json); }, editable, editable, uploadImage, String(bookId), (pid, bid) => navigate(`/books/${bid}/pages/${pid}`)),
     [page.id, editable],
   );
-
-  // Server-side content moved (Realtime): take it only while the author isn't typing here.
   useEffect(() => {
-    if (!editor || editor.isFocused) return;
-    if (JSON.stringify(editor.getJSON()) !== JSON.stringify(page.content)) editor.commands.setContent(page.content ?? { type: "doc", content: [] });
+    if (!editor) return;
+    const incoming = canon(page.content);
+    if (incoming === known.current) { dirty.current = false; return; } // our own save echoed back (or nothing moved)
+    if (dirty.current) return; // unsaved local edits — never clobber the author mid-keystroke
+    known.current = incoming;
+    editor.commands.setContent(page.content ?? { type: "doc", content: [] });
   }, [editor, page.content]);
 
   return (

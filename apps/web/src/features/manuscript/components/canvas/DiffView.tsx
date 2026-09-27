@@ -21,9 +21,20 @@ function Verdicts({ onAccept, onReject, disabled, size = "sm", className = "" }:
   );
 }
 
-// Rendered text keeps the projection's markup (`**`, `## `) visible — the diff is over the text the
-// agent wrote, and hiding markup here would misrepresent what a hunk changes.
-const Text = ({ text }: { text: string }) => <span className="whitespace-pre-wrap">{text}</span>;
+// Inline emphasis renders as emphasis (the projection's `**bold**` / `*italic*`), so the diff reads
+// like the page. A hunk that only changes a mark still shows: the marked run is inside the hunk.
+const Text = ({ text }: { text: string }) => {
+  const parts: React.ReactNode[] = [];
+  const re = /(\*\*|__)(.+?)\1|(\*|_)(.+?)\3/g;
+  let last = 0, m: RegExpExecArray | null, k = 0;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    parts.push(m[1] ? <strong key={k++}>{m[2]}</strong> : <em key={k++}>{m[4]}</em>);
+    last = re.lastIndex;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <span className="whitespace-pre-wrap">{parts}</span>;
+};
 
 export function DiffView({ diff, busy, onDecide }: { diff: BlockDiff[]; busy: boolean; onDecide: (d: Decision[]) => void }) {
   let firstMarked = false;

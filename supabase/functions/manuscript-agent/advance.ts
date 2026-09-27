@@ -50,7 +50,9 @@ async function maybeTitle(service: SupabaseClient, model: string, row: RunRow) {
   const first = row.steps.find((s) => s.t === "user")?.label?.trim();
   if (!first) return;
   try {
-    const resp = await callLLM({ model, max_tokens: 30, system: [{ type: "text", text: TITLE_SYSTEM }], messages: [{ role: "user", content: [{ type: "text", text: first.slice(0, 600) }] }] },
+    // 300, not 30: the low tier is a reasoning model that bills its thinking inside max_tokens, so a tight
+    // cap returned an empty completion (stop_reason max_tokens) and the chat stayed untitled.
+    const resp = await callLLM({ model, max_tokens: 300, output_config: { effort: "low" }, system: [{ type: "text", text: TITLE_SYSTEM }], messages: [{ role: "user", content: [{ type: "text", text: first.slice(0, 600) }] }] },
       { fn: "manuscript-agent-title", bookId: row.book_id, taskTable: "book_agent_runs", taskId: row.id, userId: row.created_by }, { signal: AbortSignal.timeout(15_000) });
     const title = textFromLLM(resp).replace(/["\n]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
     if (title) await service.from("book_agent_runs").update({ title }).eq("id", row.id).is("title", null);
