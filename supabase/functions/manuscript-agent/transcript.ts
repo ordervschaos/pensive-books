@@ -86,6 +86,24 @@ const RECORD_NOTES_SENTINEL = "[record-notes]";
 // an honest note instead of a silent idle.
 const EMPTY_REPLY_SENTINEL = "[empty-reply]";
 
+// An assistant message with NO blocks is invalid on the OpenAI-compatible hosts ("content or tool_calls
+// must be set" — DeepSeek 400s the whole request), so a single empty completion stored verbatim poisons
+// every later turn of the thread (seen live twice on book 727). Store a placeholder text block instead,
+// and heal any transcript that already carries one at turn start.
+const EMPTY_REPLY_PLACEHOLDER = "(empty reply — the output budget was spent thinking)";
+function sanitizeTranscript(transcript: unknown[]): unknown[] {
+  let changed = false;
+  const out = transcript.map((m) => {
+    const msg = m as { role?: string; content?: unknown };
+    if (msg?.role !== "assistant") return m;
+    const blocks = Array.isArray(msg.content) ? msg.content : [];
+    if (blocks.length) return m;
+    changed = true;
+    return { ...msg, content: [{ type: "text", text: EMPTY_REPLY_PLACEHOLDER }] };
+  });
+  return changed ? out : transcript;
+}
+
 /** True when the newest user message is the harness prod `sentinel` (not the author). */
 function lastUserIsProd(transcript: unknown[], sentinel: string): boolean {
   const last = transcript[transcript.length - 1] as { role?: string; content?: unknown[] } | undefined;
@@ -135,4 +153,4 @@ function withBookState(msgs: unknown[], state: string, task = ""): unknown[] {
   return msgs;
 }
 
-export { EMPTY_REPLY_SENTINEL, FORCE_COMMIT_AFTER_READS, FORCE_COMMIT_SENTINEL, RECORD_NOTES_AFTER_READS, RECORD_NOTES_SENTINEL, compactTranscript, lastUserIsProd, latestAuthorAsk, notesBlock, trailingReadRun, unrecordedReadRun, withBookState, withCacheBreakpoints };
+export { EMPTY_REPLY_PLACEHOLDER, EMPTY_REPLY_SENTINEL, sanitizeTranscript, FORCE_COMMIT_AFTER_READS, FORCE_COMMIT_SENTINEL, RECORD_NOTES_AFTER_READS, RECORD_NOTES_SENTINEL, compactTranscript, lastUserIsProd, latestAuthorAsk, notesBlock, trailingReadRun, unrecordedReadRun, withBookState, withCacheBreakpoints };

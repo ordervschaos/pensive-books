@@ -12,7 +12,7 @@ import { ROW_COLS, type AgentStep, type ManuscriptChange, type Pending, type Run
 import { TOOLS } from "./tools.ts";
 import { bookState, toolResults, validateProposal } from "./exec-tools.ts";
 import { SYSTEM, TITLE_SYSTEM } from "./prompts.ts";
-import { EMPTY_REPLY_SENTINEL, FORCE_COMMIT_AFTER_READS, FORCE_COMMIT_SENTINEL, RECORD_NOTES_AFTER_READS, RECORD_NOTES_SENTINEL, compactTranscript, lastUserIsProd, latestAuthorAsk, notesBlock, trailingReadRun, unrecordedReadRun, withBookState, withCacheBreakpoints } from "./transcript.ts";
+import { EMPTY_REPLY_PLACEHOLDER, EMPTY_REPLY_SENTINEL, FORCE_COMMIT_AFTER_READS, FORCE_COMMIT_SENTINEL, RECORD_NOTES_AFTER_READS, RECORD_NOTES_SENTINEL, compactTranscript, lastUserIsProd, latestAuthorAsk, notesBlock, sanitizeTranscript, trailingReadRun, unrecordedReadRun, withBookState, withCacheBreakpoints } from "./transcript.ts";
 
 const MAX_TURNS = 20;
 const CALL_TIMEOUT_MS = 140_000;
@@ -75,7 +75,8 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
     const model = agentModelForTier(row.context_model) ?? roles.agent;
     if (row.turns === 0 && typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(maybeTitle(service, roles.low, row));
 
-    const baseTranscript = compactTranscript(row.transcript);
+    // Heal (empty assistant messages → placeholder) then prune; either change is persisted below.
+    const baseTranscript = compactTranscript(sanitizeTranscript(row.transcript));
     const compacted = baseTranscript !== row.transcript;
     const baseSteps = row.steps;
     const turns = row.turns + 1;
@@ -128,7 +129,8 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
 
     // deno-lint-ignore no-explicit-any
     const content = (resp?.content ?? []) as any[];
-    const transcript = [...baseTranscript, { role: "assistant", content }];
+    // Never store an EMPTY assistant message (see sanitizeTranscript) — the placeholder keeps the thread valid.
+    const transcript = [...baseTranscript, { role: "assistant", content: content.length ? content : [{ type: "text", text: EMPTY_REPLY_PLACEHOLDER }] }];
     const steps = [...baseSteps];
     for (const b of content) if (b.type === "text" && String(b.text ?? "").trim()) steps.push({ t: "note", label: String(b.text).trim() });
     const toolUses = content.filter((b) => b.type === "tool_use");
