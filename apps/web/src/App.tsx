@@ -38,6 +38,7 @@ const BookDetails = lazy(() => import("@/pages/books/show/BookDetails"));
 const StudioNewBookPage = lazy(() => import("@/features/dna/pages/StudioNewBookPage"));
 const StudioJsonPage = lazy(() => import("@/features/dna/pages/StudioJsonPage"));
 const StudioTreePage = lazy(() => import("@/features/dna/pages/StudioTreePage"));
+const ManuscriptAgentPage = lazy(() => import("@/features/manuscript/pages/ManuscriptAgentPage"));
 const StudioDevPage = lazy(() => import("@/features/dna/pages/StudioDevPage"));
 const StudioMetersPage = lazy(() => import("@/features/dna/pages/StudioMetersPage"));
 const StudioLedgerPage = lazy(() => import("@/features/dna/pages/StudioLedgerPage"));
@@ -88,9 +89,11 @@ function ConditionalNav() {
   const isMetersRoute = location.pathname.includes('/studio/meters');
   const isLedgerRoute = location.pathname.includes('/studio/ledger');
   const isArchRoute = location.pathname.includes('/dna/docs');
+  // The agent canvas is a full-screen surface with its own top strip (like the Studio tree).
+  const isAgentRoute = /^\/books\/[^/]+\/agent$/.test(location.pathname);
 
   // Hide nav for page view routes (own fixed settings menu) and dev Studio routes.
-  if (isPageViewRoute || isJsonRoute || isTreeRoute || isMetersRoute || isLedgerRoute || isArchRoute) {
+  if (isPageViewRoute || isJsonRoute || isTreeRoute || isMetersRoute || isLedgerRoute || isArchRoute || isAgentRoute) {
     return null;
   }
 
@@ -199,6 +202,7 @@ export default function App() {
                         <Route path="/books/:bookSlug/versions" element={<VersionHistoryPage />} />
                         <Route path="/books/:bookSlug/draft" element={<DraftChanges />} />
                         <Route path="/books/:bookSlug" element={<BookDetails />} />
+                        <Route path="/books/:bookSlug/agent" element={<ManuscriptAgentPage />} />
                         <Route path="/books/:bookSlug/studio" element={<StudioRedirect />} />
                         <Route path="/books/:bookSlug/studio.json" element={<StudioJsonPage />} />
                         <Route path="/books/:bookSlug/studio/meters" element={<StudioMetersPage />} />

@@ -496,6 +496,7 @@ const BookDetails = () => {
                   ) : undefined
                 }
                 onOpenStudio={canEdit ? () => navigate(`/books/${bookSlug}/studio`) : undefined}
+                onOpenAgent={canEdit ? () => navigate(`/books/${bookSlug}/agent`) : undefined}
                 onTitleChange={(name) => setBook((b) => (b ? { ...b, name } : b))}
               />
 

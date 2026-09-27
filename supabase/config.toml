@@ -340,6 +340,11 @@ verify_jwt = false
 [functions.book-agent]
 verify_jwt = false
 
+# manuscript-agent: same durable self-chain protocol as book-agent (x-chain secret for continue calls,
+# getUser() for the author's kick-off), so gateway JWT verification is off here too.
+[functions.manuscript-agent]
+verify_jwt = false
+
 [functions.dna-decompose]
 verify_jwt = false
 

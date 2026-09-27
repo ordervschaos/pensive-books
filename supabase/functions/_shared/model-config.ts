@@ -188,3 +188,17 @@ export async function getRoleModels(): Promise<{ agent: string; structure: strin
     return resolveRoleModels({}, localBridgeUp);
   }
 }
+
+// ── Author-selectable tiers (the manuscript agent's per-thread model picker) ──
+// The picker offers every tier that can drive a tool-use loop and runs off a deployed host: hermes has
+// no tool-use endpoint (fenced above) and claude-local is a laptop-only sentinel. The client mirrors this
+// list (apps/web/src/features/manuscript/lib/models.ts); the server never trusts it — an unknown or
+// fenced key resolves to the admin default via getRoleModels().agent.
+const SELECTABLE_TIERS: ModelTier[] = ["opus", "sonnet", "gpt", "deepseek-v4", "deepseek", "qwen", "qwen-plus", "kimi", "glm", "minimax"];
+
+/** The agent model for an author-picked tier key, or null when the key isn't selectable. */
+export function agentModelForTier(tier: string | null | undefined): string | null {
+  if (!tier || !SELECTABLE_TIERS.includes(tier as ModelTier)) return null;
+  const m = TIER_MODELS[tier as ModelTier]?.high;
+  return m && isToolCapable(m) ? m : null;
+}

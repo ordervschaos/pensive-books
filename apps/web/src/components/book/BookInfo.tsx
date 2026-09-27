@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { ImageIcon, Play, Pencil, Download, ChevronDown, Sparkles } from "lucide-react";
+import { ImageIcon, Play, Pencil, Download, ChevronDown, Sparkles, WandSparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { generateAndDownloadEPUB, generatePDFWithPrintDialog, generateAndDownloadMarkdown } from "@/lib/download";
 import { useNavigate } from "react-router-dom";
@@ -42,6 +42,8 @@ interface BookInfoProps {
   briefSlot?: React.ReactNode;
   /** Open the AI build Studio (author view) — shown as a button beside Continue writing. */
   onOpenStudio?: () => void;
+  /** Open the manuscript Agent canvas (author view) — shown beside Studio. */
+  onOpenAgent?: () => void;
   /** Keep parent page state in sync after inline title autosaves. */
   onTitleChange?: (title: string) => void;
 }
@@ -65,6 +67,7 @@ export const BookInfo = ({
   wordTarget,
   briefSlot,
   onOpenStudio,
+  onOpenAgent,
   onTitleChange
 }: BookInfoProps) => {
   const { toast } = useToast();
@@ -647,6 +650,18 @@ export const BookInfo = ({
                 >
                   <Sparkles className="h-4 w-4" />
                   Studio
+                </Button>
+              )}
+              {canEdit && onOpenAgent && (
+                <Button
+                  type="button"
+                  onClick={onOpenAgent}
+                  variant="outline"
+                  size="default"
+                  className="pv-serif h-11 gap-2 rounded-full border-border bg-transparent px-5 text-[14px] tracking-[0.01em] text-foreground"
+                >
+                  <WandSparkles className="h-4 w-4" />
+                  Agent
                 </Button>
               )}
               <DropdownMenu>
