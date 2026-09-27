@@ -6,6 +6,26 @@
 
 ## Log
 
+### 2026-09-27 — A second agent per book, over pages not DNA; it may only stage
+
+Owner directive: "the book page as is must be accessible by an AI agent — a new feature with
+separate UI; the Studio stays the same; this agent is about the book, not the story." Built as the
+**manuscript agent** (`/books/:slug/agent`), a sibling of the Studio's DNA agent, not a mode of it.
+
+- **Two agents, two substrates, one runtime.** Same `book_agent_runs` table (`kind='manuscript'`),
+  same LLM chokepoint, cancel path and session archive; the watchdog routes by kind. A second agent
+  cost a tool belt and a canvas, not a runtime. Rejected: folding page tools into `book-agent` — its
+  loop is DNA-shaped (propose_node_ops / expansion / render) and a page agent would inherit every
+  fence and prompt block it doesn't need.
+- **Stage-only.** The edge fn never writes `books`/`pages`; `proposals` is a flat changeset and the
+  author's browser is the one write path (whole / page / block / word hunk). The diff is computed
+  against the LIVE page, never the agent's snapshot, so in-place editing and the agent coexist:
+  a later author edit is more red/green, not a silent overwrite.
+- **Text projection, not JSON.** The model reads/writes a plain-text body (`## `, `- `, `*`/`**`);
+  the inverse is format-preserving (unchanged blocks keep their original TipTap nodes). Server and
+  client serializers are byte-identical mirrors — drift would paint phantom diffs.
+- **Publishing stays manual.** The agent can render a Publish button (`suggest_action`), never publish.
+
 ### 2026-08-09 — Reader model: GWT as architecture, IIT rejected, emotion derived not asked
 
 Prompted by "can IIT / global workspace theory give us the model of the reader's mind — context +

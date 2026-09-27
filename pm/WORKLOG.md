@@ -18,6 +18,11 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-09-27 — Manuscript Agent: a page-level agent canvas at /books/:slug/agent `[ship]`
+- **What:** Owner directive — the book page itself must be agent-accessible, not only the story DNA. Built a SECOND agent per book (additive; Studio untouched): `manuscript-agent` edge fn (durable self-chain loop on `book_agent_runs` kind='manuscript'; tools read_pages/search_pages/record_notes/propose_changes/ask_author/suggest_action/finish; per-thread model picker) + `apps/web/src/features/manuscript` (plain-text page projection with format-preserving inverse, block/word LCS diff engine with partial `resolve()`, chat rail with smart units, red/green canvas resolvable at hunk/block/page/all grain, pages|changes side panel, in-place editor, bottom nav). The agent only STAGES; the browser is the one write path; the diff is always live-page vs proposed. Verified end-to-end on scratch book 1467 (hunk accept, retitle, add/delete page + book_edit via Accept all — DB state checked). Smoke test fixed: editor sync keyed on divergence not focus (autofocus was holding a stale snapshot — one keystroke would have clobbered an accepted hunk); Realtime dropped the run row's turn-ending UPDATE twice → poll while active + refetch after each resolution; title call max_tokens 30→300 on the reasoning low tier. Migration applied via `supabase db query --linked --dns-resolver https -f` + manual `schema_migrations` row (db push still blocked by the digest-repo drift).
+- **Files/commits:** `874a916`, `9bdd749`; `supabase/functions/manuscript-agent/*`, `supabase/migrations/20260927120000_manuscript_agent.sql`, `apps/web/src/features/manuscript/**` (FEATURE.md is the manifest), `BookInfo.tsx` Agent button, `App.tsx` route; `doc_1790506800000_manuscript_agent.md`.
+- **PM impact:** STATE.md new row (Agent section) + snapshot date; DECISIONS.md entry (two agents, two substrates; stage-only rule). ROADMAP untouched — off-roadmap owner directive, Now slots unchanged.
+
 ## 2026-09-05 — Library no longer lists books that 404 on open `[ship]`
 - **What:** pensive.me/library advertised dead links — the listing queries filtered on
   `is_public ∧ ¬is_archived` while the detail page also requires `published_version_id`
