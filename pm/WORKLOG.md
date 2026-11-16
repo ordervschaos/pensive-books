@@ -18,6 +18,11 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-11-17 — Editor: first keystroke no longer jumps the page to the top `[chore]`
+- **What:** Mount parks the caret at pos 1 (focus('start')); clicking the blank band under the text hit the wrapper, whose bare focus() kept it there, so the first keystroke landed in the title and scrolled up. Reproduced live on page 9162; wrapper click below the text now does focus('end').
+- **Files/commits:** apps/web/src/components/editor/TipTapEditor.tsx (c091cdb).
+- **PM impact:** none (bug fix, no project row).
+
 ## 2026-09-27 — manuscript-agent: empty assistant message poisoned the thread `[chore]`
 - **What:** Follow-on to the empty-completion fix: the empty reply had been STORED as an assistant message with no blocks, which DeepSeek rejects on every later request (400 "content or tool_calls must be set") — the thread was dead until archived. Seen again in a fresh session on 727 (where the new record_notes nudge was visibly working). Fix: store a placeholder text block for an empty completion, and `sanitizeTranscript` at turn start heals threads that already carry one. Deployed. Note: `book-agent` has the same latent storage shape; not touched.
 - **Files/commits:** `supabase/functions/manuscript-agent/{advance,transcript}.ts`; commit above.
