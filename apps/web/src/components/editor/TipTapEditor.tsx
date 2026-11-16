@@ -203,10 +203,15 @@ export const TipTapEditor = ({
           fontSizeClassName // Apply font size classes last to override prose defaults
         )}
         style={fontFamilyStyle && Object.keys(fontFamilyStyle).length > 0 ? fontFamilyStyle : undefined}
-        onClick={() => {
+        onClick={(e) => {
           // When clicking anywhere in the editor container, focus the editor
           if (editable && isEditing && editor) {
-            editor.commands.focus();
+            // A click in the blank space below the text never reaches ProseMirror, so a bare
+            // focus() would keep the caret wherever mount parked it (focus('start')) — the
+            // first keystroke then lands at the top and the page jumps there. Put it at the end.
+            const pm = editor.view.dom;
+            const below = !pm.contains(e.target as Node) && e.clientY > pm.getBoundingClientRect().bottom;
+            editor.commands.focus(below ? 'end' : undefined);
           }
         }}
       >
