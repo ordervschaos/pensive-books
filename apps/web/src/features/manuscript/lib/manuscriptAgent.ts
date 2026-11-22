@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { TaskRow } from "@/hooks/useLatestTaskRow";
 import type { EditorJSON } from "@/types/editor";
 import { bodyText, docFromBody } from "./manuscriptText";
+import type { CanvasSnapshot, ManuscriptCanvas } from "./manuscriptContext";
 
 // ── Shapes (mirror supabase/functions/manuscript-agent/shared.ts) ──
 export type ManuscriptChange =
@@ -23,6 +24,7 @@ export interface ManuscriptStep {
   findings?: { ref: string; finding: string }[];
   action?: "publish" | "open_page" | "open_studio";
   pageId?: number;
+  canvas?: CanvasSnapshot;
   change?: ManuscriptChange; // on applied/discarded — the resolved change, for the collapsed card
 }
 
@@ -49,12 +51,12 @@ async function invoke(body: Record<string, unknown>): Promise<void> {
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
 }
 /** Send a message to the book's manuscript thread (creates it on first use). `model` = a tier key or "default". */
-export async function sendManuscriptMessage(bookId: number, message: string, model?: string | null): Promise<void> {
-  await invoke({ bookId, message, model: model && model !== "default" ? model : null });
+export async function sendManuscriptMessage(bookId: number, message: string, model?: string | null, canvas?: ManuscriptCanvas): Promise<void> {
+  await invoke({ bookId, message, model: model && model !== "default" ? model : null, canvas: canvas ?? null });
 }
 /** Answer the agent's pending question, resuming the parked turn. */
-export async function answerManuscriptAgent(runId: number, answer: string): Promise<void> {
-  await invoke({ runId, answer });
+export async function answerManuscriptAgent(runId: number, answer: string, canvas?: ManuscriptCanvas): Promise<void> {
+  await invoke({ runId, answer, canvas: canvas ?? null });
 }
 
 // ── Page writes ──

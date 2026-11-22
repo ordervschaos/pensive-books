@@ -3,8 +3,8 @@
 // and STAGES reviewable changes (book_agent_runs.proposals, kind='manuscript') that the author accepts
 // in whole or word-by-word on the agent canvas (/books/:slug/agent). It never writes pages itself.
 //
-//   client → POST { bookId, message, model? }   → get-or-create thread (kind='manuscript') → chain
-//   client → POST { runId, answer }              → append tool_result → chain
+//   client → POST { bookId, message, model?, canvas? } → get-or-create thread → chain
+//   client → POST { runId, answer, canvas? }           → append tool_result → chain
 //   self   → POST { runId, chain: true }          → drive links in this worker (x-chain secret)
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { corsHeaders, json } from "../_shared/cors.ts";
@@ -12,6 +12,8 @@ import { serviceClient, userClient as createUserClient } from "../_shared/task.t
 import { isChainCall } from "../_shared/self-chain.ts";
 import { ROW_COLS, type AgentStep, type RunRow } from "./shared.ts";
 import { chain, driveChain } from "./advance.ts";
+import { readCanvas } from "./exec-tools.ts";
+import { canvasContext } from "./canvas.ts";
 
 const KIND = "manuscript";
 
@@ -19,7 +21,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const service = serviceClient();
   try {
-    const body = (await req.json().catch(() => ({}))) as { bookId?: number; runId?: number; answer?: string; chain?: boolean; message?: string; model?: string | null };
+    const body = (await req.json().catch(() => ({}))) as { bookId?: number; runId?: number; answer?: string; chain?: boolean; message?: string; model?: string | null; canvas?: unknown };
 
     if (body.chain) {
       if (!isChainCall(req)) return json({ error: "Unauthorized" }, 401);
@@ -40,12 +42,15 @@ Deno.serve(async (req: Request) => {
       if (!answer) return json({ error: "answer is required" }, 400);
       const { data } = await userClient.from("book_agent_runs").select(ROW_COLS).eq("id", body.runId).maybeSingle();
       const row = data as RunRow | null;
-      if (!row) return json({ error: "Run not found" }, 404);
-      const { data: canEdit } = await userClient.rpc("user_can_edit_book", { _book_id: row.book_id });
-      if (canEdit === false) return json({ error: "Access denied" }, 403);
+      if (!row || row.kind !== KIND) return json({ error: "Run not found" }, 404);
+      const { data: canEdit, error: permissionError } = await userClient.rpc("user_can_edit_book", { _book_id: row.book_id });
+      if (permissionError) throw new Error(permissionError.message);
+      if (!canEdit) return json({ error: "Access denied" }, 403);
       if (row.status !== "awaiting_input" || !row.pending) return json({ error: "The agent is not waiting for an answer" }, 409);
-      const transcript = [...row.transcript, { role: "user", content: [...(row.pending.preResults ?? []), { type: "tool_result", tool_use_id: row.pending.tool_use_id, content: answer }] }];
-      const steps = [...row.steps, { t: "answer", label: answer } as AgentStep];
+      const canvas = await readCanvas(service, row.book_id, body.canvas, row.proposals ?? []);
+      const context = canvasContext(canvas);
+      const transcript = [...row.transcript, { role: "user", content: [...(row.pending.preResults ?? []), { type: "tool_result", tool_use_id: row.pending.tool_use_id, content: answer + (context ? `\n\n${context}` : "") }] }];
+      const steps = [...row.steps, { t: "answer", label: answer, ...(canvas ? { canvas } : {}) } as AgentStep];
       const { error } = await service.from("book_agent_runs").update({ transcript, steps, pending: null, status: "running", cancel_requested: false }).eq("id", row.id);
       if (error) throw new Error(error.message);
       chain(row.id);
@@ -57,18 +62,22 @@ Deno.serve(async (req: Request) => {
       const message = body.message.trim();
       if (!bookId) return json({ error: "bookId is required" }, 400);
       if (!message) return json({ error: "message is required" }, 400);
-      const { data: canEdit } = await userClient.rpc("user_can_edit_book", { _book_id: bookId });
-      if (canEdit === false) return json({ error: "Access denied" }, 403);
+      const { data: canEdit, error: permissionError } = await userClient.rpc("user_can_edit_book", { _book_id: bookId });
+      if (permissionError) throw new Error(permissionError.message);
+      if (!canEdit) return json({ error: "Access denied" }, 403);
       // The author's model pick rides with every message (validated server-side at turn start).
       const model = typeof body.model === "string" && body.model.trim() ? body.model.trim().slice(0, 40) : null;
 
-      const { data: existing } = await service.from("book_agent_runs").select(ROW_COLS).eq("book_id", bookId).eq("kind", KIND).maybeSingle();
+      const { data: existing, error: threadError } = await service.from("book_agent_runs").select(ROW_COLS).eq("book_id", bookId).eq("kind", KIND).maybeSingle();
+      if (threadError) throw new Error(threadError.message);
       const thread = existing as RunRow | null;
       if (thread && (thread.status === "running" || thread.status === "awaiting_input")) {
         return json({ error: "The agent is mid-turn — answer its question or stop it first." }, 409);
       }
-      const userMsg = { role: "user", content: [{ type: "text", text: message }] };
-      const userStep = { t: "user", label: message } as AgentStep;
+      const canvas = await readCanvas(service, bookId, body.canvas, thread?.proposals ?? []);
+      const context = canvasContext(canvas);
+      const userMsg = { role: "user", content: [{ type: "text", text: message }, ...(context ? [{ type: "text", text: context }] : [])] };
+      const userStep = { t: "user", label: message, ...(canvas ? { canvas } : {}) } as AgentStep;
       if (!thread) {
         const { data: run, error } = await service.from("book_agent_runs")
           .insert({ book_id: bookId, created_by: user.id, kind: KIND, status: "running", context_model: model, transcript: [userMsg], steps: [userStep] })

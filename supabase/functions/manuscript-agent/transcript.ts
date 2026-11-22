@@ -4,6 +4,7 @@
 // breakpoints on the prefix, and inject the live book state AFTER them so the cached prefix stays
 // byte-identical across turns.
 import type { AgentStep, Finding } from "./shared.ts";
+import { CANVAS_CONTEXT_PREFIX } from "./canvas.ts";
 
 const COMPACT_OVER = 120_000; // chars of transcript JSON before pruning kicks in
 const STUB_OVER = 700;        // only stub results bigger than this
@@ -135,7 +136,7 @@ function latestAuthorAsk(transcript: unknown[]): string {
     const texts = m.content
       .filter((b) => (b as { type?: string })?.type === "text")
       .map((b) => String((b as { text?: unknown }).text ?? "").trim())
-      .filter((t) => t && !t.startsWith(FORCE_COMMIT_SENTINEL) && !t.startsWith(RECORD_NOTES_SENTINEL) && !t.startsWith(EMPTY_REPLY_SENTINEL));
+      .filter((t) => t && !t.startsWith(CANVAS_CONTEXT_PREFIX) && !t.startsWith(FORCE_COMMIT_SENTINEL) && !t.startsWith(RECORD_NOTES_SENTINEL) && !t.startsWith(EMPTY_REPLY_SENTINEL));
     if (texts.length) return texts.join("\n").trim();
   }
   return "";

@@ -8,6 +8,7 @@
 // a byte-for-byte mirror of blockText below) and diffs it against the proposed text, so a change the
 // agent stages here shows up as exactly the words it changed, never as serializer noise. Keep the two
 // serializers identical.
+import type { CanvasSnapshot } from "./canvas.ts";
 
 // ── Row shapes ──
 // Same feed vocabulary as the Studio thread (StepBubble-compatible), plus 'action' — a smart chat unit
@@ -20,6 +21,7 @@ interface AgentStep {
   findings?: Finding[];
   action?: "publish" | "open_page" | "open_studio";
   pageId?: number;
+  canvas?: CanvasSnapshot; // user/answer: validated snapshot of what was open when sent
 }
 interface Pending { tool_use_id: string; question: string; options?: string[]; preResults?: unknown[] }
 

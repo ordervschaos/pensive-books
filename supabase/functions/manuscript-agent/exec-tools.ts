@@ -2,8 +2,19 @@
 // propose_changes validation (raw tool input → stored ManuscriptChange[] against the LIVE pages).
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { type AgentStep, type BookRow, type ManuscriptChange, type PageRow, bodyText, pageHandle, wordCount } from "./shared.ts";
+import { canvasSnapshot, parseCanvas, type CanvasSnapshot } from "./canvas.ts";
 
 const PAGE_COLS = "id, page_index, page_type, title, content, archived";
+
+/** Resolve browser context only inside the authorized book. Invalid/stale anchors are omitted. */
+async function readCanvas(service: SupabaseClient, bookId: number, value: unknown, staged: ManuscriptChange[]): Promise<CanvasSnapshot | null> {
+  const target = parseCanvas(value);
+  if (!target || target.kind !== "page") return canvasSnapshot(target, [], staged);
+  const { data, error } = await service.from("pages").select("id, page_index, title")
+    .eq("book_id", bookId).eq("id", target.pageId).eq("archived", false).maybeSingle();
+  if (error) throw new Error(error.message);
+  return canvasSnapshot(target, data ? [data] : [], staged);
+}
 
 async function loadBook(service: SupabaseClient, bookId: number): Promise<{ book: BookRow | null; pages: PageRow[] }> {
   const [{ data: book }, { data: pages }] = await Promise.all([
@@ -195,4 +206,4 @@ function normalizeText(text: string): string {
   return text.replace(/\r\n?/g, "\n").split(/\n{2,}/).map((b) => b.replace(/[ \t]+$/gm, "").trim()).filter(Boolean).join("\n\n");
 }
 
-export { bookState, toolResults, validateProposal };
+export { bookState, readCanvas, toolResults, validateProposal };
