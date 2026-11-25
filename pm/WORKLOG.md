@@ -18,6 +18,23 @@
 
 <!-- NEWEST ENTRIES GO DIRECTLY BELOW THIS LINE (prepend, do not append at the bottom) -->
 
+## 2026-11-25 — Deploy manuscript agent canvas + chat updates to prod `[ship]`
+- **What:** Deployed latest build to production via `vercel deploy --prod`. Manuscript agent (page-level canvas) now live with typed context, page receipts, stable links, and conversational starter prompts. Verifies the 2026-11-23 task completion (canvas awareness + test coverage).
+- **Files/commits:** Working tree deployed as-is; includes manuscript/FEATURE.md, chat components, tests, docs/agentic-writing-experience.md, plus earlier commits (4cafe5e + prior).
+- **PM impact:** Manuscript agent shipped to prod; no scope change.
+
+## 2026-11-25 — Manuscript agent: Dottr-inspired tools + calm chat `[feature]`
+- **What:** 7 new agent abilities: word/regex search with counts, read_chapter, check_prose (deterministic craft read), remember/forget (book memory kept across chats), withdraw_changes, replace_across_book, page_move change kind. Chat folds legwork into one live "Worked" row, memory popover, "showing" receipts, composer ✕ to leave the open page out.
+- **Files/commits:** `supabase/functions/manuscript-agent/` (analysis.ts new), `features/manuscript/`, migration `20261125120000` (book_agent_runs.memory). Commit cfb5cdc; edge fn + migration deployed; web pushed.
+- **Validation:** 52 manuscript tests, full hook suite (1496), typecheck, lint. Live turn on scratch run 115 (book 1467): remember → check_prose → page_move staged, memory persisted.
+- **Remaining:** accept the staged move in the UI (client path unit-tested only); the agent proposed without narrating the prose findings, so consider prompting for a reply alongside propose_changes; mid-run steering not yet ported.
+
+## 2026-11-23 — Make the manuscript conversation aware of its canvas `[feature]`
+- **What:** Compared the current Dottr agent with Pensive; implemented typed, book-checked send-time canvas context, page receipts and stable page links, contextual starter prompts, and a growing composer. Documented the next improvements in priority order.
+- **Files/commits:** `features/manuscript/` chat, contract and tests; `supabase/functions/manuscript-agent/` context and protocol; `docs/agentic-writing-experience.md` and the feature manifest. Backend portion is in `4cafe5e`; remaining changes are in the working tree.
+- **Validation:** 40 manuscript tests, web typecheck, scoped ESLint, edge `deno check`, and production web build passed. Inspected the signed-in local UI on scratch book 1467 and verified navigation updates the composer context.
+- **Remaining:** Shipped 2026-11-25 (defdf9c, web + edge fn deployed together). Navigate-mid-turn live check still not done.
+
 ## 2026-11-17 — Editor: first keystroke no longer jumps the page to the top `[chore]`
 - **What:** Mount parks the caret at pos 1 (focus('start')); clicking the blank band under the text hit the wrapper, whose bare focus() kept it there, so the first keystroke landed in the title and scrolled up. Reproduced live on page 9162; wrapper click below the text now does focus('end').
 - **Files/commits:** apps/web/src/components/editor/TipTapEditor.tsx (c091cdb).
