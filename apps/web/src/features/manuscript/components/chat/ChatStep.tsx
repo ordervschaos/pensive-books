@@ -5,16 +5,28 @@ import { ArrowRight, BookOpen, Check, NotebookPen, Rocket, Sparkles, X } from "l
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ManuscriptStep } from "../../lib/manuscriptAgent";
+import type { ManuscriptCanvas } from "../../lib/manuscriptContext";
+import { pageFromHref, type LinkedPage } from "../../lib/manuscriptLinks";
+import { CanvasAnchor } from "./CanvasAnchor";
 
-export function ChatStep({ step, onAction, onJumpToPage }: {
+export function ChatStep({ step, pages = [], canvas, onAction, onJumpToPage, onSelectCanvas, canOpenCanvas }: {
   step: ManuscriptStep;
+  pages?: LinkedPage[];
+  canvas?: ManuscriptCanvas;
   onAction?: (step: ManuscriptStep) => void;
   onJumpToPage?: (pageId: number) => void;
+  onSelectCanvas?: (canvas: ManuscriptCanvas) => void;
+  canOpenCanvas?: (canvas: ManuscriptCanvas) => boolean;
 }) {
   if (step.t === "user" || step.t === "answer") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[hsl(var(--pv-surface-2))] px-3.5 py-2 pv-serif text-[14px] leading-[1.55] text-foreground">{step.label}</div>
+        <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-[hsl(var(--pv-surface-2))] px-3.5 py-2 pv-serif text-[14px] leading-[1.55] text-foreground">
+          {step.canvas && <div className="mb-1.5"><CanvasAnchor snapshot={step.canvas}
+            current={JSON.stringify(step.canvas.target) === JSON.stringify(canvas)}
+            onOpen={onSelectCanvas && canOpenCanvas?.(step.canvas.target) ? () => onSelectCanvas(step.canvas!.target) : undefined} /></div>}
+          <div className="whitespace-pre-wrap">{step.label}</div>
+        </div>
       </div>
     );
   }
@@ -69,7 +81,22 @@ export function ChatStep({ step, onAction, onJumpToPage }: {
   // note / ask / done — the agent speaking.
   return (
     <div className="max-w-[92%] pv-serif text-[14.5px] leading-[1.62] text-[hsl(var(--pv-text-muted))] prose prose-sm max-w-none prose-p:my-2 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0 prose-headings:text-foreground prose-strong:text-foreground prose-strong:font-semibold prose-code:text-foreground">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ({ children }) => <div className="overflow-x-auto"><table>{children}</table></div> }}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+        table: ({ children }) => <div className="overflow-x-auto"><table>{children}</table></div>,
+        a: ({ href, children }) => {
+          const page = pageFromHref(href, pages);
+          if (href?.startsWith("?page=")) {
+            if (!page || !onJumpToPage) return <span>{children}</span>;
+            return <a href={href} title={`Open p${page.page_index + 1} · ${page.title?.trim() || "Untitled"}`}
+              aria-current={canvas?.kind === "page" && canvas.pageId === page.id ? "page" : undefined}
+              onClick={(e) => {
+                if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                e.preventDefault(); onJumpToPage(page.id);
+              }} className="text-[hsl(var(--pv-accent))] underline decoration-[hsl(var(--pv-accent))]/35 underline-offset-2 hover:decoration-current">{children}</a>;
+          }
+          return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+        },
+      }}>
         {step.label}
       </ReactMarkdown>
     </div>

@@ -59,6 +59,24 @@ same as book-agent.
 
 ## Build on top
 
+### Canvas context and page links (2026-11-23, local implementation)
+
+The composer names the open book/page/new-page preview. Messages and question answers send
+`canvas: {kind, pageId? , changeId?}`; `canvas.ts` validates its shape, and `exec-tools.readCanvas`
+checks book membership and archive state before recording the snapshot in the user/answer step.
+The transcript retains a separate reference block for replay. This anchors “this page” without
+restricting an explicit whole-book request. `lib/manuscriptContext.ts` re-exports the pure edge
+contract, also used by the canvas's `Selection` type.
+
+`CanvasAnchor` renders the same name in composer and message receipt. Receipts reopen existing
+targets. `ChatStep` handles `[page name](?page=<stable id>)` links only for this book's live pages,
+marks the current page, and preserves modified clicks. Missing targets remain plain text.
+Fresh chats offer context-specific prompts that fill an editable draft. No migration is needed;
+release the web app and `manuscript-agent` together. See
+[the comparison and follow-ups](../../../../../docs/agentic-writing-experience.md).
+
+### Further extensions
+
 - New change kinds: add to the `ManuscriptChange` union (both mirrors), validate in `exec-tools.ts`,
   write in `manuscriptAgent.acceptChange`, paint in `SidePanel`/`PageCanvas`.
 - New smart chat units: a result-blind tool that pushes an `action` step; render in `ChatStep`; handle in

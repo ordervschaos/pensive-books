@@ -156,6 +156,7 @@ export default function ManuscriptAgentPage() {
       {/* Agent rail */}
       <aside className="relative flex h-full shrink-0 flex-col border-r border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/20" style={{ width: railWidth }}>
         <ManuscriptChat bookId={bookId} run={run} refetchRun={refetchRun} stale={stale} pages={pages} staged={staged} busyId={busyId}
+          canvas={selection} onSelectCanvas={select}
           onAccept={(c) => void doAccept(c)} onReject={(c) => void doReject(c)} onJumpToChange={jumpToChange} onJumpToPage={(id) => select({ kind: "page", pageId: id })} onAction={onAction} />
         <div onMouseDown={onDragStart} className="absolute -right-1 top-0 z-20 h-full w-2 cursor-col-resize" title="Drag to resize" />
       </aside>
