@@ -2,16 +2,18 @@
 // projects the run row live (the page shell owns the row; refresh = no-op), renders the feed's smart
 // units (choices, staged changes, action buttons), and carries the per-thread model pick.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, History, Loader2, Plus, Square, WandSparkles, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Bookmark, ChevronDown, History, Loader2, Plus, Square, WandSparkles, X } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { stopRun } from "@/lib/stopRun";
 import { useChatScroll } from "@/components/book/shared/useChatScroll";
 import { Eyebrow, RunError } from "@/components/book/shared/studioUi";
 import { fetchAgentSessionCount, fetchAgentSessions, resumeAgentSession, startNewAgentSession } from "@/features/dna/lib/agentThread";
-import { answerManuscriptAgent, sendManuscriptMessage, type ManuscriptChange, type ManuscriptPage, type ManuscriptRunRow, type ManuscriptStep } from "../../lib/manuscriptAgent";
+import { answerManuscriptAgent, forgetMemory, sendManuscriptMessage, type ManuscriptChange, type ManuscriptPage, type ManuscriptRunRow, type ManuscriptStep } from "../../lib/manuscriptAgent";
 import { MODEL_CHOICES, modelLabel } from "../../lib/models";
 import { ChatStep } from "./ChatStep";
+import { WorkGroup } from "./WorkGroup";
+import { groupSteps } from "../../lib/chatGroups";
 import { StagedCard } from "./StagedCard";
 import { CanvasAnchor } from "./CanvasAnchor";
 import { canvasSnapshot, type ManuscriptCanvas } from "../../lib/manuscriptContext";
@@ -30,7 +32,14 @@ export function ManuscriptChat({ bookId, run, refetchRun, stale, pages, staged, 
   const running = run?.status === "running";
   const awaiting = run?.status === "awaiting_input";
   const active = running || awaiting;
-  const context = canvasSnapshot(canvas, pages, staged);
+  const items = useMemo(() => groupSteps(steps), [steps]);
+  const memory = useMemo(() => (Array.isArray(run?.memory) ? run!.memory!.filter(Boolean) : []), [run]);
+  const open = canvasSnapshot(canvas, pages, staged);
+  // The author can leave the open page out of a message (✕ on the pill); a new page re-includes it.
+  const canvasKey = JSON.stringify(canvas);
+  const [shareCanvas, setShareCanvas] = useState(true);
+  useEffect(() => { setShareCanvas(true); }, [canvasKey]);
+  const context = shareCanvas ? open : null;
   const canOpenCanvas = (target: ManuscriptCanvas) => !!canvasSnapshot(target, pages, staged);
 
   // The model pick — per book, remembered; sent with every message.
@@ -79,6 +88,12 @@ export function ManuscriptChat({ bookId, run, refetchRun, stale, pages, staged, 
 
   // Past chats — archived in book_agent_sessions by the same RPCs the Studio thread uses.
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
+  const forget = async (line: string) => {
+    if (!run) return;
+    try { await forgetMemory(run.id, line); refetchRun(); }
+    catch (e) { toast({ title: "Couldn't update memory", description: String((e as Error)?.message ?? e), variant: "destructive" }); }
+  };
   const [sessionCount, setSessionCount] = useState(0);
   const [sessions, setSessions] = useState<Session[]>([]);
   const threadId = run?.id;
@@ -121,7 +136,12 @@ export function ManuscriptChat({ bookId, run, refetchRun, stale, pages, staged, 
         <WandSparkles className="h-4 w-4 shrink-0 text-[hsl(var(--pv-accent))]" />
         <Eyebrow tone="accent" className="shrink-0">Agent</Eyebrow>
         <span className="pv-serif min-w-0 flex-1 truncate text-[12.5px] italic text-[hsl(var(--pv-text-faint))]">{run?.title ?? ""}</span>
-        <button type="button" onClick={() => setHistoryOpen((v) => !v)} disabled={!sessionCount} title="Past chats"
+        <button type="button" onClick={() => { setMemoryOpen((v) => !v); setHistoryOpen(false); }} disabled={!memory.length} title="What the agent remembers about this book"
+          aria-expanded={memoryOpen}
+          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 pv-mono text-[10px] text-[hsl(var(--pv-text-faint))] hover:text-foreground disabled:opacity-40">
+          <Bookmark className="h-3.5 w-3.5" />{memory.length || ""}
+        </button>
+        <button type="button" onClick={() => { setHistoryOpen((v) => !v); setMemoryOpen(false); }} disabled={!sessionCount} title="Past chats"
           className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 pv-mono text-[10px] text-[hsl(var(--pv-text-faint))] hover:text-foreground disabled:opacity-40">
           <History className="h-3.5 w-3.5" />{sessionCount || ""}
         </button>
@@ -130,6 +150,20 @@ export function ManuscriptChat({ bookId, run, refetchRun, stale, pages, staged, 
           <Plus className="h-3.5 w-3.5" />
         </button>
       </div>
+
+      {memoryOpen && memory.length > 0 && (
+        <div className="sidebar-scroll mt-2 max-h-[40%] shrink-0 overflow-y-auto rounded-xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-3 py-2">
+          <div className="mb-1 flex items-center justify-between"><Eyebrow>Remembered for this book</Eyebrow><button type="button" aria-label="Close memory" onClick={() => setMemoryOpen(false)}><X className="h-3 w-3 text-[hsl(var(--pv-text-faint))]" /></button></div>
+          <p className="mb-1.5 pv-serif text-[11.5px] italic text-[hsl(var(--pv-text-faint))]">Kept across chats and applied to every proposal.</p>
+          {memory.map((m) => (
+            <div key={m} className="group flex items-start gap-2 py-1">
+              <span className="pv-serif flex-1 text-[12.5px] leading-[1.45] text-[hsl(var(--pv-text-muted))]">{m}</span>
+              <button type="button" onClick={() => void forget(m)} disabled={active} title="Forget this" aria-label={`Forget: ${m}`}
+                className="shrink-0 text-[hsl(var(--pv-text-faint))] opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 focus:opacity-100 disabled:opacity-30"><X className="h-3 w-3" /></button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {historyOpen && sessions.length > 0 && (
         <div className="sidebar-scroll mt-2 max-h-[40%] shrink-0 overflow-y-auto rounded-xl border border-[hsl(var(--pv-border-soft))]/60 bg-[hsl(var(--pv-surface-2))]/30 px-3 py-2">
@@ -157,12 +191,14 @@ export function ManuscriptChat({ bookId, run, refetchRun, stale, pages, staged, 
               </div>}
             </div>
           )}
-          {steps.map((s, i) => <ChatStep key={i} step={s} pages={pages} canvas={canvas} onSelectCanvas={onSelectCanvas} canOpenCanvas={canOpenCanvas} onAction={onAction} onJumpToPage={onJumpToPage} />)}
+          {items.map((it, i) => it.kind === "work"
+            ? <WorkGroup key={it.key} steps={it.steps} live={running && !stale && i === items.length - 1} />
+            : <ChatStep key={it.key} step={it.step} pages={pages} canvas={canvas} onSelectCanvas={onSelectCanvas} canOpenCanvas={canOpenCanvas} onAction={onAction} onJumpToPage={onJumpToPage} />)}
           <StagedCard changes={staged} pages={pages} busyId={busyId} onAccept={onAccept} onReject={onReject} onJump={onJumpToChange} />
           {optimistic && (
             <div className="opacity-60"><ChatStep step={optimistic} /></div>
           )}
-          {running && !stale && <div className="flex items-center gap-2 pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-faint))]"><Loader2 className="h-3.5 w-3.5 animate-spin" /> thinking…</div>}
+          {running && !stale && items[items.length - 1]?.kind !== "work" && <div className="flex items-center gap-2 pv-serif text-[13.5px] italic text-[hsl(var(--pv-text-faint))]"><Loader2 className="h-3.5 w-3.5 animate-spin" /> thinking…</div>}
           {running && stale && <p className="pv-serif text-[13px] leading-[1.55] text-amber-600 dark:text-amber-500">This turn stalled — it may have died. Stop it and try again.</p>}
           {run?.status === "error" && run.error && <RunError msg={run.error} />}
         </div>
@@ -175,9 +211,17 @@ export function ManuscriptChat({ bookId, run, refetchRun, stale, pages, staged, 
       </div>
 
       <div className="mt-3 shrink-0">
-        {context && <div className="mb-2 flex min-w-0 items-center gap-2">
-          <span className="shrink-0 pv-mono text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">Open beside chat</span>
-          <CanvasAnchor snapshot={context} />
+        {open && <div className="mb-2 flex min-w-0 items-center gap-2">
+          {shareCanvas ? <>
+            <span className="shrink-0 pv-mono text-[9px] uppercase tracking-[0.1em] text-[hsl(var(--pv-text-faint))]">Open beside chat</span>
+            <CanvasAnchor snapshot={open} />
+            <button type="button" onClick={() => setShareCanvas(false)} title="Don't send the open page with this message" aria-label="Leave the open page out"
+              className="shrink-0 rounded-full p-0.5 text-[hsl(var(--pv-text-faint))] hover:text-foreground"><X className="h-3 w-3" /></button>
+          </> : (
+            <button type="button" onClick={() => setShareCanvas(true)} className="pv-serif text-[11.5px] italic text-[hsl(var(--pv-text-faint))] underline-offset-2 hover:text-foreground hover:underline">
+              Not sending the open page · include {open.label}
+            </button>
+          )}
         </div>}
         {awaiting && run?.pending ? (
           <div className="space-y-2.5 rounded-xl border border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/[0.07] p-3.5">

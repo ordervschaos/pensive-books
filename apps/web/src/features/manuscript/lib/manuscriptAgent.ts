@@ -15,10 +15,11 @@ export type ManuscriptChange =
   | { id: string; kind: "page_edit"; pageId: number; title?: string | null; before: string; after: string; note?: string }
   | { id: string; kind: "page_add"; afterPageId: number | null; pageType: "text" | "section"; title: string; text: string; note?: string }
   | { id: string; kind: "page_delete"; pageId: number; note?: string }
+  | { id: string; kind: "page_move"; pageId: number; afterPageId: number | null; note?: string }
   | { id: string; kind: "book_edit"; field: "name" | "subtitle" | "author"; before: string; after: string; note?: string };
 
 export interface ManuscriptStep {
-  t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done" | "finding" | "action" | "applied" | "discarded";
+  t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done" | "finding" | "action" | "applied" | "discarded" | "memory";
   label: string;
   options?: string[];
   findings?: { ref: string; finding: string }[];
@@ -26,6 +27,7 @@ export interface ManuscriptStep {
   pageId?: number;
   canvas?: CanvasSnapshot;
   change?: ManuscriptChange; // on applied/discarded — the resolved change, for the collapsed card
+  by?: "agent";              // discarded by the agent itself (withdraw_changes), not by the author
 }
 
 export interface ManuscriptRunRow extends TaskRow {
@@ -38,8 +40,9 @@ export interface ManuscriptRunRow extends TaskRow {
   error: string | null;
   context_model: string | null;
   title: string | null;
+  memory: string[] | null; // standing author preferences for the book (survive "New chat")
 }
-export const MANUSCRIPT_RUN_SELECT = "id, book_id, kind, status, created_at, updated_at, steps, pending, proposals, report, cancel_requested, error, context_model, title";
+export const MANUSCRIPT_RUN_SELECT = "id, book_id, kind, status, created_at, updated_at, steps, pending, proposals, report, cancel_requested, error, context_model, title, memory";
 
 export interface ManuscriptPage { id: number; page_index: number; page_type: "text" | "section"; title: string | null; content: EditorJSON | null; updated_at?: string | null }
 export interface ManuscriptBook { id: number; name: string; subtitle: string | null; author: string | null; is_public: boolean; cover_url?: string | null }
@@ -111,6 +114,27 @@ async function deletePage(bookId: number, pageId: number, pages: ManuscriptPage[
   await reorderPages(bookId, remaining, new Map(pages.map((p) => [p.id, p.page_index])));
 }
 
+/** The page order after moving `pageId` to sit right after `afterPageId` (null = first). Pure. */
+export function movedOrder(ids: number[], pageId: number, afterPageId: number | null): number[] {
+  const rest = ids.filter((id) => id !== pageId);
+  const at = afterPageId == null ? 0 : rest.indexOf(afterPageId) + 1;
+  return [...rest.slice(0, at), pageId, ...rest.slice(at)];
+}
+
+async function movePage(bookId: number, c: Extract<ManuscriptChange, { kind: "page_move" }>, pages: ManuscriptPage[]): Promise<void> {
+  if (c.afterPageId != null && !pages.some((p) => p.id === c.afterPageId)) throw new Error("The page it should follow is no longer in the book.");
+  const live = [...pages].sort((a, b) => a.page_index - b.page_index).map((p) => p.id);
+  await reorderPages(bookId, movedOrder(live, c.pageId, c.afterPageId), new Map(pages.map((p) => [p.id, p.page_index])));
+}
+
+/** Remove one memory entry (the author's ✕ in the memory popover). Fresh read-modify-write. */
+export async function forgetMemory(runId: number, line: string): Promise<void> {
+  const { data } = await supabase.from("book_agent_runs").select("memory").eq("id", runId).maybeSingle();
+  const memory = Array.isArray(data?.memory) ? (data!.memory as string[]) : [];
+  const { error } = await supabase.from("book_agent_runs").update({ memory: memory.filter((m) => m !== line) }).eq("id", runId);
+  if (error) throw new Error(error.message);
+}
+
 async function editBook(bookId: number, field: "name" | "subtitle" | "author", value: string): Promise<void> {
   const { error } = await supabase.from("books").update({ [field]: value, updated_at: nowIso() }).eq("id", bookId);
   if (error) throw new Error(error.message);
@@ -137,6 +161,7 @@ export function changeLabel(c: ManuscriptChange, pages: ManuscriptPage[]): strin
     case "page_edit": return `${c.title != null ? (c.after === c.before ? "retitle" : "retitle + edit") : "edit"} ${p(c.pageId)}`;
     case "page_add": return `add ${c.pageType === "section" ? "section" : "page"} "${c.title}"`;
     case "page_delete": return `delete ${p(c.pageId)}`;
+    case "page_move": return `move ${p(c.pageId)} ${c.afterPageId == null ? "to the start" : `after ${p(c.afterPageId)}`}`;
     case "book_edit": return `${c.field} → "${c.after}"`;
   }
 }
@@ -153,6 +178,9 @@ export async function acceptChange(bookId: number, runId: number, c: ManuscriptC
   } else if (c.kind === "page_delete") {
     if (!pages.some((p) => p.id === c.pageId)) throw new Error("That page is no longer in the book.");
     await deletePage(bookId, c.pageId, pages);
+  } else if (c.kind === "page_move") {
+    if (!pages.some((p) => p.id === c.pageId)) throw new Error("That page is no longer in the book.");
+    await movePage(bookId, c, pages);
   } else {
     await editBook(bookId, c.field, c.after);
   }

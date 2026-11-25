@@ -10,7 +10,7 @@ import { reinvoke } from "../_shared/self-chain.ts";
 import { captureException, isBillingError } from "../_shared/sentry.ts";
 import { ROW_COLS, type AgentStep, type ManuscriptChange, type Pending, type RunRow } from "./shared.ts";
 import { TOOLS } from "./tools.ts";
-import { bookState, toolResults, validateProposal } from "./exec-tools.ts";
+import { bookState, memoryBlock, toolResults, validateProposal, validateReplace, type Ctx } from "./exec-tools.ts";
 import { SYSTEM, TITLE_SYSTEM } from "./prompts.ts";
 import { EMPTY_REPLY_PLACEHOLDER, EMPTY_REPLY_SENTINEL, FORCE_COMMIT_AFTER_READS, FORCE_COMMIT_SENTINEL, RECORD_NOTES_AFTER_READS, RECORD_NOTES_SENTINEL, compactTranscript, lastUserIsProd, latestAuthorAsk, notesBlock, sanitizeTranscript, trailingReadRun, unrecordedReadRun, withBookState, withCacheBreakpoints } from "./transcript.ts";
 
@@ -20,7 +20,9 @@ const WORKER_WALL_BUDGET_MS = 145_000;
 const WRITE_HEADROOM_MS = 5_000;
 const MIN_CONTINUE_MS = 90_000;
 // Tools whose result is always "ok" — a turn that spoke and only called these needs no continuation.
-const RESULT_BLIND = new Set(["record_notes", "suggest_action"]);
+const RESULT_BLIND = new Set(["record_notes", "suggest_action", "remember", "forget", "withdraw_changes"]);
+// Tools that stage changes and end the turn.
+const STAGERS = new Set(["propose_changes", "replace_across_book"]);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 type Outcome = "continue" | "retry" | "stop";
@@ -80,8 +82,9 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
     const compacted = baseTranscript !== row.transcript;
     const baseSteps = row.steps;
     const turns = row.turns + 1;
-    const staged = Array.isArray(row.proposals) ? row.proposals : [];
-    const state = [await bookState(service, row.book_id, staged), notesBlock(baseSteps)].filter(Boolean).join("\n\n");
+    let staged = Array.isArray(row.proposals) ? row.proposals : [];
+    const ctx: Ctx = { bookId: row.book_id, runId };
+    const state = [await bookState(service, row.book_id, staged), memoryBlock(row.memory), notesBlock(baseSteps)].filter(Boolean).join("\n\n");
     const authorAsk = latestAuthorAsk(baseTranscript);
     // Count the turn BEFORE the call (a worker death mid-call still spends budget); re-write steps
     // alongside so the Realtime event carries the (TOASTed) column — see book-agent for the gotcha.
@@ -133,35 +136,51 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
     const transcript = [...baseTranscript, { role: "assistant", content: content.length ? content : [{ type: "text", text: EMPTY_REPLY_PLACEHOLDER }] }];
     const steps = [...baseSteps];
     for (const b of content) if (b.type === "text" && String(b.text ?? "").trim()) steps.push({ t: "note", label: String(b.text).trim() });
-    const toolUses = content.filter((b) => b.type === "tool_use");
+    const allToolUses = content.filter((b) => b.type === "tool_use");
     // A `reply` riding inside suggest_action is the chat reply (reasoning tiers often skip text blocks
     // beside a tool call) — surface it like narration, before the action step lands.
-    for (const t of toolUses) {
+    for (const t of allToolUses) {
       if (t.name !== "suggest_action") continue;
       const r = String((t.input as { reply?: unknown })?.reply ?? "").trim();
       if (r) steps.push({ t: "note", label: r });
     }
     const spoke = steps.length > baseSteps.length;
 
-    // ── propose_changes: validate against the live pages, stage, end the turn ──
-    const propose = toolUses.find((t) => t.name === "propose_changes");
+    // Withdrawals run FIRST, so a re-proposal in the same message validates against the trimmed list.
+    const withdrawals = allToolUses.filter((t) => t.name === "withdraw_changes");
+    const early = withdrawals.length ? await toolResults(service, ctx, withdrawals, steps) : [];
+    if (withdrawals.length) {
+      const { data: fresh } = await service.from("book_agent_runs").select("proposals").eq("id", runId).maybeSingle();
+      staged = Array.isArray((fresh as { proposals?: unknown } | null)?.proposals) ? (fresh as { proposals: ManuscriptChange[] }).proposals : staged;
+    }
+    const toolUses = allToolUses.filter((t) => t.name !== "withdraw_changes");
+    // Every tool_use needs a result; withdrawals already have theirs.
+    // deno-lint-ignore no-explicit-any
+    const ackRest = (uses: any[]) => [...early, ...ackAll(uses)];
+    // deno-lint-ignore no-explicit-any
+    const resultsFor = async (uses: any[], overrides?: Record<string, string>) => [...early, ...(await toolResults(service, ctx, uses, steps, overrides))];
+
+    // ── propose_changes / replace_across_book: validate against the live pages, stage, end the turn ──
+    const propose = toolUses.find((t) => STAGERS.has(t.name));
     if (propose) {
-      const outcome = await validateProposal(service, row.book_id, propose.input as { summary?: unknown; changes?: unknown }, staged);
+      const outcome = propose.name === "replace_across_book"
+        ? await validateReplace(service, row.book_id, propose.input as Record<string, unknown>, staged)
+        : await validateProposal(service, row.book_id, propose.input as { summary?: unknown; changes?: unknown }, staged);
       if (outcome.ok) {
         // Sibling result-blind tools (notes / an action) still execute so their steps land.
-        const siblings = toolUses.filter((t) => t.id !== propose.id);
-        await toolResults(service, row.book_id, siblings, steps);
+        const siblings = toolUses.filter((t) => t.id !== propose.id && !STAGERS.has(t.name));
+        await toolResults(service, ctx, siblings, steps);
         steps.push({ t: "plan", label: outcome.summary });
         // Re-read the staged list NOW, not from turn start: the author may have accepted/rejected a change
         // on the canvas while this call ran, and appending onto a stale copy would resurrect it.
         const { data: fresh } = await service.from("book_agent_runs").select("proposals").eq("id", runId).maybeSingle();
         const live = Array.isArray((fresh as { proposals?: unknown } | null)?.proposals) ? (fresh as { proposals: ManuscriptChange[] }).proposals : staged;
         const proposals: ManuscriptChange[] = [...live, ...outcome.changes];
-        transcript.push({ role: "user", content: ackAll(toolUses) });
+        transcript.push({ role: "user", content: ackRest(toolUses) });
         await service.from("book_agent_runs").update({ status: "idle", transcript, steps, proposals }).eq("id", runId);
         return "stop";
       }
-      const results = await toolResults(service, row.book_id, toolUses, steps, { [propose.id]: `The changes were rejected: ${outcome.error} Fix them and call propose_changes again, or just reply.` });
+      const results = await resultsFor(toolUses, { [propose.id]: `The changes were rejected: ${outcome.error} Fix them and call ${propose.name} again, or just reply.` });
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ transcript, steps }).eq("id", runId);
       return "continue";
@@ -170,9 +189,9 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
     const finish = toolUses.find((t) => t.name === "finish");
     if (finish) {
       const report = String((finish.input as { report?: string })?.report ?? "").trim();
-      await toolResults(service, row.book_id, toolUses.filter((t) => t.id !== finish.id), steps);
+      await toolResults(service, ctx, toolUses.filter((t) => t.id !== finish.id), steps);
       if (report && !spoke) steps.push({ t: "done", label: report.slice(0, 600) });
-      transcript.push({ role: "user", content: ackAll(toolUses) });
+      transcript.push({ role: "user", content: ackRest(toolUses) });
       await service.from("book_agent_runs").update({ status: "idle", transcript, steps, report: report || null }).eq("id", runId);
       return "stop";
     }
@@ -181,7 +200,7 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
     if (ask) {
       const input = ask.input as { question?: string; options?: string[] };
       const question = String(input?.question ?? "").trim();
-      const preResults = await toolResults(service, row.book_id, toolUses.filter((t) => t.id !== ask.id), steps);
+      const preResults = await resultsFor(toolUses.filter((t) => t.id !== ask.id));
       steps.push({ t: "ask", label: question.slice(0, 400) });
       const pending: Pending = { tool_use_id: ask.id, question, options: Array.isArray(input?.options) ? input.options.map(String).slice(0, 4) : undefined, preResults: preResults.length ? preResults : undefined };
       await service.from("book_agent_runs").update({ status: "awaiting_input", transcript, steps, pending }).eq("id", runId);
@@ -189,16 +208,16 @@ async function advance(service: SupabaseClient, runId: number, callTimeoutMs = C
     }
 
     // Speak-and-act: a reply plus only result-blind tools is a complete exchange — no second call.
-    if (toolUses.length && spoke && toolUses.every((t) => RESULT_BLIND.has(t.name))) {
-      const results = await toolResults(service, row.book_id, toolUses, steps);
+    if (allToolUses.length && spoke && toolUses.every((t) => RESULT_BLIND.has(t.name))) {
+      const results = await resultsFor(toolUses);
       transcript.push({ role: "user", content: results });
       await service.from("book_agent_runs").update({ status: "idle", transcript, steps }).eq("id", runId);
       return "stop";
     }
 
     // Reads (and result-blind tools without a reply): execute, append, step.
-    if (toolUses.length) {
-      const results = await toolResults(service, row.book_id, toolUses, steps);
+    if (allToolUses.length) {
+      const results = await resultsFor(toolUses);
       transcript.push({ role: "user", content: results });
       // Fold-on-read: reads that pile up unrecorded get pruned by compaction and re-read forever.
       // Nudge to bank them well before the force-commit backstop below.

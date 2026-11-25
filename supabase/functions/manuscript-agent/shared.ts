@@ -15,13 +15,15 @@ import type { CanvasSnapshot } from "./canvas.ts";
 // (e.g. a Publish button) the agent renders instead of doing something only the author may do.
 interface Finding { ref: string; finding: string }
 interface AgentStep {
-  t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done" | "finding" | "action" | "applied" | "discarded";
+  t: "user" | "note" | "read" | "ask" | "answer" | "plan" | "done" | "finding" | "action" | "applied" | "discarded" | "memory";
   label: string;
   options?: string[];
   findings?: Finding[];
   action?: "publish" | "open_page" | "open_studio";
   pageId?: number;
   canvas?: CanvasSnapshot; // user/answer: validated snapshot of what was open when sent
+  change?: ManuscriptChange; // applied/discarded: the resolved change
+  by?: "agent";              // discarded: withdrawn by the agent, not rejected by the author
 }
 interface Pending { tool_use_id: string; question: string; options?: string[]; preResults?: unknown[] }
 
@@ -31,11 +33,13 @@ interface Pending { tool_use_id: string; question: string; options?: string[]; p
 //                 time; the client always diffs the LIVE page against `after`, so `before` is a record.
 //   page_add    — a new page after `afterPageId` (null = first page).
 //   page_delete — archive a page.
+//   page_move   — move a page so it sits after `afterPageId` (null = first).
 //   book_edit   — one of the book's text fields.
 type ManuscriptChange =
   | { id: string; kind: "page_edit"; pageId: number; title?: string | null; before: string; after: string; note?: string }
   | { id: string; kind: "page_add"; afterPageId: number | null; pageType: "text" | "section"; title: string; text: string; note?: string }
   | { id: string; kind: "page_delete"; pageId: number; note?: string }
+  | { id: string; kind: "page_move"; pageId: number; afterPageId: number | null; note?: string }
   | { id: string; kind: "book_edit"; field: "name" | "subtitle" | "author"; before: string; after: string; note?: string };
 
 interface RunRow {
@@ -52,8 +56,9 @@ interface RunRow {
   turns: number;
   cancel_requested: boolean;
   title: string | null;
+  memory: string[] | null; // standing author preferences for the book; survives "New chat"
 }
-const ROW_COLS = "id, book_id, created_by, kind, status, transcript, steps, pending, proposals, context_model, turns, cancel_requested, title";
+const ROW_COLS = "id, book_id, created_by, kind, status, transcript, steps, pending, proposals, context_model, turns, cancel_requested, title, memory";
 
 interface PageRow { id: number; page_index: number; page_type: string | null; title: string | null; content: unknown; archived: boolean | null }
 interface BookRow { id: number; name: string | null; subtitle: string | null; author: string | null; is_public: boolean | null }

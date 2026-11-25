@@ -1,7 +1,7 @@
 // ChatStep — one feed step as a chat element. Author messages → right bubble; the agent's replies →
 // markdown prose; reads/notes → muted activity lines; 'action' → a smart unit (a button for something
 // only the author can do); applied/discarded → a collapsed record of a resolved change.
-import { ArrowRight, BookOpen, Check, NotebookPen, Rocket, Sparkles, X } from "lucide-react";
+import { ArrowRight, BookOpen, Bookmark, Check, NotebookPen, Rocket, Sparkles, Undo2, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ManuscriptStep } from "../../lib/manuscriptAgent";
@@ -49,6 +49,13 @@ export function ChatStep({ step, pages = [], canvas, onAction, onJumpToPage, onS
       </div>
     );
   }
+  if (step.t === "memory") {
+    return (
+      <p className="flex items-start gap-1.5 pv-serif text-[12.5px] leading-[1.45] text-[hsl(var(--pv-text-muted))]">
+        <Bookmark className="mt-[3px] h-3 w-3 shrink-0 text-[hsl(var(--pv-accent))]" /><span>{step.label}</span>
+      </p>
+    );
+  }
   if (step.t === "plan") {
     return (
       <div className="flex items-center gap-2.5 rounded-xl border border-[hsl(var(--pv-accent))]/30 bg-[hsl(var(--pv-accent))]/[0.05] px-3 py-2.5">
@@ -69,12 +76,13 @@ export function ChatStep({ step, pages = [], canvas, onAction, onJumpToPage, onS
   if (step.t === "applied" || step.t === "discarded") {
     const applied = step.t === "applied";
     const c = step.change;
-    const pageId = c && (c.kind === "page_edit" || c.kind === "page_delete") ? c.pageId : undefined;
+    const withdrawn = !applied && step.by === "agent";
+    const pageId = c && (c.kind === "page_edit" || c.kind === "page_delete" || c.kind === "page_move") ? c.pageId : undefined;
     return (
       <button type="button" disabled={pageId == null} onClick={() => pageId != null && onJumpToPage?.(pageId)}
         className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left ${applied ? "border-green-600/30 bg-green-500/[0.06]" : "border-[hsl(var(--pv-border-soft))] bg-[hsl(var(--pv-surface-2))]/30"} disabled:cursor-default`}>
-        {applied ? <Check className="h-3.5 w-3.5 shrink-0 text-green-600" /> : <X className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-text-faint))]" />}
-        <span className="pv-serif flex-1 truncate text-[12.5px] text-[hsl(var(--pv-text-muted))]">{applied ? "Accepted" : "Rejected"}: {step.label}</span>
+        {applied ? <Check className="h-3.5 w-3.5 shrink-0 text-green-600" /> : withdrawn ? <Undo2 className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-text-faint))]" /> : <X className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-text-faint))]" />}
+        <span className="pv-serif flex-1 truncate text-[12.5px] text-[hsl(var(--pv-text-muted))]">{applied ? "Accepted" : withdrawn ? "Withdrawn" : "Rejected"}: {step.label}</span>
       </button>
     );
   }

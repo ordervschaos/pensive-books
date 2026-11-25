@@ -124,7 +124,7 @@ export default function ManuscriptAgentPage() {
   // structural writes so each reorder sees the live index map.
   const resolveAll = async (verb: "accept" | "reject") => {
     if (busyId || !runId || !staged.length) return;
-    const order = { book_edit: 0, page_edit: 1, page_delete: 2, page_add: 3 } as const;
+    const order = { book_edit: 0, page_edit: 1, page_delete: 2, page_move: 3, page_add: 4 } as const;
     const list = [...staged].sort((a, b) => order[a.kind] - order[b.kind]);
     setBusyId("all");
     try {
@@ -191,7 +191,8 @@ export default function ManuscriptAgentPage() {
               {selection.kind === "page" && current && (
                 <PageCanvas page={current} bookId={bookId} runId={runId} pages={pages} busyId={busyId} setBusyId={setBusyId} onSaving={setSaving} canEdit={canEdit}
                   edit={staged.find((c): c is Extract<ManuscriptChange, { kind: "page_edit" }> => c.kind === "page_edit" && c.pageId === current.id)}
-                  del={staged.find((c): c is Extract<ManuscriptChange, { kind: "page_delete" }> => c.kind === "page_delete" && c.pageId === current.id)} />
+                  del={staged.find((c): c is Extract<ManuscriptChange, { kind: "page_delete" }> => c.kind === "page_delete" && c.pageId === current.id)}
+                  move={staged.find((c): c is Extract<ManuscriptChange, { kind: "page_move" }> => c.kind === "page_move" && c.pageId === current.id)} />
               )}
             </div>
           </main>

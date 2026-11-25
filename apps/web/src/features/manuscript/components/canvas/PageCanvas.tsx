@@ -4,7 +4,7 @@
 //   nothing staged   → the in-place editor
 // Every accept here writes through lib/manuscriptAgent (resolvePartial / acceptChange / rejectChange).
 import { useEffect, useMemo, useState } from "react";
-import { Check, Loader2, Trash2, X } from "lucide-react";
+import { ArrowDownUp, Check, Loader2, Trash2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { countUnits, decideAll, diffBody, resolve, type Decision } from "../../lib/manuscriptDiff";
 import { bodyText, wordCount } from "../../lib/manuscriptText";
@@ -15,6 +15,7 @@ import { PageEditor } from "./PageEditor";
 type PageEdit = Extract<ManuscriptChange, { kind: "page_edit" }>;
 type PageDelete = Extract<ManuscriptChange, { kind: "page_delete" }>;
 type PageAdd = Extract<ManuscriptChange, { kind: "page_add" }>;
+type PageMove = Extract<ManuscriptChange, { kind: "page_move" }>;
 
 const Bar = ({ tone, children }: { tone: "red" | "green" | "accent"; children: React.ReactNode }) => (
   <div className={`mb-6 flex flex-wrap items-center gap-3 rounded-2xl border px-4 py-2.5 ${tone === "red" ? "border-red-500/40 bg-red-500/[0.06]" : tone === "green" ? "border-green-600/40 bg-green-500/[0.06]" : "border-[hsl(var(--pv-accent))]/40 bg-[hsl(var(--pv-accent))]/[0.06]"}`}>
@@ -28,8 +29,8 @@ const BarButton = ({ onClick, tone, busy, children }: { onClick: () => void; ton
   </button>
 );
 
-export function PageCanvas({ page, edit, del, bookId, runId, pages, busyId, setBusyId, onSaving, canEdit }: {
-  page: ManuscriptPage; edit?: PageEdit; del?: PageDelete; bookId: number; runId: number | null; pages: ManuscriptPage[];
+export function PageCanvas({ page, edit, del, move, bookId, runId, pages, busyId, setBusyId, onSaving, canEdit }: {
+  page: ManuscriptPage; edit?: PageEdit; del?: PageDelete; move?: PageMove; bookId: number; runId: number | null; pages: ManuscriptPage[];
   busyId: string | null; setBusyId: (id: string | null) => void; onSaving?: (saving: boolean) => void; canEdit: boolean;
 }) {
   const { toast } = useToast();
@@ -56,6 +57,20 @@ export function PageCanvas({ page, edit, del, bookId, runId, pages, busyId, setB
   const acceptPage = () => edit && run(edit.id, () => resolvePartial(runId!, edit, page, resolve(diff, decideAll(diff, "accept")), edit.title != null ? "accept" : undefined), "Page updated");
   const rejectPage = () => edit && run(edit.id, () => rejectChange(runId!, edit, pages));
 
+  // A staged move sits ABOVE whatever else the page shows: it changes where the page lives, not its words.
+  const after = move && (move.afterPageId == null ? null : pages.find((p) => p.id === move.afterPageId));
+  const moveBar = move && (
+    <Bar tone="accent">
+      <ArrowDownUp className="h-4 w-4 text-[hsl(var(--pv-accent))]" />
+      <span className="pv-serif flex-1 text-[13.5px] text-foreground">
+        The agent proposes <b>moving this page</b> {after ? <>after <b>p{after.page_index + 1} · {(after.title ?? "").trim() || "Untitled"}</b></> : <>to <b>the start</b></>}.
+        {move.note && <span className="italic text-[hsl(var(--pv-text-muted))]"> {move.note}</span>}
+      </span>
+      <BarButton tone="accept" busy={busyId === move.id} onClick={() => void run(move.id, () => acceptChange(bookId, runId!, move, pages), "Page moved")}>Move</BarButton>
+      <BarButton tone="reject" busy={busyId === move.id} onClick={() => void run(move.id, () => rejectChange(runId!, move, pages))}>Keep here</BarButton>
+    </Bar>
+  );
+
   if (del) {
     return (
       <div>
@@ -77,6 +92,7 @@ export function PageCanvas({ page, edit, del, bookId, runId, pages, busyId, setB
     const busy = busyId === edit.id;
     return (
       <div>
+        {moveBar}
         <Bar tone="accent">
           <span className="pv-serif flex-1 text-[13.5px] text-foreground">
             <b>{units}</b> change{units === 1 ? "" : "s"} proposed on this page{edit.note && <span className="italic text-[hsl(var(--pv-text-muted))]"> — {edit.note}</span>}
@@ -103,6 +119,7 @@ export function PageCanvas({ page, edit, del, bookId, runId, pages, busyId, setB
 
   return (
     <div>
+      {moveBar}
       <PageEditor key={page.id} page={page} bookId={bookId} editable={canEdit} onSaving={onSaving} />
       <p className="mt-8 pv-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--pv-text-faint))]">{page.page_type === "section" ? "section" : `${wordCount(liveBody)} words`}</p>
     </div>

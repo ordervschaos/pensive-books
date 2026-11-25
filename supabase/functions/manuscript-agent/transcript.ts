@@ -58,7 +58,7 @@ function trailingReadRun(steps: AgentStep[]): number {
   for (let i = steps.length - 1; i >= 0; i--) {
     const t = steps[i].t;
     if (t === "read") { n++; continue; }
-    if (t === "note" || t === "finding") continue;
+    if (t === "note" || t === "finding" || t === "memory") continue;
     break;
   }
   return n;
@@ -74,7 +74,7 @@ function unrecordedReadRun(steps: AgentStep[]): number {
   for (let i = steps.length - 1; i >= 0; i--) {
     const t = steps[i].t;
     if (t === "read") { n++; continue; }
-    if (t === "note") continue;
+    if (t === "note" || t === "memory") continue;
     break;
   }
   return n;

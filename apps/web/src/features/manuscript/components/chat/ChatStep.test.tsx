@@ -42,3 +42,16 @@ describe("page links in agent replies", () => {
     expect(screen.getByText("p3 · The Door")).toBeInTheDocument();
   });
 });
+
+describe("agent-side receipts", () => {
+  it("labels a change the agent withdrew differently from one the author rejected", () => {
+    const change = { id: "c1", kind: "page_move" as const, pageId: 42, afterPageId: null };
+    const jump = vi.fn();
+    const { rerender } = render(<ChatStep step={{ t: "discarded", by: "agent", label: "move p3 to the start", change }} onJumpToPage={jump} />);
+    expect(screen.getByText(/Withdrawn: move p3/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button"));
+    expect(jump).toHaveBeenCalledWith(42);
+    rerender(<ChatStep step={{ t: "discarded", label: "move p3 to the start", change }} />);
+    expect(screen.getByText(/Rejected: move p3/)).toBeInTheDocument();
+  });
+});

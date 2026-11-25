@@ -75,6 +75,25 @@ Fresh chats offer context-specific prompts that fill an editable draft. No migra
 release the web app and `manuscript-agent` together. See
 [the comparison and follow-ups](../../../../../docs/agentic-writing-experience.md).
 
+### Tools v2 + calm transcript (2026-11-25)
+
+Ported from Dottr's agent (`~/Code/dottr/dottr`, `docs/where/agent.md`):
+
+- **Reads:** `search_pages` takes `match: phrase|word|regex` + `caseSensitive` and returns per-page
+  counts; `read_chapter{sectionId}` reads a section and its pages (≤12); `check_prose{pageIds}` is a
+  deterministic craft read (rhythm, echoes, filter words, hedges, -ly, openers) from the pure
+  `manuscript-agent/analysis.ts`, which the web tests import directly.
+- **Writes (staged):** `page_move` change kind (client `movedOrder` + `reorderPages`; banner above the
+  page; ↕ marker in the pages panel); `replace_across_book` stages one `page_edit` per affected page
+  (body + title, ≤60, skips pages with a staged edit); `withdraw_changes` lets the agent retract its
+  own staged changes (runs first in a message, feed shows "Withdrawn", `step.by = "agent"`).
+- **Memory:** `remember` / `forget` write `book_agent_runs.memory` (string[], ≤30); it rides in
+  `<memory>` every turn and survives New chat (the session RPCs don't touch the column). The author
+  sees and deletes entries from the 🔖 popover in the rail header (`forgetMemory`).
+- **UI:** consecutive read/finding steps fold into one `WorkGroup` row ("Worked · read 5 pages · 1
+  search"), which shows the current action while the turn is live; receipts whose target is on the
+  canvas read "showing"; the composer pill has ✕ to leave the open page out of one message.
+
 ### Further extensions
 
 - New change kinds: add to the `ManuscriptChange` union (both mirrors), validate in `exec-tools.ts`,

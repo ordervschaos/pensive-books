@@ -2,7 +2,7 @@
 //   pages   — the book's pages and sections (sections group the text pages under them), each tagged
 //             with its staged state (green = new page, red = to be deleted, amber dot = edits pending)
 //   changes — every staged change, grouped by where it lands; click → that page, first change in view
-import { BookOpen, FileText, Minus, Plus, X } from "lucide-react";
+import { ArrowDownUp, BookOpen, FileText, Minus, Plus, X } from "lucide-react";
 import { Eyebrow } from "@/components/book/shared/studioUi";
 import { changeLabel, type ManuscriptChange, type ManuscriptPage } from "../../lib/manuscriptAgent";
 import type { Selection } from "./selection";
@@ -14,6 +14,7 @@ export function SidePanel({ mode, pages, staged, selection, onSelect, onClose }:
 }) {
   const editsByPage = new Map(staged.filter((c): c is Extract<ManuscriptChange, { kind: "page_edit" }> => c.kind === "page_edit").map((c) => [c.pageId, c]));
   const deleted = new Set(staged.filter((c) => c.kind === "page_delete").map((c) => (c as { pageId: number }).pageId));
+  const moved = new Set(staged.filter((c) => c.kind === "page_move").map((c) => (c as { pageId: number }).pageId));
   const adds = staged.filter((c): c is Extract<ManuscriptChange, { kind: "page_add" }> => c.kind === "page_add");
   const isSel = (s: Selection) => JSON.stringify(s) === JSON.stringify(selection);
   const rowCls = (sel: boolean, tone?: "red" | "green") =>
@@ -56,6 +57,7 @@ export function SidePanel({ mode, pages, staged, selection, onSelect, onClose }:
                 <button type="button" onClick={() => onSelect({ kind: "page", pageId: p.id })} className={`${rowCls(sel, isDel ? "red" : undefined)} ${section ? "mt-2" : "pl-6"}`}>
                   {isDel ? <Minus className="h-3.5 w-3.5 shrink-0" /> : section ? <BookOpen className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-text-faint))]" /> : <FileText className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--pv-text-faint))]" />}
                   <span className={`pv-serif min-w-0 flex-1 truncate text-[13px] ${section ? "font-semibold" : ""} ${isDel ? "line-through" : ""}`}>{(p.title ?? "").trim() || "Untitled"}</span>
+                  {moved.has(p.id) && <ArrowDownUp className="h-3 w-3 shrink-0 text-[hsl(var(--pv-accent))]" aria-label="move pending" />}
                   {hasEdit && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" title="edits pending" />}
                   <span className="pv-mono text-[9px] text-[hsl(var(--pv-text-faint))]">{p.page_index + 1}</span>
                 </button>
