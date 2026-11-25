@@ -23,13 +23,14 @@
 - **Files/commits:** Working tree deployed as-is; includes manuscript/FEATURE.md, chat components, tests, docs/agentic-writing-experience.md, plus earlier commits (4cafe5e + prior).
 - **PM impact:** Manuscript agent shipped to prod; no scope change.
 
-## 2026-11-25 — Manuscript agent: Dottr-inspired tools + calm chat `[feature]`
+## 2026-11-25 — Manuscript agent: Dottr-inspired tools + calm chat `[ship]`
 - **What:** 7 new agent abilities: word/regex search with counts, read_chapter, check_prose (deterministic craft read), remember/forget (book memory kept across chats), withdraw_changes, replace_across_book, page_move change kind. Chat folds legwork into one live "Worked" row, memory popover, "showing" receipts, composer ✕ to leave the open page out.
 - **Files/commits:** `supabase/functions/manuscript-agent/` (analysis.ts new), `features/manuscript/`, migration `20261125120000` (book_agent_runs.memory). Commit cfb5cdc; edge fn + migration deployed; web pushed.
 - **Validation:** 52 manuscript tests, full hook suite (1496), typecheck, lint. Live turn on scratch run 115 (book 1467): remember → check_prose → page_move staged, memory persisted.
+- **PM impact:** STATE.md Manuscript agent row updated (both ships); ROADMAP unchanged (not a Now item).
 - **Remaining:** accept the staged move in the UI (client path unit-tested only); the agent proposed without narrating the prose findings, so consider prompting for a reply alongside propose_changes; mid-run steering not yet ported.
 
-## 2026-11-23 — Make the manuscript conversation aware of its canvas `[feature]`
+## 2026-11-23 — Make the manuscript conversation aware of its canvas `[ship]`
 - **What:** Compared the current Dottr agent with Pensive; implemented typed, book-checked send-time canvas context, page receipts and stable page links, contextual starter prompts, and a growing composer. Documented the next improvements in priority order.
 - **Files/commits:** `features/manuscript/` chat, contract and tests; `supabase/functions/manuscript-agent/` context and protocol; `docs/agentic-writing-experience.md` and the feature manifest. Backend portion is in `4cafe5e`; remaining changes are in the working tree.
 - **Validation:** 40 manuscript tests, web typecheck, scoped ESLint, edge `deno check`, and production web build passed. Inspected the signed-in local UI on scratch book 1467 and verified navigation updates the composer context.
